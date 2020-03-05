@@ -18,6 +18,8 @@ This library was initially developed as part of the paper *"[Proofs for Inner Pa
 
 ## Overview
 
+The library currently contains an implementation of our proof system for verifiably outsourcing pairing products. In the future, we intend to implement the polynomial commitment schemes and our protocol for aggregating Groth16 proofs described in our [paper][ripp].
+
 ## Build guide
 
 The library compiles on the `stable` toolchain of the Rust compiler. To install the latest version of Rust, first install `rustup` by following the instructions [here](https://rustup.rs/), or via your platform's package manager. Once `rustup` is installed, install the Rust toolchain by invoking:
