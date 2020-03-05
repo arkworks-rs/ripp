@@ -9,16 +9,13 @@
 </p>
 
 
-___RIPP___ is a Rust library for proofs about inner pairing products.
+___RIPP___ is a Rust library for proofs about inner pairing products, and applications built atop these. These protocols and applications are described in our paper *"[Proofs for Inner Pairing Products and Applications][ripp]"*
 
+The library currently contains an implementation of our proof system for verifiably outsourcing pairing products. In the future, we intend to implement the other protocols described in our [paper][ripp], along with the polynomial commitment schemes and our protocol for aggregating Groth16 proofs based upon these protocols.
 
-This library was initially developed as part of the paper *"[Proofs for Inner Pairing Products and Applications][ripp]"*, and it is released under the MIT License and the Apache v2 License (see [License](#license)).
+This library is released under the MIT License and the Apache v2 License (see [License](#license)).
 
 **WARNING:** This is an academic proof-of-concept prototype, and in particular has not received careful code review. This implementation is NOT ready for production use.
-
-## Overview
-
-The library currently contains an implementation of our proof system for verifiably outsourcing pairing products. In the future, we intend to implement the polynomial commitment schemes and our protocol for aggregating Groth16 proofs described in our [paper][ripp].
 
 ## Build guide
 
