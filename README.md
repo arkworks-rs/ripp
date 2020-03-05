@@ -54,5 +54,3 @@ Unless you explicitly state otherwise, any contribution submitted for inclusion 
 [_Proofs for Inner Pairing Products and Applications_][ripp]    
 [Benedikt Bünz](https://www.github.com/bbuenz), Mary Maller, [Pratyush Mishra](https://www.github.com/pratyush), [Noah Vesely](https://www.github.com/nvesely)    
 *IACR ePrint Report 2019/1177*
-
-## Acknowledgements
