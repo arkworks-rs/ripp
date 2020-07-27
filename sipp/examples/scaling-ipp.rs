@@ -30,9 +30,12 @@ use rand::seq::SliceRandom;
 use std::time::Instant;
 use algebra::{ProjectiveCurve, UniformRand, bls12_377::*};
 use blake2::Blake2s;
-use ipp::rng::FiatShamirRng;
+use sipp::{
+    SIPP,
+    rng::FiatShamirRng
+};
 
-type SIPP = ipp::SIPP<Bls12_377, Blake2s>;
+type ExampleSIPP = SIPP<Bls12_377, Blake2s>;
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -95,15 +98,15 @@ fn main() {
             a_s.shuffle(&mut rng);
             b_s.shuffle(&mut rng);
             let start = Instant::now();
-            let z = ipp::product_of_pairings_with_coeffs::<Bls12_377>(a_s, b_s, &r_s);
+            let z = sipp::product_of_pairings_with_coeffs::<Bls12_377>(a_s, b_s, &r_s);
             direct_time += (start.elapsed().as_millis() as f64) / 1_000.0;
 
             let start = Instant::now();
-            let proof = SIPP::prove(a_s, b_s, &r_s, z).unwrap();
+            let proof = ExampleSIPP::prove(a_s, b_s, &r_s, z).unwrap();
             prover_time += (start.elapsed().as_millis() as f64) / 1_000.0;
 
             let start = Instant::now();
-            assert!(SIPP::verify(a_s, b_s, &r_s, z, &proof).unwrap());
+            assert!(ExampleSIPP::verify(a_s, b_s, &r_s, z, &proof).unwrap());
             verifier_time += (start.elapsed().as_millis() as f64) / 1_000.0;
         }
         let num_iters = num_iters as f64;
