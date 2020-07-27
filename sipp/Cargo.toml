@@ -1,0 +1,34 @@
+[package]
+name = "sipp"
+version = "0.1.0"
+authors = [
+    "Benedikt Bünz",
+    "Mary Maller",
+    "Pratyush Mishra",
+    "Noah Vesely",
+]
+description = "A library for proofs about inner pairing products"
+homepage = "https://github.com/scipr/ripp"
+repository = "https://github.com/scipr/ripp"
+documentation = "https://docs.rs/ripp/"
+keywords = ["cryptography", "finite fields", "elliptic curves", "pairing", "bulletproofs"]
+categories = ["cryptography"]
+include = ["Cargo.toml", "src", "README.md", "LICENSE-APACHE", "LICENSE-MIT"]
+license = "MIT/Apache-2.0"
+edition = "2018"
+
+################################# Dependencies ################################
+
+[dependencies]
+algebra-core = { git = "https://github.com/scipr-lab/zexe", features = [ "parallel" ] }
+rayon = { version = "1.0" }
+rand_core = { version = "0.5" }
+rand_chacha = { version = "0.2.1" }
+digest = { version = "0.8" }
+
+[dev-dependencies]
+blake2 = "0.8.1"
+rand = "0.7"
+csv = { version = "1" }
+serde = { version = "1", features = [ "derive" ] }
+algebra = { git = "https://github.com/scipr-lab/zexe", features = [ "bls12_377" ] }
