@@ -10,56 +10,50 @@ use rand::Rng;
 use crate::{
     Error,
     DoublyHomomorphicCommitment,
-    GeneratorCommitmentKey, GroupElementMessage, ExtensionFieldCommitment,
     random_generators,
 };
 
-pub trait AFGHOConfig {
-    const SIZE: usize;
-}
-
-pub struct AFGHOCommitment<P: PairingEngine, C: AFGHOConfig> {
+pub struct AFGHOCommitment<P: PairingEngine> {
     _pair: PhantomData<P>,
-    _config: PhantomData<C>,
 }
 
-pub struct AFGHOCommitmentG1<P: PairingEngine, C: AFGHOConfig>(AFGHOCommitment<P, C>);
-pub struct AFGHOCommitmentG2<P: PairingEngine, C: AFGHOConfig>(AFGHOCommitment<P, C>);
+pub struct AFGHOCommitmentG1<P: PairingEngine>(AFGHOCommitment<P>);
+pub struct AFGHOCommitmentG2<P: PairingEngine>(AFGHOCommitment<P>);
 
-impl<P: PairingEngine, C: AFGHOConfig> DoublyHomomorphicCommitment for AFGHOCommitmentG1<P, C>
+impl<P: PairingEngine> DoublyHomomorphicCommitment for AFGHOCommitmentG1<P>
 {
-    type Message = GroupElementMessage<P::G1Projective>;
-    type Key = GeneratorCommitmentKey<P::G2Projective>;
-    type Output = ExtensionFieldCommitment<P::Fqk>;
+    type Message = P::G1Projective;
+    type Key = P::G2Projective;
+    type Output = P::Fqk;
 
-    fn setup<R: Rng>(rng: &mut R) -> Result<Self::Key, Error> {
-        Ok(GeneratorCommitmentKey(random_generators(rng, C::SIZE)))
+    fn setup<R: Rng>(rng: &mut R, size: usize) -> Result<Vec<Self::Key>, Error> {
+        Ok(random_generators(rng, size))
     }
 
-    fn commit(k: &Self::Key, m: &Self::Message) -> Result<Self::Output, Error> {
-        Ok(ExtensionFieldCommitment(
-                k.0.iter().zip(&m.0)
+    fn commit(k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {
+        Ok(
+                k.iter().zip(m)
                     .map(|(v, a)| P::pairing(a.clone().into(), v.clone().into()))
                     .product()
-        ))
+        )
     }
 }
 
-impl<P: PairingEngine, C: AFGHOConfig> DoublyHomomorphicCommitment for AFGHOCommitmentG2<P, C>
+impl<P: PairingEngine> DoublyHomomorphicCommitment for AFGHOCommitmentG2<P>
 {
-    type Message = GroupElementMessage<P::G2Projective>;
-    type Key = GeneratorCommitmentKey<P::G1Projective>;
-    type Output = ExtensionFieldCommitment<P::Fqk>;
+    type Message = P::G2Projective;
+    type Key = P::G1Projective;
+    type Output = P::Fqk;
 
-    fn setup<R: Rng>(rng: &mut R) -> Result<Self::Key, Error> {
-        Ok(GeneratorCommitmentKey(random_generators(rng, C::SIZE)))
+    fn setup<R: Rng>(rng: &mut R, size: usize) -> Result<Vec<Self::Key>, Error> {
+        Ok(random_generators(rng, size))
     }
 
-    fn commit(k: &Self::Key, m: &Self::Message) -> Result<Self::Output, Error> {
-        Ok(ExtensionFieldCommitment(
-            k.0.iter().zip(&m.0)
+    fn commit(k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {
+        Ok(
+            k.iter().zip(m)
                 .map(|(v, a)| P::pairing(v.clone().into(), a.clone().into()))
                 .product()
-        ))
+        )
     }
 }

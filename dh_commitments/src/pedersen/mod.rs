@@ -9,33 +9,27 @@ use rand::Rng;
 use crate::{
     Error,
     DoublyHomomorphicCommitment,
-    GeneratorCommitmentKey, ScalarMessage, GroupElementCommitment,
     random_generators,
 };
 
-pub trait PedersenConfig {
-    const SIZE: usize;
-}
-
-pub struct PedersenCommitment<G: Group, C: PedersenConfig> {
+pub struct PedersenCommitment<G: Group> {
     _group: PhantomData<G>,
-    _config: PhantomData<C>,
 }
 
-impl<G: Group, C: PedersenConfig> DoublyHomomorphicCommitment for PedersenCommitment<G, C> {
-    type Message = ScalarMessage<G::ScalarField>;
-    type Key = GeneratorCommitmentKey<G>;
-    type Output = GroupElementCommitment<G>;
+impl<G: Group> DoublyHomomorphicCommitment for PedersenCommitment<G> {
+    type Message = G::ScalarField;
+    type Key = G;
+    type Output = G;
 
-    fn setup<R: Rng>(rng: &mut R) -> Result<Self::Key, Error> {
-        Ok(GeneratorCommitmentKey(random_generators(rng, C::SIZE)))
+    fn setup<R: Rng>(rng: &mut R, size: usize) -> Result<Vec<Self::Key>, Error> {
+        Ok(random_generators(rng, size))
     }
 
-    fn commit(k: &Self::Key, m: &Self::Message) -> Result<Self::Output, Error> {
-        Ok(GroupElementCommitment(
-            k.0.iter().zip(&m.0)
+    fn commit(k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {
+        Ok(
+            k.iter().zip(m)
                 .map(|(g, x)| g.mul(x))
                 .sum()
-        ))
+        )
     }
 }
