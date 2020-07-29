@@ -2,4 +2,5 @@
 
 members = [
   "sipp",
+  "dh_commitments",
 ]

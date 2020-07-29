@@ -1,0 +1,12 @@
+[package]
+name = "dh_commitments"
+version = "0.1.0"
+authors = ["Nirvan Tyagi <nirvan.tyagi@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+algebra = {git = "https://github.com/nirvantyagi/zexe/", package = "algebra", features = [ "ed_on_bls12_381" ] }
+rand = { version = "0.7" }
+num-traits = { version = "0.2" }
