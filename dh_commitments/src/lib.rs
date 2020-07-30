@@ -1,24 +1,23 @@
 use algebra::{
     bytes::ToBytes,
-//    serialize::CanonicalSerialize,
-    groups::Group,
-    fields::{Field, PrimeField},
     curves::PairingEngine,
+    fields::{Field, PrimeField},
+    //    serialize::CanonicalSerialize,
+    groups::Group,
 };
-use std::{
-    error::Error as ErrorTrait,
-    ops::{Add, MulAssign},
-    cmp::{PartialEq, Eq},
-    io::{Result as IoResult, Write},
-};
-use rand::Rng;
 use num_traits::identities::One;
+use rand::Rng;
+use std::{
+    cmp::{Eq, PartialEq},
+    error::Error as ErrorTrait,
+    io::{Result as IoResult, Write},
+    ops::{Add, MulAssign},
+};
 
-pub mod pedersen;
 pub mod afgho16;
+pub mod pedersen;
 
 pub type Error = Box<dyn ErrorTrait>;
-
 
 //TODO: support CanonicalSerialize
 
@@ -30,16 +29,9 @@ pub trait DoublyHomomorphicCommitment {
 
     fn setup<R: Rng>(r: &mut R, size: usize) -> Result<Vec<Self::Key>, Error>;
 
-    fn commit(
-        k: &[Self::Key],
-        m: &[Self::Message],
-    ) -> Result<Self::Output, Error>;
+    fn commit(k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error>;
 
-    fn verify(
-        k: &[Self::Key],
-        m: &[Self::Message],
-        com: &Self::Output,
-    ) -> Result<bool, Error> {
+    fn verify(k: &[Self::Key], m: &[Self::Message], com: &Self::Output) -> Result<bool, Error> {
         Ok(Self::commit(k, m)? == *com)
     }
 }
@@ -50,7 +42,11 @@ pub fn random_generators<R: Rng, G: Group>(rng: &mut R, num: usize) -> Vec<G> {
     (0..num).map(|_| G::rand(rng)).collect()
 }
 
-pub fn structured_generators_scalar_power<G: Group>(num: usize, s: &G::ScalarField, g: &G) -> Vec<G> {
+pub fn structured_generators_scalar_power<G: Group>(
+    num: usize,
+    s: &G::ScalarField,
+    g: &G,
+) -> Vec<G> {
     let mut generators = Vec::new();
     let mut pow_s = G::ScalarField::one();
     for _ in 0..num {

@@ -1,16 +1,10 @@
-use algebra::{
-    groups::Group,
-};
-use std::marker::PhantomData;
+use algebra::groups::Group;
 use rand::Rng;
+use std::marker::PhantomData;
 
-use crate::{
-    Error,
-    DoublyHomomorphicCommitment,
-    random_generators,
-};
+use crate::{random_generators, DoublyHomomorphicCommitment, Error};
 
-use inner_products::{MultiexponentiationInnerProduct, InnerProduct};
+use inner_products::{InnerProduct, MultiexponentiationInnerProduct};
 
 pub struct PedersenCommitment<G: Group> {
     _group: PhantomData<G>,
@@ -27,20 +21,14 @@ impl<G: Group> DoublyHomomorphicCommitment for PedersenCommitment<G> {
     }
 
     fn commit(k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {
-        Ok(
-            MultiexponentiationInnerProduct::<G>::inner_product(k, m)?
-        )
+        Ok(MultiexponentiationInnerProduct::<G>::inner_product(k, m)?)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use algebra::{
-        ed_on_bls12_381::EdwardsAffine as JubJub,
-        UniformRand,
-    };
+    use algebra::{ed_on_bls12_381::EdwardsAffine as JubJub, UniformRand};
     use rand::{rngs::StdRng, SeedableRng};
 
     type C = PedersenCommitment<JubJub>;
@@ -61,7 +49,5 @@ mod tests {
         assert!(!C::verify(&commit_keys, &wrong_message, &com).unwrap());
         message.push(<JubJub as Group>::ScalarField::rand(&mut rng));
         assert!(C::verify(&commit_keys, &message, &com).is_err());
-
     }
 }
-
