@@ -8,8 +8,9 @@ use crate::{
     Error,
     DoublyHomomorphicCommitment,
     random_generators,
-    validate_input_lengths,
 };
+
+use inner_products::{MultiexponentiationInnerProduct, InnerProduct};
 
 pub struct PedersenCommitment<G: Group> {
     _group: PhantomData<G>,
@@ -26,11 +27,8 @@ impl<G: Group> DoublyHomomorphicCommitment for PedersenCommitment<G> {
     }
 
     fn commit(k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {
-        validate_input_lengths(k, m)?;
         Ok(
-            k.iter().zip(m)
-                .map(|(g, x)| g.mul(x))
-                .sum()
+            MultiexponentiationInnerProduct::<G>::inner_product(k, m)?
         )
     }
 }

@@ -9,8 +9,9 @@ use crate::{
     DoublyHomomorphicCommitment,
     ExtensionFieldCommitment,
     random_generators,
-    validate_input_lengths,
 };
+
+use inner_products::{PairingInnerProduct, InnerProduct};
 
 pub struct AFGHOCommitment<P: PairingEngine> {
     _pair: PhantomData<P>,
@@ -31,11 +32,8 @@ impl<P: PairingEngine> DoublyHomomorphicCommitment for AFGHOCommitmentG1<P>
     }
 
     fn commit(k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {
-        validate_input_lengths(k, m)?;
         Ok(ExtensionFieldCommitment(
-                k.iter().zip(m)
-                    .map(|(v, a)| P::pairing(a.clone().into(), v.clone().into()))
-                    .product()
+            PairingInnerProduct::<P>::inner_product(m, k)?
         ))
     }
 }
@@ -52,11 +50,8 @@ impl<P: PairingEngine> DoublyHomomorphicCommitment for AFGHOCommitmentG2<P>
     }
 
     fn commit(k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {
-        validate_input_lengths(k, m)?;
         Ok(ExtensionFieldCommitment(
-            k.iter().zip(m)
-                .map(|(v, a)| P::pairing(v.clone().into(), a.clone().into()))
-                .product()
+            PairingInnerProduct::<P>::inner_product(k, m)?
         ))
     }
 }

@@ -7,7 +7,6 @@ use algebra::{
 };
 use std::{
     error::Error as ErrorTrait,
-    fmt,
     ops::{Add, MulAssign},
     cmp::{PartialEq, Eq},
     io::{Result as IoResult, Write},
@@ -19,27 +18,6 @@ pub mod pedersen;
 pub mod afgho16;
 
 pub type Error = Box<dyn ErrorTrait>;
-
-
-#[derive(Debug)]
-pub enum CommitmentError {
-    KeyMessageLengthInvalid(usize, usize),
-}
-
-impl ErrorTrait for CommitmentError {
-    fn source(self: &Self) -> Option<&(dyn ErrorTrait + 'static)> {
-        None
-    }
-}
-
-impl fmt::Display for CommitmentError {
-    fn fmt(self: &Self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let msg = match self {
-            CommitmentError::KeyMessageLengthInvalid(kl, ml) => format!("key length, message length: {}, {}", kl, ml),
-        };
-        write!(f, "{}", msg)
-    }
-}
 
 
 //TODO: support CanonicalSerialize
@@ -80,15 +58,6 @@ pub fn structured_generators_scalar_power<G: Group>(num: usize, s: &G::ScalarFie
         pow_s *= s;
     }
     generators
-}
-
-// Helper for checking key and message length validity
-pub(crate) fn validate_input_lengths<K, M>(k: &[K], m: &[M]) -> Result<(), Error> {
-    if k.len() == m.len() {
-        Ok(())
-    } else {
-        Err(Box::new(CommitmentError::KeyMessageLengthInvalid(k.len(), m.len())))
-    }
 }
 
 // Helper wrapper type around target group commitment output in order to implement MulAssign

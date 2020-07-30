@@ -3,4 +3,6 @@
 members = [
   "sipp",
   "dh_commitments",
+  "gipa",
+  "inner_products",
 ]
