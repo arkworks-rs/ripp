@@ -16,16 +16,18 @@ use std::{
 
 pub mod afgho16;
 pub mod pedersen;
+pub mod identity;
 
 pub type Error = Box<dyn ErrorTrait>;
 
 //TODO: support CanonicalSerialize
+//TODO: Using MulAssign instead of Mul because Group does not support Mul
 
 pub trait DoublyHomomorphicCommitment {
     type Scalar: PrimeField;
-    type Message: ToBytes + Clone + Default + Eq + Add + MulAssign<Self::Scalar>;
-    type Key: ToBytes + Clone + Default + Eq + Add + MulAssign<Self::Scalar>;
-    type Output: ToBytes + Default + Eq + Add + MulAssign<Self::Scalar>;
+    type Message: ToBytes + Clone + Default + Eq + Add<Self::Message, Output=Self::Message> + MulAssign<Self::Scalar>;
+    type Key: ToBytes + Clone + Default + Eq + Add<Self::Key, Output=Self::Key> + MulAssign<Self::Scalar>;
+    type Output: ToBytes + Clone + Default + Eq + Add<Self::Output, Output=Self::Output> + MulAssign<Self::Scalar>;
 
     fn setup<R: Rng>(r: &mut R, size: usize) -> Result<Vec<Self::Key>, Error>;
 
@@ -60,37 +62,37 @@ pub fn structured_generators_scalar_power<G: Group>(
 //TODO: PairingEngine provides target group GT implementing Group for prime order P::Fr
 
 #[derive(Clone)]
-pub struct ExtensionFieldCommitment<P: PairingEngine>(P::Fqk);
+pub struct ExtensionFieldElement<P: PairingEngine>(P::Fqk);
 
-impl<P: PairingEngine> Default for ExtensionFieldCommitment<P> {
+impl<P: PairingEngine> Default for ExtensionFieldElement<P> {
     fn default() -> Self {
-        ExtensionFieldCommitment(<P::Fqk>::default())
+        ExtensionFieldElement(<P::Fqk>::default())
     }
 }
 
-impl<P: PairingEngine> PartialEq for ExtensionFieldCommitment<P> {
+impl<P: PairingEngine> PartialEq for ExtensionFieldElement<P> {
     fn eq(&self, other: &Self) -> bool {
         self.0.eq(&other.0)
     }
 }
 
-impl<P: PairingEngine> Eq for ExtensionFieldCommitment<P> {}
+impl<P: PairingEngine> Eq for ExtensionFieldElement<P> {}
 
-impl<P: PairingEngine> MulAssign<P::Fr> for ExtensionFieldCommitment<P> {
+impl<P: PairingEngine> MulAssign<P::Fr> for ExtensionFieldElement<P> {
     fn mul_assign(&mut self, rhs: P::Fr) {
-        *self = ExtensionFieldCommitment(self.0.pow(rhs.into_repr()))
+        *self = ExtensionFieldElement(self.0.pow(rhs.into_repr()))
     }
 }
 
-impl<P: PairingEngine> Add<Self> for ExtensionFieldCommitment<P> {
+impl<P: PairingEngine> Add<Self> for ExtensionFieldElement<P> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        ExtensionFieldCommitment(self.0.add(&rhs.0))
+        ExtensionFieldElement(self.0.add(&rhs.0))
     }
 }
 
-impl<P: PairingEngine> ToBytes for ExtensionFieldCommitment<P> {
+impl<P: PairingEngine> ToBytes for ExtensionFieldElement<P> {
     fn write<W: Write>(&self, mut writer: W) -> IoResult<()> {
         self.0.write(&mut writer)
     }
