@@ -1,6 +1,4 @@
 use algebra::{
-    bytes::ToBytes,
-    serialize::CanonicalSerialize,
     groups::Group,
 };
 use std::marker::PhantomData;
@@ -10,6 +8,7 @@ use crate::{
     Error,
     DoublyHomomorphicCommitment,
     random_generators,
+    validate_input_lengths,
 };
 
 pub struct PedersenCommitment<G: Group> {
@@ -17,6 +16,7 @@ pub struct PedersenCommitment<G: Group> {
 }
 
 impl<G: Group> DoublyHomomorphicCommitment for PedersenCommitment<G> {
+    type Scalar = G::ScalarField;
     type Message = G::ScalarField;
     type Key = G;
     type Output = G;
@@ -26,6 +26,7 @@ impl<G: Group> DoublyHomomorphicCommitment for PedersenCommitment<G> {
     }
 
     fn commit(k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {
+        validate_input_lengths(k, m)?;
         Ok(
             k.iter().zip(m)
                 .map(|(g, x)| g.mul(x))

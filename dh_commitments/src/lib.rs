@@ -1,14 +1,15 @@
 use algebra::{
     bytes::ToBytes,
-    serialize::CanonicalSerialize,
+//    serialize::CanonicalSerialize,
     groups::Group,
-    fields::Field,
+    fields::{Field, PrimeField},
+    curves::PairingEngine,
 };
 use std::{
     error::Error as ErrorTrait,
-    hash::Hash,
     fmt,
-    ops::{Add, Deref},
+    ops::{Add, MulAssign},
+    cmp::{PartialEq, Eq},
     io::{Result as IoResult, Write},
 };
 use rand::Rng;
@@ -41,12 +42,13 @@ impl fmt::Display for CommitmentError {
 }
 
 
-//TODO: support CanonicalSerialize + Add traits
+//TODO: support CanonicalSerialize
 
 pub trait DoublyHomomorphicCommitment {
-    type Message: ToBytes + Clone + Default + Eq + Add;
-    type Key: ToBytes + Clone + Default + Eq + Add;
-    type Output: ToBytes + Default + Eq + Add;
+    type Scalar: PrimeField;
+    type Message: ToBytes + Clone + Default + Eq + Add + MulAssign<Self::Scalar>;
+    type Key: ToBytes + Clone + Default + Eq + Add + MulAssign<Self::Scalar>;
+    type Output: ToBytes + Default + Eq + Add + MulAssign<Self::Scalar>;
 
     fn setup<R: Rng>(r: &mut R, size: usize) -> Result<Vec<Self::Key>, Error>;
 
@@ -78,4 +80,53 @@ pub fn structured_generators_scalar_power<G: Group>(num: usize, s: &G::ScalarFie
         pow_s *= s;
     }
     generators
+}
+
+// Helper for checking key and message length validity
+pub(crate) fn validate_input_lengths<K, M>(k: &[K], m: &[M]) -> Result<(), Error> {
+    if k.len() == m.len() {
+        Ok(())
+    } else {
+        Err(Box::new(CommitmentError::KeyMessageLengthInvalid(k.len(), m.len())))
+    }
+}
+
+// Helper wrapper type around target group commitment output in order to implement MulAssign
+//TODO: PairingEngine provides target group GT implementing Group for prime order P::Fr
+
+#[derive(Clone)]
+pub struct ExtensionFieldCommitment<P: PairingEngine>(P::Fqk);
+
+impl<P: PairingEngine> Default for ExtensionFieldCommitment<P> {
+    fn default() -> Self {
+        ExtensionFieldCommitment(<P::Fqk>::default())
+    }
+}
+
+impl<P: PairingEngine> PartialEq for ExtensionFieldCommitment<P> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq(&other.0)
+    }
+}
+
+impl<P: PairingEngine> Eq for ExtensionFieldCommitment<P> {}
+
+impl<P: PairingEngine> MulAssign<P::Fr> for ExtensionFieldCommitment<P> {
+    fn mul_assign(&mut self, rhs: P::Fr) {
+        *self = ExtensionFieldCommitment(self.0.pow(rhs.into_repr()))
+    }
+}
+
+impl<P: PairingEngine> Add<Self> for ExtensionFieldCommitment<P> {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        ExtensionFieldCommitment(self.0.add(&rhs.0))
+    }
+}
+
+impl<P: PairingEngine> ToBytes for ExtensionFieldCommitment<P> {
+    fn write<W: Write>(&self, mut writer: W) -> IoResult<()> {
+        self.0.write(&mut writer)
+    }
 }
