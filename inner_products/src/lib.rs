@@ -1,17 +1,11 @@
-use algebra::{
-    fields::Field,
-    curves::PairingEngine,
-    groups::Group,
-};
+use algebra::{curves::PairingEngine, fields::Field, groups::Group};
 use std::{
     error::Error as ErrorTrait,
+    fmt::{Display, Formatter, Result as FmtResult},
     marker::PhantomData,
-    fmt::{Display, Result as FmtResult, Formatter},
 };
 
-
 pub type Error = Box<dyn ErrorTrait>;
-
 
 #[derive(Debug)]
 pub enum InnerProductError {
@@ -27,20 +21,23 @@ impl ErrorTrait for InnerProductError {
 impl Display for InnerProductError {
     fn fmt(self: &Self, f: &mut Formatter<'_>) -> FmtResult {
         let msg = match self {
-            InnerProductError::MessageLengthInvalid(left, right) => format!("left length, right length: {}, {}", left, right),
+            InnerProductError::MessageLengthInvalid(left, right) => {
+                format!("left length, right length: {}, {}", left, right)
+            }
         };
         write!(f, "{}", msg)
     }
 }
-
 
 pub trait InnerProduct {
     type LeftMessage;
     type RightMessage;
     type Output;
 
-    fn inner_product(left: &[Self::LeftMessage], right: &[Self::RightMessage]) -> Result<Self::Output, Error>;
-
+    fn inner_product(
+        left: &[Self::LeftMessage],
+        right: &[Self::RightMessage],
+    ) -> Result<Self::Output, Error>;
 }
 
 pub struct PairingInnerProduct<P: PairingEngine> {
@@ -52,13 +49,21 @@ impl<P: PairingEngine> InnerProduct for PairingInnerProduct<P> {
     type RightMessage = P::G2Projective;
     type Output = P::Fqk;
 
-    fn inner_product(left: &[Self::LeftMessage], right: &[Self::RightMessage]) -> Result<Self::Output, Error> {
-        if left.len() != right.len() {return Err(Box::new(InnerProductError::MessageLengthInvalid(left.len(), right.len())))};
-        Ok(
-        left.iter().zip(right)
+    fn inner_product(
+        left: &[Self::LeftMessage],
+        right: &[Self::RightMessage],
+    ) -> Result<Self::Output, Error> {
+        if left.len() != right.len() {
+            return Err(Box::new(InnerProductError::MessageLengthInvalid(
+                left.len(),
+                right.len(),
+            )));
+        };
+        Ok(left
+            .iter()
+            .zip(right)
             .map(|(v, a)| P::pairing(v.clone().into(), a.clone().into()))
-            .product()
-        )
+            .product())
     }
 }
 
@@ -71,13 +76,17 @@ impl<G: Group> InnerProduct for MultiexponentiationInnerProduct<G> {
     type RightMessage = G::ScalarField;
     type Output = G;
 
-    fn inner_product(left: &[Self::LeftMessage], right: &[Self::RightMessage]) -> Result<Self::Output, Error> {
-        if left.len() != right.len() {return Err(Box::new(InnerProductError::MessageLengthInvalid(left.len(), right.len())))};
-        Ok(
-            left.iter().zip(right)
-                .map(|(g, x)| g.mul(x))
-                .sum()
-        )
+    fn inner_product(
+        left: &[Self::LeftMessage],
+        right: &[Self::RightMessage],
+    ) -> Result<Self::Output, Error> {
+        if left.len() != right.len() {
+            return Err(Box::new(InnerProductError::MessageLengthInvalid(
+                left.len(),
+                right.len(),
+            )));
+        };
+        Ok(left.iter().zip(right).map(|(g, x)| g.mul(x)).sum())
     }
 }
 
@@ -90,12 +99,16 @@ impl<F: Field> InnerProduct for ScalarInnerProduct<F> {
     type RightMessage = F;
     type Output = F;
 
-    fn inner_product(left: &[Self::LeftMessage], right: &[Self::RightMessage]) -> Result<Self::Output, Error> {
-        if left.len() != right.len() {return Err(Box::new(InnerProductError::MessageLengthInvalid(left.len(), right.len())))};
-        Ok(
-            left.iter().zip(right)
-                .map(|(x, y)| *x * y)
-                .sum()
-        )
+    fn inner_product(
+        left: &[Self::LeftMessage],
+        right: &[Self::RightMessage],
+    ) -> Result<Self::Output, Error> {
+        if left.len() != right.len() {
+            return Err(Box::new(InnerProductError::MessageLengthInvalid(
+                left.len(),
+                right.len(),
+            )));
+        };
+        Ok(left.iter().zip(right).map(|(x, y)| *x * y).sum())
     }
 }

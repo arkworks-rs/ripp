@@ -1,17 +1,10 @@
-use algebra::{
-    curves::PairingEngine,
-};
-use std::marker::PhantomData;
+use algebra::curves::PairingEngine;
 use rand::Rng;
+use std::marker::PhantomData;
 
-use crate::{
-    Error,
-    DoublyHomomorphicCommitment,
-    ExtensionFieldCommitment,
-    random_generators,
-};
+use crate::{random_generators, DoublyHomomorphicCommitment, Error, ExtensionFieldCommitment};
 
-use inner_products::{PairingInnerProduct, InnerProduct};
+use inner_products::{InnerProduct, PairingInnerProduct};
 
 pub struct AFGHOCommitment<P: PairingEngine> {
     _pair: PhantomData<P>,
@@ -20,8 +13,7 @@ pub struct AFGHOCommitment<P: PairingEngine> {
 pub struct AFGHOCommitmentG1<P: PairingEngine>(AFGHOCommitment<P>);
 pub struct AFGHOCommitmentG2<P: PairingEngine>(AFGHOCommitment<P>);
 
-impl<P: PairingEngine> DoublyHomomorphicCommitment for AFGHOCommitmentG1<P>
-{
+impl<P: PairingEngine> DoublyHomomorphicCommitment for AFGHOCommitmentG1<P> {
     type Scalar = P::Fr;
     type Message = P::G1Projective;
     type Key = P::G2Projective;
@@ -33,13 +25,12 @@ impl<P: PairingEngine> DoublyHomomorphicCommitment for AFGHOCommitmentG1<P>
 
     fn commit(k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {
         Ok(ExtensionFieldCommitment(
-            PairingInnerProduct::<P>::inner_product(m, k)?
+            PairingInnerProduct::<P>::inner_product(m, k)?,
         ))
     }
 }
 
-impl<P: PairingEngine> DoublyHomomorphicCommitment for AFGHOCommitmentG2<P>
-{
+impl<P: PairingEngine> DoublyHomomorphicCommitment for AFGHOCommitmentG2<P> {
     type Scalar = P::Fr;
     type Message = P::G2Projective;
     type Key = P::G1Projective;
@@ -51,7 +42,7 @@ impl<P: PairingEngine> DoublyHomomorphicCommitment for AFGHOCommitmentG2<P>
 
     fn commit(k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {
         Ok(ExtensionFieldCommitment(
-            PairingInnerProduct::<P>::inner_product(k, m)?
+            PairingInnerProduct::<P>::inner_product(k, m)?,
         ))
     }
 }
@@ -59,10 +50,7 @@ impl<P: PairingEngine> DoublyHomomorphicCommitment for AFGHOCommitmentG2<P>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use algebra::{
-        bls12_381::Bls12_381,
-        UniformRand,
-    };
+    use algebra::{bls12_381::Bls12_381, UniformRand};
     use rand::{rngs::StdRng, SeedableRng};
 
     type C1 = AFGHOCommitmentG1<Bls12_381>;
@@ -103,5 +91,3 @@ mod tests {
         assert!(C2::verify(&commit_keys, &message, &com).is_err());
     }
 }
-
-

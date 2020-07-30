@@ -8,12 +8,12 @@
 #![forbid(unsafe_code)]
 
 use algebra_core::{
-    PairingEngine, AffineCurve, ProjectiveCurve,
-    UniformRand, to_bytes, ToBytes, Field, msm::VariableBaseMSM, PrimeField, One
+    msm::VariableBaseMSM, to_bytes, AffineCurve, Field, One, PairingEngine, PrimeField,
+    ProjectiveCurve, ToBytes, UniformRand,
 };
+use digest::Digest;
 use rayon::prelude::*;
 use std::marker::PhantomData;
-use digest::Digest;
 
 /// Fiat-Shamir Rng
 pub mod rng;
@@ -39,7 +39,7 @@ impl<E: PairingEngine, D: Digest> SIPP<E, D> {
         a: &[E::G1Affine],
         b: &[E::G2Affine],
         r: &[E::Fr],
-        value: E::Fqk
+        value: E::Fqk,
     ) -> Result<Proof<E>, ()> {
         assert_eq!(a.len(), b.len());
         // Ensure the order of the input vectors is a power of 2
@@ -50,7 +50,11 @@ impl<E: PairingEngine, D: Digest> SIPP<E, D> {
         let mut proof_vec = Vec::new();
         // TODO(psi): should we also input a succinct bilinear group description to the rng?
         let mut rng = FiatShamirRng::<D>::from_seed(&to_bytes![a, b, r, value].unwrap());
-        let a = a.into_par_iter().zip(r).map(|(a, r)| a.mul(*r)).collect::<Vec<_>>();
+        let a = a
+            .into_par_iter()
+            .zip(r)
+            .map(|(a, r)| a.mul(*r))
+            .collect::<Vec<_>>();
         let mut a = E::G1Projective::batch_normalization_into_affine(&a);
         let mut b = b.to_vec();
 
@@ -68,24 +72,32 @@ impl<E: PairingEngine, D: Digest> SIPP<E, D> {
             rng.absorb(&to_bytes![z_l, z_r].unwrap());
             let x: E::Fr = u128::rand(&mut rng).into();
 
-            let a_proj = a_l.par_iter().zip(a_r).map(|(a_l, a_r)| {
-                let mut temp = a_r.mul(x);
-                temp.add_assign_mixed(a_l);
-                temp
-            }).collect::<Vec<_>>();
+            let a_proj = a_l
+                .par_iter()
+                .zip(a_r)
+                .map(|(a_l, a_r)| {
+                    let mut temp = a_r.mul(x);
+                    temp.add_assign_mixed(a_l);
+                    temp
+                })
+                .collect::<Vec<_>>();
             a = E::G1Projective::batch_normalization_into_affine(&a_proj);
 
             let x_inv = x.inverse().unwrap();
-            let b_proj = b_l.par_iter().zip(b_r).map(|(b_l, b_r)| {
-                let mut temp = b_r.mul(x_inv);
-                temp.add_assign_mixed(b_l);
-                temp
-            }).collect::<Vec<_>>();
+            let b_proj = b_l
+                .par_iter()
+                .zip(b_r)
+                .map(|(b_l, b_r)| {
+                    let mut temp = b_r.mul(x_inv);
+                    temp.add_assign_mixed(b_l);
+                    temp
+                })
+                .collect::<Vec<_>>();
             b = E::G2Projective::batch_normalization_into_affine(&b_proj);
         }
 
         Ok(Proof {
-            gt_elems: proof_vec
+            gt_elems: proof_vec,
         })
     }
 
@@ -95,7 +107,7 @@ impl<E: PairingEngine, D: Digest> SIPP<E, D> {
         b: &[E::G2Affine],
         r: &[E::Fr],
         claimed_value: E::Fqk,
-        proof: &Proof<E>
+        proof: &Proof<E>,
     ) -> Result<bool, ()> {
         // Ensure the order of the input vectors is a power of 2
         let length = a.len();
@@ -109,18 +121,29 @@ impl<E: PairingEngine, D: Digest> SIPP<E, D> {
         // TODO(psi): should we also input a succinct bilinear group description to the rng?
         let mut rng = FiatShamirRng::<D>::from_seed(&to_bytes![a, b, r, claimed_value].unwrap());
 
-        let x_s = proof.gt_elems.iter().map(|(z_l, z_r)| {
-            rng.absorb(&to_bytes![z_l, z_r].unwrap());
-            let x: E::Fr = u128::rand(&mut rng).into();
-            x
-        }).collect::<Vec<_>>();
+        let x_s = proof
+            .gt_elems
+            .iter()
+            .map(|(z_l, z_r)| {
+                rng.absorb(&to_bytes![z_l, z_r].unwrap());
+                let x: E::Fr = u128::rand(&mut rng).into();
+                x
+            })
+            .collect::<Vec<_>>();
 
         let mut x_invs = x_s.clone();
         algebra_core::batch_inversion(&mut x_invs);
 
-        let z_prime = claimed_value * &proof.gt_elems.par_iter().zip(&x_s).zip(&x_invs).map(|(((z_l, z_r), x), x_inv)| {
-            z_l.pow(x.into_repr()) * &z_r.pow(x_inv.into_repr())
-        }).reduce(|| E::Fqk::one(), |a, b| a * &b);
+        let z_prime = claimed_value
+            * &proof
+                .gt_elems
+                .par_iter()
+                .zip(&x_s)
+                .zip(&x_invs)
+                .map(|(((z_l, z_r), x), x_inv)| {
+                    z_l.pow(x.into_repr()) * &z_r.pow(x_inv.into_repr())
+                })
+                .reduce(|| E::Fqk::one(), |a, b| a * &b);
 
         let mut s: Vec<E::Fr> = vec![E::Fr::one(); length];
         let mut s_invs: Vec<E::Fr> = vec![E::Fr::one(); length];
@@ -134,8 +157,15 @@ impl<E: PairingEngine, D: Digest> SIPP<E, D> {
             }
         }
 
-        let s = s.into_iter().zip(r).map(|(x, r)| (x * r).into_repr()).collect::<Vec<_>>();
-        let s_invs = s_invs.iter().map(|x_inv| x_inv.into_repr()).collect::<Vec<_>>();
+        let s = s
+            .into_iter()
+            .zip(r)
+            .map(|(x, r)| (x * r).into_repr())
+            .collect::<Vec<_>>();
+        let s_invs = s_invs
+            .iter()
+            .map(|x_inv| x_inv.into_repr())
+            .collect::<Vec<_>>();
 
         let a_prime = VariableBaseMSM::multi_scalar_mul(&a, &s);
         let b_prime = VariableBaseMSM::multi_scalar_mul(&b, &s_invs);
@@ -152,7 +182,11 @@ pub fn product_of_pairings_with_coeffs<E: PairingEngine>(
     b: &[E::G2Affine],
     r: &[E::Fr],
 ) -> E::Fqk {
-    let a = a.into_par_iter().zip(r).map(|(a, r)| a.mul(*r)).collect::<Vec<_>>();
+    let a = a
+        .into_par_iter()
+        .zip(r)
+        .map(|(a, r)| a.mul(*r))
+        .collect::<Vec<_>>();
     let a = E::G1Projective::batch_normalization_into_affine(&a);
     let elements = a
         .par_iter()
@@ -160,7 +194,11 @@ pub fn product_of_pairings_with_coeffs<E: PairingEngine>(
         .map(|(a, b)| (E::G1Prepared::from(*a), E::G2Prepared::from(*b)))
         .collect::<Vec<_>>();
     let num_chunks = elements.len() / rayon::current_num_threads();
-    let num_chunks = if num_chunks == 0 { elements.len() } else { num_chunks };
+    let num_chunks = if num_chunks == 0 {
+        elements.len()
+    } else {
+        num_chunks
+    };
     let ml_result = elements
         .par_chunks(num_chunks)
         .map(E::miller_loop)
@@ -170,10 +208,7 @@ pub fn product_of_pairings_with_coeffs<E: PairingEngine>(
 
 /// Compute the product of pairings of `a` and `b`.
 #[must_use]
-pub fn product_of_pairings<E: PairingEngine>(
-    a: &[E::G1Affine],
-    b: &[E::G2Affine],
-) -> E::Fqk {
+pub fn product_of_pairings<E: PairingEngine>(a: &[E::G1Affine], b: &[E::G2Affine]) -> E::Fqk {
     let r = vec![E::Fr::one(); a.len()];
     product_of_pairings_with_coeffs::<E>(a, b, &r)
 }
@@ -181,7 +216,7 @@ pub fn product_of_pairings<E: PairingEngine>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use algebra::bls12_377::{Fr, G1Projective, G2Projective, Bls12_377};
+    use algebra::bls12_377::{Bls12_377, Fr, G1Projective, G2Projective};
     use blake2::Blake2s;
 
     #[test]
