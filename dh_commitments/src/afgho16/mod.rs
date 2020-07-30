@@ -2,7 +2,7 @@ use algebra::curves::PairingEngine;
 use rand::Rng;
 use std::marker::PhantomData;
 
-use crate::{random_generators, DoublyHomomorphicCommitment, Error, ExtensionFieldCommitment};
+use crate::{random_generators, DoublyHomomorphicCommitment, Error, ExtensionFieldElement};
 
 use inner_products::{InnerProduct, PairingInnerProduct};
 
@@ -17,14 +17,14 @@ impl<P: PairingEngine> DoublyHomomorphicCommitment for AFGHOCommitmentG1<P> {
     type Scalar = P::Fr;
     type Message = P::G1Projective;
     type Key = P::G2Projective;
-    type Output = ExtensionFieldCommitment<P>;
+    type Output = ExtensionFieldElement<P>;
 
     fn setup<R: Rng>(rng: &mut R, size: usize) -> Result<Vec<Self::Key>, Error> {
         Ok(random_generators(rng, size))
     }
 
     fn commit(k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {
-        Ok(ExtensionFieldCommitment(
+        Ok(ExtensionFieldElement(
             PairingInnerProduct::<P>::inner_product(m, k)?,
         ))
     }
@@ -34,14 +34,14 @@ impl<P: PairingEngine> DoublyHomomorphicCommitment for AFGHOCommitmentG2<P> {
     type Scalar = P::Fr;
     type Message = P::G2Projective;
     type Key = P::G1Projective;
-    type Output = ExtensionFieldCommitment<P>;
+    type Output = ExtensionFieldElement<P>;
 
     fn setup<R: Rng>(rng: &mut R, size: usize) -> Result<Vec<Self::Key>, Error> {
         Ok(random_generators(rng, size))
     }
 
     fn commit(k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {
-        Ok(ExtensionFieldCommitment(
+        Ok(ExtensionFieldElement(
             PairingInnerProduct::<P>::inner_product(k, m)?,
         ))
     }
