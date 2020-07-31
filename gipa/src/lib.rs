@@ -1,5 +1,6 @@
 use algebra::{bytes::ToBytes, fields::Field, to_bytes};
 use digest::Digest;
+use rand::{Rng};
 use std::{
     error::Error as ErrorTrait,
     fmt::{Display, Formatter, Result as FmtResult},
@@ -40,6 +41,12 @@ where
         Scalar = <Self::LMC as DoublyHomomorphicCommitment>::Scalar,
     >;
     type Proof;
+
+    fn setup<R: Rng>(rng: &mut R, size: usize) -> Result<(
+        Vec<<Self::LMC as DoublyHomomorphicCommitment>::Key>,
+        Vec<<Self::RMC as DoublyHomomorphicCommitment>::Key>,
+        <Self::IPC as DoublyHomomorphicCommitment>::Key,
+    ), Error>;
 
     fn prove(
         values: (
@@ -157,6 +164,14 @@ impl<IP, LMC, RMC, IPC, D> InnerProductCommitmentArgument for GIPA<IP, LMC, RMC,
     type RMC = RMC;
     type IPC = IPC;
     type Proof = GIPAProof<IP, LMC, RMC, IPC, D>;
+
+    fn setup<R: Rng>(rng: &mut R, size: usize) -> Result<(Vec<LMC::Key>, Vec<RMC::Key>, IPC::Key), Error> {
+        Ok((
+            LMC::setup(rng, size)?,
+            RMC::setup(rng, size)?,
+            IPC::setup(rng, 1)?.pop().unwrap(),
+        ))
+    }
 
     fn prove(
         values: (&[IP::LeftMessage], &[IP::RightMessage], &IP::Output),
@@ -519,24 +534,22 @@ mod tests {
         type PairingGIPA = GIPA<IP, GC1, GC2, IPC, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
-        let ck_a = GC1::setup(&mut rng, TEST_SIZE).unwrap();
-        let ck_b = GC2::setup(&mut rng, TEST_SIZE).unwrap();
-        let ck_t = IPC::setup(&mut rng, 1).unwrap();
+        let (ck_a, ck_b, ck_t) = PairingGIPA::setup(&mut rng, TEST_SIZE).unwrap();
         let m_a= random_generators(&mut rng, TEST_SIZE);
         let m_b= random_generators(&mut rng, TEST_SIZE);
         let com_a = GC1::commit(&ck_a, &m_a).unwrap();
         let com_b = GC2::commit(&ck_b, &m_b).unwrap();
         let t = vec![IP::inner_product(&m_a, &m_b).unwrap()];
-        let com_t = IPC::commit(&ck_t, &t).unwrap();
+        let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
 
         let proof = PairingGIPA::prove(
             (&m_a, &m_b, &t[0]),
-            (&ck_a, &ck_b, &ck_t[0]),
+            (&ck_a, &ck_b, &ck_t),
             (&com_a, &com_b, &com_t),
         ).unwrap();
 
         assert!(PairingGIPA::verify(
-            (&ck_a, &ck_b, &ck_t[0]),
+            (&ck_a, &ck_b, &ck_t),
             (&com_a, &com_b, &com_t),
             &proof,
         ).unwrap());
@@ -549,9 +562,7 @@ mod tests {
         type MultiExpGIPA = GIPA<IP, GC1, SC1, IPC, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
-        let ck_a = GC1::setup(&mut rng, TEST_SIZE).unwrap();
-        let ck_b = SC1::setup(&mut rng, TEST_SIZE).unwrap();
-        let ck_t = IPC::setup(&mut rng, 1).unwrap();
+        let (ck_a, ck_b, ck_t) = MultiExpGIPA::setup(&mut rng, TEST_SIZE).unwrap();
         let m_a= random_generators(&mut rng, TEST_SIZE);
         let mut m_b= Vec::new();
         for _ in 0..TEST_SIZE {
@@ -560,16 +571,16 @@ mod tests {
         let com_a = GC1::commit(&ck_a, &m_a).unwrap();
         let com_b = SC1::commit(&ck_b, &m_b).unwrap();
         let t = vec![IP::inner_product(&m_a, &m_b).unwrap()];
-        let com_t = IPC::commit(&ck_t, &t).unwrap();
+        let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
 
         let proof = MultiExpGIPA::prove(
             (&m_a, &m_b, &t[0]),
-            (&ck_a, &ck_b, &ck_t[0]),
+            (&ck_a, &ck_b, &ck_t),
             (&com_a, &com_b, &com_t),
         ).unwrap();
 
         assert!(MultiExpGIPA::verify(
-            (&ck_a, &ck_b, &ck_t[0]),
+            (&ck_a, &ck_b, &ck_t),
             (&com_a, &com_b, &com_t),
             &proof,
         ).unwrap());
@@ -583,9 +594,7 @@ mod tests {
         type ScalarGIPA = GIPA<IP, SC2, SC2, IPC, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
-        let ck_a = SC2::setup(&mut rng, TEST_SIZE).unwrap();
-        let ck_b = SC2::setup(&mut rng, TEST_SIZE).unwrap();
-        let ck_t = IPC::setup(&mut rng, 1).unwrap();
+        let (ck_a, ck_b, ck_t) = ScalarGIPA::setup(&mut rng, TEST_SIZE).unwrap();
         let mut m_a= Vec::new();
         let mut m_b= Vec::new();
         for _ in 0..TEST_SIZE {
@@ -595,16 +604,16 @@ mod tests {
         let com_a = SC2::commit(&ck_a, &m_a).unwrap();
         let com_b = SC2::commit(&ck_b, &m_b).unwrap();
         let t = vec![IP::inner_product(&m_a, &m_b).unwrap()];
-        let com_t = IPC::commit(&ck_t, &t).unwrap();
+        let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
 
         let proof = ScalarGIPA::prove(
             (&m_a, &m_b, &t[0]),
-            (&ck_a, &ck_b, &ck_t[0]),
+            (&ck_a, &ck_b, &ck_t),
             (&com_a, &com_b, &com_t),
         ).unwrap();
 
         assert!(ScalarGIPA::verify(
-            (&ck_a, &ck_b, &ck_t[0]),
+            (&ck_a, &ck_b, &ck_t),
             (&com_a, &com_b, &com_t),
             &proof,
         ).unwrap());
