@@ -1,6 +1,8 @@
-use algebra::{curves::PairingEngine, fields::Field, groups::Group};
+use algebra::{curves::PairingEngine, fields::{Field, PrimeField}, groups::Group, bytes::ToBytes};
 use std::{
     error::Error as ErrorTrait,
+    ops::{MulAssign, Add, Mul},
+    io::{Result as IoResult, Write},
     fmt::{Display, Formatter, Result as FmtResult},
     marker::PhantomData,
 };
@@ -48,7 +50,7 @@ pub struct PairingInnerProduct<P: PairingEngine> {
 impl<P: PairingEngine> InnerProduct for PairingInnerProduct<P> {
     type LeftMessage = P::G1Projective;
     type RightMessage = P::G2Projective;
-    type Output = P::Fqk;
+    type Output = ExtensionFieldElement<P>;
 
     fn inner_product(
         left: &[Self::LeftMessage],
@@ -60,11 +62,13 @@ impl<P: PairingEngine> InnerProduct for PairingInnerProduct<P> {
                 right.len(),
             )));
         };
-        Ok(left
+        Ok(ExtensionFieldElement(
+            left
             .iter()
             .zip(right)
             .map(|(v, a)| P::pairing(v.clone().into(), a.clone().into()))
-            .product())
+            .product()
+        ))
     }
 }
 
@@ -113,5 +117,46 @@ impl<F: Field> InnerProduct for ScalarInnerProduct<F> {
             )));
         };
         Ok(left.iter().zip(right).map(|(x, y)| *x * y).sum())
+    }
+}
+
+
+// Helper wrapper type around target group commitment output in order to implement MulAssign (needed for dh_commitments)
+//TODO: PairingEngine provides target group GT implementing Group for prime order P::Fr
+
+#[derive(Clone)]
+pub struct ExtensionFieldElement<P: PairingEngine>(pub P::Fqk);
+
+impl<P: PairingEngine> Default for ExtensionFieldElement<P> {
+    fn default() -> Self {
+        ExtensionFieldElement(<P::Fqk>::default())
+    }
+}
+
+impl<P: PairingEngine> PartialEq for ExtensionFieldElement<P> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq(&other.0)
+    }
+}
+
+impl<P: PairingEngine> Eq for ExtensionFieldElement<P> {}
+
+impl<P: PairingEngine> MulAssign<P::Fr> for ExtensionFieldElement<P> {
+    fn mul_assign(&mut self, rhs: P::Fr) {
+        *self = ExtensionFieldElement(self.0.pow(rhs.into_repr()))
+    }
+}
+
+impl<P: PairingEngine> Add<Self> for ExtensionFieldElement<P> {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        ExtensionFieldElement(<P::Fqk as Mul>::mul(self.0, rhs.0))
+    }
+}
+
+impl<P: PairingEngine> ToBytes for ExtensionFieldElement<P> {
+    fn write<W: Write>(&self, mut writer: W) -> IoResult<()> {
+        self.0.write(&mut writer)
     }
 }

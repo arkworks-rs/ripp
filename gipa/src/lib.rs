@@ -177,7 +177,7 @@ impl<IP, LMC, RMC, IPC, D> InnerProductCommitmentArgument for GIPA<IP, LMC, RMC,
             return Err(Box::new(InnerProductArgumentError::InnerProductInvalid));
         }
 
-        let (proof, _) = Self::prove(
+        let (proof, _) = Self::prove_with_aux(
             (values.0, values.1),
             (ck.0, ck.1, &vec![ck.2.clone()]),
         )?;
@@ -193,11 +193,12 @@ impl<IP, LMC, RMC, IPC, D> InnerProductCommitmentArgument for GIPA<IP, LMC, RMC,
         if ck.0.len().count_ones() != 1  || ck.0.len() != ck.1.len() {  // Power of 2 length
             return Err(Box::new(InnerProductArgumentError::MessageLengthInvalid(ck.0.len(), ck.1.len())));
         }
-
-        Self::verify(
+        let mut clone= Clone::clone(proof);
+        Self::recursive_verify(
             (ck.0, ck.1, &vec![ck.2.clone()]),
             com,
-            proof,
+            &mut clone,
+            &Default::default(),
         )
     }
 
@@ -221,38 +222,21 @@ where
     RMC::Output: MulAssign<LMC::Scalar>,
     IPC::Output: MulAssign<LMC::Scalar>,
 {
-    pub fn prove(
+    pub fn prove_with_aux(
         values: (&[IP::LeftMessage], &[IP::RightMessage]),
         ck: (&[LMC::Key], &[RMC::Key], &[IPC::Key]),
     ) -> Result<(GIPAProof<IP, LMC, RMC, IPC, D>, GIPAAux<IP, LMC, RMC, IPC, D>), Error> {
-        let (mut r_commitment_steps, r_base, mut r_transcript) = Self::recursive_prove(
+        let (r_commitment_steps, r_base, r_transcript) = Self::recursive_prove(
             values,
             ck,
             &Default::default(),
         )?;
-        //r_commitment_steps.reverse();
-        //r_transcript.reverse();
 
         Ok((
             GIPAProof { r_commitment_steps, r_base, _gipa: PhantomData },
             GIPAAux { r_transcript, _gipa: PhantomData },
          ))
     }
-
-    pub fn verify(
-        ck: (&[LMC::Key], &[RMC::Key], &[IPC::Key]),
-        com: (&LMC::Output, &RMC::Output, &IPC::Output),
-        proof: &GIPAProof<IP, LMC, RMC, IPC, D>,
-    ) -> Result<bool, Error> {
-        let mut clone= Clone::clone(proof);
-        Self::recursive_verify(
-            ck,
-            com,
-            &mut clone,
-            &Default::default(),
-        )
-    }
-
 
     // Returns vector of recursive commitments and transcripts in reverse order
     fn recursive_prove(
@@ -301,10 +285,11 @@ where
                 );
 
                 // Fiat-Shamir challenge
-                let counter_nonce: usize = 0;
+                let mut counter_nonce: usize = 0;
                 let (c, c_inv) = loop {
                     let mut hash_input = Vec::new();
                     hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
+                    //TODO: Should use CanonicalSerialize instead of ToBytes
                     hash_input.extend_from_slice(&to_bytes![
                         transcript, com_1.0, com_1.1, com_1.2, com_2.0, com_2.1, com_2.2
                     ]?);
@@ -313,6 +298,7 @@ where
                             break (c, c_inv);
                         }
                     };
+                    counter_nonce += 1;
                 };
 
                 // Set up values for next step of recursion
@@ -381,7 +367,7 @@ where
             2..=usize::MAX if ck_a.len().count_ones() == 1 => { // recursive step
                 // Fiat-Shamir challenge
                 let (com_1, com_2) = proof.r_commitment_steps.pop().unwrap();
-                let counter_nonce: usize = 0;
+                let mut counter_nonce: usize = 0;
                 let (c, c_inv) = loop {
                     let mut hash_input = Vec::new();
                     hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
@@ -393,7 +379,9 @@ where
                             break (c, c_inv);
                         }
                     };
+                    counter_nonce += 1;
                 };
+
                 let split = ck_a.len() / 2;
                 let ck_a_1 = &ck_a[..split];
                 let ck_a_2 = &ck_a[split..];
@@ -490,4 +478,136 @@ impl Display for InnerProductArgumentError {
         };
         write!(f, "{}", msg)
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use algebra::{
+        bls12_381::Bls12_381,
+        curves::PairingEngine,
+        UniformRand,
+    };
+    use rand::{rngs::StdRng, SeedableRng};
+    use blake2::Blake2b;
+
+    use dh_commitments::{
+        pedersen::PedersenCommitment,
+        afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
+        identity::IdentityCommitment,
+        random_generators,
+    };
+    use inner_products::{
+        InnerProduct,
+        PairingInnerProduct,
+        MultiexponentiationInnerProduct,
+        ScalarInnerProduct,
+        ExtensionFieldElement,
+    };
+
+
+    type GC1 = AFGHOCommitmentG1<Bls12_381>;
+    type GC2 = AFGHOCommitmentG2<Bls12_381>;
+    type SC1 = PedersenCommitment<<Bls12_381 as PairingEngine>::G1Projective>;
+    type SC2 = PedersenCommitment<<Bls12_381 as PairingEngine>::G2Projective>;
+    const TEST_SIZE: usize = 8;
+
+    #[test]
+    fn pairing_inner_product_test() {
+        type IP = PairingInnerProduct<Bls12_381>;
+        type IPC = IdentityCommitment<ExtensionFieldElement<Bls12_381>, <Bls12_381 as PairingEngine>::Fr>;
+        type PairingGIPA = GIPA<IP, GC1, GC2, IPC, Blake2b>;
+
+        let mut rng = StdRng::seed_from_u64(0u64);
+        let ck_a = GC1::setup(&mut rng, TEST_SIZE).unwrap();
+        let ck_b = GC2::setup(&mut rng, TEST_SIZE).unwrap();
+        let ck_t = IPC::setup(&mut rng, 1).unwrap();
+        let m_a= random_generators(&mut rng, TEST_SIZE);
+        let m_b= random_generators(&mut rng, TEST_SIZE);
+        let com_a = GC1::commit(&ck_a, &m_a).unwrap();
+        let com_b = GC2::commit(&ck_b, &m_b).unwrap();
+        let t = vec![IP::inner_product(&m_a, &m_b).unwrap()];
+        let com_t = IPC::commit(&ck_t, &t).unwrap();
+
+        let proof = PairingGIPA::prove(
+            (&m_a, &m_b, &t[0]),
+            (&ck_a, &ck_b, &ck_t[0]),
+            (&com_a, &com_b, &com_t),
+        ).unwrap();
+
+        assert!(PairingGIPA::verify(
+            (&ck_a, &ck_b, &ck_t[0]),
+            (&com_a, &com_b, &com_t),
+            &proof,
+        ).unwrap());
+    }
+
+    #[test]
+    fn multiexponentiation_inner_product_test() {
+        type IP = MultiexponentiationInnerProduct<<Bls12_381 as PairingEngine>::G1Projective>;
+        type IPC = IdentityCommitment<<Bls12_381 as PairingEngine>::G1Projective, <Bls12_381 as PairingEngine>::Fr>;
+        type MultiExpGIPA = GIPA<IP, GC1, SC1, IPC, Blake2b>;
+
+        let mut rng = StdRng::seed_from_u64(0u64);
+        let ck_a = GC1::setup(&mut rng, TEST_SIZE).unwrap();
+        let ck_b = SC1::setup(&mut rng, TEST_SIZE).unwrap();
+        let ck_t = IPC::setup(&mut rng, 1).unwrap();
+        let m_a= random_generators(&mut rng, TEST_SIZE);
+        let mut m_b= Vec::new();
+        for _ in 0..TEST_SIZE {
+            m_b.push(<Bls12_381 as PairingEngine>::Fr::rand(&mut rng));
+        }
+        let com_a = GC1::commit(&ck_a, &m_a).unwrap();
+        let com_b = SC1::commit(&ck_b, &m_b).unwrap();
+        let t = vec![IP::inner_product(&m_a, &m_b).unwrap()];
+        let com_t = IPC::commit(&ck_t, &t).unwrap();
+
+        let proof = MultiExpGIPA::prove(
+            (&m_a, &m_b, &t[0]),
+            (&ck_a, &ck_b, &ck_t[0]),
+            (&com_a, &com_b, &com_t),
+        ).unwrap();
+
+        assert!(MultiExpGIPA::verify(
+            (&ck_a, &ck_b, &ck_t[0]),
+            (&com_a, &com_b, &com_t),
+            &proof,
+        ).unwrap());
+    }
+
+
+    #[test]
+    fn scalar_inner_product_test() {
+        type IP = ScalarInnerProduct<<Bls12_381 as PairingEngine>::Fr>;
+        type IPC = IdentityCommitment<<Bls12_381 as PairingEngine>::Fr, <Bls12_381 as PairingEngine>::Fr>;
+        type ScalarGIPA = GIPA<IP, SC2, SC2, IPC, Blake2b>;
+
+        let mut rng = StdRng::seed_from_u64(0u64);
+        let ck_a = SC2::setup(&mut rng, TEST_SIZE).unwrap();
+        let ck_b = SC2::setup(&mut rng, TEST_SIZE).unwrap();
+        let ck_t = IPC::setup(&mut rng, 1).unwrap();
+        let mut m_a= Vec::new();
+        let mut m_b= Vec::new();
+        for _ in 0..TEST_SIZE {
+            m_a.push(<Bls12_381 as PairingEngine>::Fr::rand(&mut rng));
+            m_b.push(<Bls12_381 as PairingEngine>::Fr::rand(&mut rng));
+        }
+        let com_a = SC2::commit(&ck_a, &m_a).unwrap();
+        let com_b = SC2::commit(&ck_b, &m_b).unwrap();
+        let t = vec![IP::inner_product(&m_a, &m_b).unwrap()];
+        let com_t = IPC::commit(&ck_t, &t).unwrap();
+
+        let proof = ScalarGIPA::prove(
+            (&m_a, &m_b, &t[0]),
+            (&ck_a, &ck_b, &ck_t[0]),
+            (&com_a, &com_b, &com_t),
+        ).unwrap();
+
+        assert!(ScalarGIPA::verify(
+            (&ck_a, &ck_b, &ck_t[0]),
+            (&com_a, &com_b, &com_t),
+            &proof,
+        ).unwrap());
+    }
+
 }
