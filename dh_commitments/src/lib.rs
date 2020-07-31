@@ -15,8 +15,8 @@ use std::{
 };
 
 pub mod afgho16;
-pub mod pedersen;
 pub mod identity;
+pub mod pedersen;
 
 pub type Error = Box<dyn ErrorTrait>;
 
@@ -25,9 +25,24 @@ pub type Error = Box<dyn ErrorTrait>;
 
 pub trait DoublyHomomorphicCommitment {
     type Scalar: PrimeField;
-    type Message: ToBytes + Clone + Default + Eq + Add<Self::Message, Output=Self::Message> + MulAssign<Self::Scalar>;
-    type Key: ToBytes + Clone + Default + Eq + Add<Self::Key, Output=Self::Key> + MulAssign<Self::Scalar>;
-    type Output: ToBytes + Clone + Default + Eq + Add<Self::Output, Output=Self::Output> + MulAssign<Self::Scalar>;
+    type Message: ToBytes
+        + Clone
+        + Default
+        + Eq
+        + Add<Self::Message, Output = Self::Message>
+        + MulAssign<Self::Scalar>;
+    type Key: ToBytes
+        + Clone
+        + Default
+        + Eq
+        + Add<Self::Key, Output = Self::Key>
+        + MulAssign<Self::Scalar>;
+    type Output: ToBytes
+        + Clone
+        + Default
+        + Eq
+        + Add<Self::Output, Output = Self::Output>
+        + MulAssign<Self::Scalar>;
 
     fn setup<R: Rng>(r: &mut R, size: usize) -> Result<Vec<Self::Key>, Error>;
 
