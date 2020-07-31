@@ -6,6 +6,7 @@ use crate::{random_generators, DoublyHomomorphicCommitment, Error};
 
 use inner_products::{InnerProduct, MultiexponentiationInnerProduct};
 
+#[derive(Clone)]
 pub struct PedersenCommitment<G: Group> {
     _group: PhantomData<G>,
 }
