@@ -1,11 +1,8 @@
-use algebra::{
-    fields::PrimeField,
-    bytes::ToBytes,
-};
+use algebra::{bytes::ToBytes, fields::PrimeField};
 use rand::Rng;
 use std::{
-    marker::PhantomData,
     io::{Result as IoResult, Write},
+    marker::PhantomData,
     ops::{Add, MulAssign},
 };
 
@@ -29,7 +26,7 @@ impl Add for IdentityKey {
     type Output = Self;
 
     fn add(self, _rhs: Self) -> Self::Output {
-        IdentityKey{}
+        IdentityKey {}
     }
 }
 
@@ -46,30 +43,30 @@ impl<T: ToBytes + Clone + Default + Eq> ToBytes for IdentityOutput<T> {
     }
 }
 
-impl<T: Add<T, Output=T> + Clone + Default + Eq> Add for IdentityOutput<T> {
+impl<T: Add<T, Output = T> + Clone + Default + Eq> Add for IdentityOutput<T> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
         IdentityOutput(
-            self.0.iter().zip(&rhs.0)
+            self.0
+                .iter()
+                .zip(&rhs.0)
                 .map(|(a, b)| a.clone() + b.clone())
-                .collect::<Vec<T>>()
+                .collect::<Vec<T>>(),
         )
     }
 }
 
 impl<T: MulAssign<F> + Clone + Default + Eq, F: Clone> MulAssign<F> for IdentityOutput<T> {
     fn mul_assign(&mut self, rhs: F) {
-        self.0.iter_mut()
-            .for_each(|a| a.mul_assign(rhs.clone()))
+        self.0.iter_mut().for_each(|a| a.mul_assign(rhs.clone()))
     }
 }
 
-
 impl<T, F> DoublyHomomorphicCommitment for IdentityCommitment<T, F>
 where
-T: ToBytes + Clone + Default + Eq + Add<T, Output=T> + MulAssign<F>,
-F: PrimeField,
+    T: ToBytes + Clone + Default + Eq + Add<T, Output = T> + MulAssign<F>,
+    F: PrimeField,
 {
     type Scalar = F;
     type Message = T;
@@ -77,7 +74,7 @@ F: PrimeField,
     type Output = IdentityOutput<T>;
 
     fn setup<R: Rng>(_rng: &mut R, size: usize) -> Result<Vec<Self::Key>, Error> {
-        Ok(vec![IdentityKey{}; size])
+        Ok(vec![IdentityKey {}; size])
     }
 
     fn commit(_k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {

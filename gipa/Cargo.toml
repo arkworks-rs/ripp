@@ -9,6 +9,7 @@ edition = "2018"
 [dependencies]
 algebra = {git = "https://github.com/nirvantyagi/zexe/", package = "algebra", features = [ "ed_on_bls12_381" ] }
 rand = { version = "0.7" }
+digest = { version = "0.9" }
 
 inner_products = { path = "../inner_products" }
 dh_commitments = { path = "../dh_commitments" }
