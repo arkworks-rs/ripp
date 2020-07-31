@@ -2,9 +2,9 @@ use algebra::curves::PairingEngine;
 use rand::Rng;
 use std::marker::PhantomData;
 
-use crate::{random_generators, DoublyHomomorphicCommitment, Error, ExtensionFieldElement};
+use crate::{random_generators, DoublyHomomorphicCommitment, Error};
 
-use inner_products::{InnerProduct, PairingInnerProduct};
+use inner_products::{InnerProduct, PairingInnerProduct, ExtensionFieldElement};
 
 #[derive(Clone)]
 pub struct AFGHOCommitment<P: PairingEngine> {
@@ -28,9 +28,7 @@ impl<P: PairingEngine> DoublyHomomorphicCommitment for AFGHOCommitmentG1<P> {
     }
 
     fn commit(k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {
-        Ok(ExtensionFieldElement(
-            PairingInnerProduct::<P>::inner_product(m, k)?,
-        ))
+        Ok(PairingInnerProduct::<P>::inner_product(m, k)?)
     }
 }
 
@@ -45,9 +43,7 @@ impl<P: PairingEngine> DoublyHomomorphicCommitment for AFGHOCommitmentG2<P> {
     }
 
     fn commit(k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {
-        Ok(ExtensionFieldElement(
-            PairingInnerProduct::<P>::inner_product(k, m)?,
-        ))
+        Ok(PairingInnerProduct::<P>::inner_product(k, m)?)
     }
 }
 
