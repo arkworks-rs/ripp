@@ -8,6 +8,7 @@ use std::{
 
 use crate::{DoublyHomomorphicCommitment, Error};
 
+#[derive(Clone)]
 pub struct IdentityCommitment<T, F: PrimeField> {
     _t: PhantomData<T>,
     _field: PhantomData<F>,

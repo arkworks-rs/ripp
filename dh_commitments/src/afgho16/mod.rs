@@ -6,11 +6,15 @@ use crate::{random_generators, DoublyHomomorphicCommitment, Error, ExtensionFiel
 
 use inner_products::{InnerProduct, PairingInnerProduct};
 
+#[derive(Clone)]
 pub struct AFGHOCommitment<P: PairingEngine> {
     _pair: PhantomData<P>,
 }
 
+#[derive(Clone)]
 pub struct AFGHOCommitmentG1<P: PairingEngine>(AFGHOCommitment<P>);
+
+#[derive(Clone)]
 pub struct AFGHOCommitmentG2<P: PairingEngine>(AFGHOCommitment<P>);
 
 impl<P: PairingEngine> DoublyHomomorphicCommitment for AFGHOCommitmentG1<P> {

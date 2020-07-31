@@ -23,7 +23,7 @@ pub type Error = Box<dyn ErrorTrait>;
 //TODO: support CanonicalSerialize
 //TODO: Using MulAssign instead of Mul because Group does not support Mul
 
-pub trait DoublyHomomorphicCommitment {
+pub trait DoublyHomomorphicCommitment: Clone {
     type Scalar: PrimeField;
     type Message: ToBytes
         + Clone

@@ -29,7 +29,7 @@ impl Display for InnerProductError {
     }
 }
 
-pub trait InnerProduct {
+pub trait InnerProduct: Copy {
     type LeftMessage;
     type RightMessage;
     type Output;
@@ -40,6 +40,7 @@ pub trait InnerProduct {
     ) -> Result<Self::Output, Error>;
 }
 
+#[derive(Copy, Clone)]
 pub struct PairingInnerProduct<P: PairingEngine> {
     _pair: PhantomData<P>,
 }
@@ -67,6 +68,7 @@ impl<P: PairingEngine> InnerProduct for PairingInnerProduct<P> {
     }
 }
 
+#[derive(Copy, Clone)]
 pub struct MultiexponentiationInnerProduct<G: Group> {
     _group: PhantomData<G>,
 }
@@ -90,6 +92,7 @@ impl<G: Group> InnerProduct for MultiexponentiationInnerProduct<G> {
     }
 }
 
+#[derive(Copy, Clone)]
 pub struct ScalarInnerProduct<F: Field> {
     _field: PhantomData<F>,
 }
