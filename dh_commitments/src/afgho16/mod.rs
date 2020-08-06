@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 
 use crate::{random_generators, DoublyHomomorphicCommitment, Error};
 
-use inner_products::{InnerProduct, PairingInnerProduct, ExtensionFieldElement};
+use inner_products::{ExtensionFieldElement, InnerProduct, PairingInnerProduct};
 
 #[derive(Clone)]
 pub struct AFGHOCommitment<P: PairingEngine> {

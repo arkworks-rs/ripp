@@ -1,10 +1,15 @@
-use algebra::{curves::PairingEngine, fields::{Field, PrimeField}, groups::Group, bytes::ToBytes};
+use algebra::{
+    bytes::ToBytes,
+    curves::PairingEngine,
+    fields::{Field, PrimeField},
+    groups::Group,
+};
 use std::{
     error::Error as ErrorTrait,
-    ops::{MulAssign, Add, Mul},
-    io::{Result as IoResult, Write},
     fmt::{Display, Formatter, Result as FmtResult},
+    io::{Result as IoResult, Write},
     marker::PhantomData,
+    ops::{Add, Mul, MulAssign},
 };
 
 pub type Error = Box<dyn ErrorTrait>;
@@ -63,11 +68,10 @@ impl<P: PairingEngine> InnerProduct for PairingInnerProduct<P> {
             )));
         };
         Ok(ExtensionFieldElement(
-            left
-            .iter()
-            .zip(right)
-            .map(|(v, a)| P::pairing(v.clone().into(), a.clone().into()))
-            .product()
+            left.iter()
+                .zip(right)
+                .map(|(v, a)| P::pairing(v.clone().into(), a.clone().into()))
+                .product(),
         ))
     }
 }
@@ -119,7 +123,6 @@ impl<F: Field> InnerProduct for ScalarInnerProduct<F> {
         Ok(left.iter().zip(right).map(|(x, y)| *x * y).sum())
     }
 }
-
 
 // Helper wrapper type around target group commitment output in order to implement MulAssign (needed for dh_commitments)
 //TODO: PairingEngine provides target group GT implementing Group for prime order P::Fr

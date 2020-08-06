@@ -1,5 +1,5 @@
 [package]
-name = "gipa"
+name = "ip_proofs"
 version = "0.1.0"
 authors = ["Nirvan Tyagi <nirvan.tyagi@gmail.com>"]
 edition = "2018"
@@ -8,9 +8,12 @@ edition = "2018"
 
 [dependencies]
 algebra = {git = "https://github.com/nirvantyagi/zexe/", package = "algebra", features = [ "ed_on_bls12_381" ] }
+ff_fft = {git = "https://github.com/nirvantyagi/zexe/", package = "ff-fft" }
 rand = { version = "0.7" }
 digest = { version = "0.9" }
 blake2 = { version = "0.9" }
+num-traits = { version = "0.2" }
+itertools = { version = "0.9" }
 
 inner_products = { path = "../inner_products" }
 dh_commitments = { path = "../dh_commitments" }

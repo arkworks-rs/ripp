@@ -4,7 +4,6 @@ use algebra::{
     //    serialize::CanonicalSerialize,
     groups::Group,
 };
-use num_traits::identities::One;
 use rand::Rng;
 use std::{
     cmp::Eq,
@@ -55,18 +54,4 @@ pub trait DoublyHomomorphicCommitment: Clone {
 
 pub fn random_generators<R: Rng, G: Group>(rng: &mut R, num: usize) -> Vec<G> {
     (0..num).map(|_| G::rand(rng)).collect()
-}
-
-pub fn structured_generators_scalar_power<G: Group>(
-    num: usize,
-    s: &G::ScalarField,
-    g: &G,
-) -> Vec<G> {
-    let mut generators = Vec::new();
-    let mut pow_s = G::ScalarField::one();
-    for _ in 0..num {
-        generators.push(g.mul(&pow_s));
-        pow_s *= s;
-    }
-    generators
 }
