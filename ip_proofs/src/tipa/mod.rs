@@ -23,6 +23,8 @@ use dh_commitments::{
 };
 use inner_products::{InnerProduct, MultiexponentiationInnerProduct};
 
+pub mod structured_scalar_message;
+
 //TODO: Could generalize: Don't need TIPA over G1 and G2, would work with G1 and G1 or over different pairing engines
 pub trait TIPACompatibleSetup {}
 
@@ -145,14 +147,14 @@ where
         // Prove final commitment keys are wellformed
         let (ck_a_final, ck_b_final) = aux.ck_base;
         let transcript = aux.r_transcript;
+        let transcript_inverse = transcript.iter().map(|x| x.inverse().unwrap()).collect();
 
         let ck_b_polynomial = DensePolynomial::from_coefficients_slice(
             &polynomial_coefficients_from_transcript(&transcript),
         );
-        let ck_a_polynomial =
-            DensePolynomial::from_coefficients_slice(&polynomial_coefficients_from_transcript(
-                &transcript.iter().map(|x| x.inverse().unwrap()).collect(),
-            ));
+        let ck_a_polynomial = DensePolynomial::from_coefficients_slice(
+            &polynomial_coefficients_from_transcript(&transcript_inverse)
+        );
         assert_eq!(srs.g_alpha_powers.len(), ck_a_polynomial.coeffs.len());
 
         // KZG challenge point
@@ -173,11 +175,15 @@ where
         };
 
         // Complete KZG proofs
+        //TODO: Doing the c power of 2 exponentiations twice
+        let ck_a_polynomial_c_eval = polynomial_evaluation_product_form_from_transcript(&transcript_inverse, &c);
+        let ck_b_polynomial_c_eval = polynomial_evaluation_product_form_from_transcript(&transcript, &c);
+
         let quotient_polynomial_a = &(&ck_a_polynomial
-            - &DensePolynomial::from_coefficients_vec(vec![ck_a_polynomial.evaluate(c)]))
+            - &DensePolynomial::from_coefficients_vec(vec![ck_a_polynomial_c_eval]))
             / &(DensePolynomial::from_coefficients_vec(vec![-c, LMC::Scalar::one()]));
         let quotient_polynomial_b = &(&ck_b_polynomial
-            - &DensePolynomial::from_coefficients_vec(vec![ck_b_polynomial.evaluate(c)]))
+            - &DensePolynomial::from_coefficients_vec(vec![ck_b_polynomial_c_eval]))
             / &(DensePolynomial::from_coefficients_vec(vec![-c, LMC::Scalar::one()]));
 
         let mut quotient_polynomial_a_coeffs = quotient_polynomial_a.coeffs;
@@ -210,18 +216,11 @@ where
     ) -> Result<bool, Error> {
 
         let (base_com, transcript) = GIPA::verify_recursive_challenge_transcript(com, &proof.gipa_proof)?;
+        let transcript_inverse = transcript.iter().map(|x| x.inverse().unwrap()).collect();
 
         // Verify commitment keys wellformed
         let (ck_a_final, ck_b_final) = &proof.final_ck;
         let (ck_a_proof, ck_b_proof) = &proof.final_ck_proof;
-
-        let ck_b_polynomial = DensePolynomial::from_coefficients_slice(
-            &polynomial_coefficients_from_transcript(&transcript),
-        );
-        let ck_a_polynomial =
-            DensePolynomial::from_coefficients_slice(&polynomial_coefficients_from_transcript(
-                &transcript.iter().map(|x| x.inverse().unwrap()).collect(),
-            ));
 
         // KZG challenge point
         let mut counter_nonce: usize = 0;
@@ -240,14 +239,18 @@ where
             counter_nonce += 1;
         };
 
+        //TODO: Doing the c power of 2 exponentiations twice
+        let ck_a_polynomial_c_eval = polynomial_evaluation_product_form_from_transcript(&transcript_inverse, &c);
+        let ck_b_polynomial_c_eval = polynomial_evaluation_product_form_from_transcript(&transcript, &c);
+
         let ck_a_valid =
             P::pairing(
                 v_srs.g.clone(),
-                ck_a_final.clone() - &v_srs.h.mul(ck_a_polynomial.evaluate(c)),
+                ck_a_final.clone() - &v_srs.h.mul(ck_a_polynomial_c_eval),
             ) == P::pairing(v_srs.g_beta.clone() - &v_srs.g.mul(c), ck_a_proof.clone());
         let ck_b_valid =
             P::pairing(
-                ck_b_final.clone() - &v_srs.g.mul(ck_b_polynomial.evaluate(c)),
+                ck_b_final.clone() - &v_srs.g.mul(ck_b_polynomial_c_eval),
                 v_srs.h.clone(),
             ) == P::pairing(ck_b_proof.clone(), v_srs.h_alpha.clone() - &v_srs.h.mul(c));
 
@@ -276,6 +279,16 @@ pub fn structured_generators_scalar_power<G: Group>(
         pow_s *= s;
     }
     generators
+}
+
+fn polynomial_evaluation_product_form_from_transcript<F: Field>(transcript: &Vec<F>, z: &F) -> F {
+    let mut power_2_z = z.clone() * z;
+    let mut product_form = Vec::new();
+    for x in transcript.iter() {
+        product_form.push(F::one() + (x.clone() * &power_2_z));
+        power_2_z *= power_2_z;
+    }
+    product_form.iter().product()
 }
 
 fn polynomial_coefficients_from_transcript<F: Field>(transcript: &Vec<F>) -> Vec<F> {
