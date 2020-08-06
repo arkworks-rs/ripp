@@ -15,23 +15,23 @@ pub struct IdentityCommitment<T, F: PrimeField> {
 }
 
 #[derive(Clone, Default, Eq, PartialEq)]
-pub struct IdentityKey;
+pub struct HomomorphicPlaceholderValue;
 
-impl ToBytes for IdentityKey {
+impl ToBytes for HomomorphicPlaceholderValue {
     fn write<W: Write>(&self, _writer: W) -> IoResult<()> {
         Ok(())
     }
 }
 
-impl Add for IdentityKey {
+impl Add for HomomorphicPlaceholderValue {
     type Output = Self;
 
     fn add(self, _rhs: Self) -> Self::Output {
-        IdentityKey {}
+        HomomorphicPlaceholderValue {}
     }
 }
 
-impl<T> MulAssign<T> for IdentityKey {
+impl<T> MulAssign<T> for HomomorphicPlaceholderValue {
     fn mul_assign(&mut self, _rhs: T) {}
 }
 
@@ -71,11 +71,11 @@ where
 {
     type Scalar = F;
     type Message = T;
-    type Key = IdentityKey;
+    type Key = HomomorphicPlaceholderValue;
     type Output = IdentityOutput<T>;
 
     fn setup<R: Rng>(_rng: &mut R, size: usize) -> Result<Vec<Self::Key>, Error> {
-        Ok(vec![IdentityKey {}; size])
+        Ok(vec![HomomorphicPlaceholderValue {}; size])
     }
 
     fn commit(_k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {
