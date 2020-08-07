@@ -36,7 +36,7 @@ impl<T> MulAssign<T> for HomomorphicPlaceholderValue {
 }
 
 #[derive(Clone, Default, Eq, PartialEq)]
-pub struct IdentityOutput<T: Clone + Default + Eq>(Vec<T>);
+pub struct IdentityOutput<T: Clone + Default + Eq>(pub Vec<T>);
 
 impl<T: ToBytes + Clone + Default + Eq> ToBytes for IdentityOutput<T> {
     fn write<W: Write>(&self, mut writer: W) -> IoResult<()> {

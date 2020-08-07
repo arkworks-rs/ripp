@@ -135,11 +135,21 @@ where
             IPC::setup(rng, 1)?.pop().unwrap(),
         ))
     }
-
     pub fn prove(
         srs: &SRS<P>,
         values: (&[IP::LeftMessage], &[IP::RightMessage]),
         ck: (&[LMC::Key], &[RMC::Key], &IPC::Key),
+    ) -> Result<TIPAProof<IP, LMC, RMC, IPC, P, D>, Error> {
+        Self::prove_with_srs_shift(srs, values, ck, &<P::Fr>::one())
+    }
+
+    // Shifts KZG proof for left message by scalar r (used for efficient composition with aggregation protocols)
+    // LMC commitment key should already be shifted before being passed as input
+    pub fn prove_with_srs_shift(
+        srs: &SRS<P>,
+        values: (&[IP::LeftMessage], &[IP::RightMessage]),
+        ck: (&[LMC::Key], &[RMC::Key], &IPC::Key),
+        r_shift: &P::Fr,
     ) -> Result<TIPAProof<IP, LMC, RMC, IPC, P, D>, Error> {
         // Run GIPA
         let (proof, aux) = <GIPA<IP, LMC, RMC, IPC, D>>::prove_with_aux(values, (ck.0, ck.1, &vec![ck.2.clone()]))?;
@@ -148,12 +158,13 @@ where
         let (ck_a_final, ck_b_final) = aux.ck_base;
         let transcript = aux.r_transcript;
         let transcript_inverse = transcript.iter().map(|x| x.inverse().unwrap()).collect();
+        let r_inverse = r_shift.inverse().unwrap();
 
         let ck_b_polynomial = DensePolynomial::from_coefficients_slice(
-            &polynomial_coefficients_from_transcript(&transcript),
+            &polynomial_coefficients_from_transcript(&transcript, &<P::Fr>::one()),
         );
         let ck_a_polynomial = DensePolynomial::from_coefficients_slice(
-            &polynomial_coefficients_from_transcript(&transcript_inverse)
+            &polynomial_coefficients_from_transcript(&transcript_inverse, &r_inverse)
         );
         assert_eq!(srs.g_alpha_powers.len(), ck_a_polynomial.coeffs.len());
 
@@ -175,9 +186,8 @@ where
         };
 
         // Complete KZG proofs
-        //TODO: Doing the c power of 2 exponentiations twice
-        let ck_a_polynomial_c_eval = polynomial_evaluation_product_form_from_transcript(&transcript_inverse, &c);
-        let ck_b_polynomial_c_eval = polynomial_evaluation_product_form_from_transcript(&transcript, &c);
+        let ck_a_polynomial_c_eval = polynomial_evaluation_product_form_from_transcript(&transcript_inverse, &c, &r_inverse);
+        let ck_b_polynomial_c_eval = polynomial_evaluation_product_form_from_transcript(&transcript, &c, &<P::Fr>::one());
 
         let quotient_polynomial_a = &(&ck_a_polynomial
             - &DensePolynomial::from_coefficients_vec(vec![ck_a_polynomial_c_eval]))
@@ -214,6 +224,16 @@ where
         com: (&LMC::Output, &RMC::Output, &IPC::Output),
         proof: &TIPAProof<IP, LMC, RMC, IPC, P, D>,
     ) -> Result<bool, Error> {
+        Self::verify_with_srs_shift(v_srs, ck_t, com, proof, &<P::Fr>::one())
+    }
+
+    pub fn verify_with_srs_shift(
+        v_srs: &VerifierSRS<P>,
+        ck_t: &IPC::Key,
+        com: (&LMC::Output, &RMC::Output, &IPC::Output),
+        proof: &TIPAProof<IP, LMC, RMC, IPC, P, D>,
+        r_shift: &P::Fr,
+    ) -> Result<bool, Error> {
 
         let (base_com, transcript) = GIPA::verify_recursive_challenge_transcript(com, &proof.gipa_proof)?;
         let transcript_inverse = transcript.iter().map(|x| x.inverse().unwrap()).collect();
@@ -239,9 +259,8 @@ where
             counter_nonce += 1;
         };
 
-        //TODO: Doing the c power of 2 exponentiations twice
-        let ck_a_polynomial_c_eval = polynomial_evaluation_product_form_from_transcript(&transcript_inverse, &c);
-        let ck_b_polynomial_c_eval = polynomial_evaluation_product_form_from_transcript(&transcript, &c);
+        let ck_a_polynomial_c_eval = polynomial_evaluation_product_form_from_transcript(&transcript_inverse, &c, &r_shift.inverse().unwrap());
+        let ck_b_polynomial_c_eval = polynomial_evaluation_product_form_from_transcript(&transcript, &c, &<P::Fr>::one());
 
         let ck_a_valid =
             P::pairing(
@@ -281,22 +300,24 @@ pub fn structured_generators_scalar_power<G: Group>(
     generators
 }
 
-fn polynomial_evaluation_product_form_from_transcript<F: Field>(transcript: &Vec<F>, z: &F) -> F {
-    let mut power_2_z = z.clone() * z;
+fn polynomial_evaluation_product_form_from_transcript<F: Field>(transcript: &Vec<F>, z: &F, r_shift: &F) -> F {
+    let mut power_2_zr = (z.clone() * z) * r_shift;
     let mut product_form = Vec::new();
     for x in transcript.iter() {
-        product_form.push(F::one() + (x.clone() * &power_2_z));
-        power_2_z *= power_2_z;
+        product_form.push(F::one() + (x.clone() * &power_2_zr));
+        power_2_zr *= power_2_zr;
     }
     product_form.iter().product()
 }
 
-fn polynomial_coefficients_from_transcript<F: Field>(transcript: &Vec<F>) -> Vec<F> {
+fn polynomial_coefficients_from_transcript<F: Field>(transcript: &Vec<F>, r_shift: &F) -> Vec<F> {
     let mut coefficients = vec![F::one()];
+    let mut power_2_r = r_shift.clone();
     for (i, x) in transcript.iter().enumerate() {
         for j in 0..(2_usize).pow(i as u32) {
-            coefficients.push(coefficients[j].mul(x));
+            coefficients.push(coefficients[j] * &(x.clone() * &power_2_r));
         }
+        power_2_r *= power_2_r;
     }
     // Interleave with 0 coefficients
     coefficients
@@ -323,6 +344,7 @@ mod tests {
         ExtensionFieldElement, InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct,
         ScalarInnerProduct,
     };
+    use crate::tipa::structured_scalar_message::structured_scalar_power;
 
     type GC1 = AFGHOCommitmentG1<Bls12_381>;
     type GC2 = AFGHOCommitmentG2<Bls12_381>;
@@ -428,4 +450,50 @@ mod tests {
             ScalarTIPA::verify(&v_srs, &ck_t, (&com_a, &com_b, &com_t), &proof).unwrap()
         );
     }
+
+    #[test]
+    fn pairing_inner_product_with_srs_shift_test() {
+        type IP = PairingInnerProduct<Bls12_381>;
+        type IPC =
+        IdentityCommitment<ExtensionFieldElement<Bls12_381>, <Bls12_381 as PairingEngine>::Fr>;
+        type PairingTIPA = TIPA<IP, GC1, GC2, IPC, Bls12_381, Blake2b>;
+
+        let mut rng = StdRng::seed_from_u64(0u64);
+        let (srs, ck_t) = PairingTIPA::setup(&mut rng, TEST_SIZE).unwrap();
+        let (ck_a, ck_b) = srs.get_commitment_keys();
+        let v_srs = srs.get_verifier_key();
+
+        let m_a = random_generators(&mut rng, TEST_SIZE);
+        let m_b = random_generators(&mut rng, TEST_SIZE);
+        let com_a = GC1::commit(&ck_a, &m_a).unwrap();
+        let com_b = GC2::commit(&ck_b, &m_b).unwrap();
+
+        let r_scalar = <<Bls12_381 as PairingEngine>::Fr>::rand(&mut rng);
+        let r_vec = structured_scalar_power(TEST_SIZE, &r_scalar);
+        let m_a_r = m_a.iter().zip(&r_vec).map(|(a, r)| a.mul(r)).collect::<Vec<<Bls12_381 as PairingEngine>::G1Projective>>();
+        let ck_a_r = ck_a.iter()
+            .zip(&r_vec)
+            .map(|(ck, r)| ck.mul(&r.inverse().unwrap()))
+            .collect::<Vec<<Bls12_381 as PairingEngine>::G2Projective>>();
+
+        let t = vec![IP::inner_product(&m_a_r, &m_b).unwrap()];
+        let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
+
+        assert_eq!(
+            com_a,
+            IP::inner_product(&m_a_r, &ck_a_r).unwrap()
+        );
+
+        let proof = PairingTIPA::prove_with_srs_shift(
+            &srs,
+            (&m_a_r, &m_b),
+            (&ck_a_r, &ck_b, &ck_t),
+            &r_scalar,
+        ).unwrap();
+
+        assert!(
+            PairingTIPA::verify_with_srs_shift(&v_srs, &ck_t, (&com_a, &com_b, &com_t), &proof, &r_scalar).unwrap()
+        );
+    }
+
 }

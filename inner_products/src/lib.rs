@@ -127,7 +127,7 @@ impl<F: Field> InnerProduct for ScalarInnerProduct<F> {
 // Helper wrapper type around target group commitment output in order to implement MulAssign (needed for dh_commitments)
 //TODO: PairingEngine provides target group GT implementing Group for prime order P::Fr
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ExtensionFieldElement<P: PairingEngine>(pub P::Fqk);
 
 impl<P: PairingEngine> Default for ExtensionFieldElement<P> {
