@@ -7,7 +7,10 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-algebra = {git = "https://github.com/nirvantyagi/zexe/", package = "algebra", features = [ "ed_on_bls12_381", "bls12_381" ] }
+algebra = {git = "https://github.com/scipr-lab/zexe/", package = "algebra" }
 rand = { version = "0.7" }
 
 inner_products = { path = "../inner_products" }
+
+[dev-dependencies]
+algebra = {git = "https://github.com/scipr-lab/zexe/", package = "algebra", features = [ "ed_on_bls12_381", "bls12_381" ] }

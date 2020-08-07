@@ -7,13 +7,21 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-algebra = {git = "https://github.com/nirvantyagi/zexe/", package = "algebra", features = [ "ed_on_bls12_381" ] }
-ff_fft = {git = "https://github.com/nirvantyagi/zexe/", package = "ff-fft" }
+algebra = {git = "https://github.com/scipr-lab/zexe/", package = "algebra" }
+ff_fft = {git = "https://github.com/scipr-lab/zexe/", package = "ff-fft" }
 rand = { version = "0.7" }
 digest = { version = "0.9" }
-blake2 = { version = "0.9" }
 num-traits = { version = "0.2" }
 itertools = { version = "0.9" }
 
 inner_products = { path = "../inner_products" }
 dh_commitments = { path = "../dh_commitments" }
+
+[dev-dependencies]
+algebra = {git = "https://github.com/scipr-lab/zexe/", package = "algebra", features = [ "ed_on_bls12_381", "bls12_381" ] }
+groth16 = {git = "https://github.com/scipr-lab/zexe/", package = "groth16" }
+blake2 = { version = "0.9" }
+
+[[example]]
+name = "groth16_aggregation"
+path = "examples/groth16_aggregation/example.rs"
