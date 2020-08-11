@@ -1,20 +1,15 @@
-use algebra::{
-    curves::{PairingEngine},
-    fields::{Field},
-};
+use algebra::{curves::PairingEngine, fields::Field};
 use digest::Digest;
-use num_traits::identities::{One};
-use std::{ops::MulAssign};
+use num_traits::identities::One;
+use std::ops::MulAssign;
 
 use crate::{
     gipa::GIPA,
-    tipa::{TIPA, TIPACompatibleSetup, TIPAProof, SRS, VerifierSRS},
+    tipa::{TIPACompatibleSetup, TIPAProof, VerifierSRS, SRS, TIPA},
     Error,
 };
-use dh_commitments::{
-    DoublyHomomorphicCommitment,
-};
-use inner_products::{InnerProduct};
+use dh_commitments::DoublyHomomorphicCommitment;
+use inner_products::InnerProduct;
 
 //TODO: Properly generalize the non-committed message approach of SIPP and MIPP to GIPA
 //TODO: Structured message is a special case of the non-committed message and does not rely on TIPA
@@ -23,53 +18,49 @@ use inner_products::{InnerProduct};
 // TODO: Currently implemented by completely reusing TIPA, which means wasted prover and verifier effort on B
 
 pub struct TIPAWithSSMProof<IP, LMC, RMC, IPC, P, D>
-    where
-        D: Digest,
-        P: PairingEngine,
-        IP: InnerProduct<
-            LeftMessage = LMC::Message,
-            RightMessage = RMC::Message,
-            Output = IPC::Message,
-        >,
-        LMC: DoublyHomomorphicCommitment + TIPACompatibleSetup,
-        RMC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar, Message = P::Fr> + TIPACompatibleSetup,
-        IPC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar>,
-        RMC::Message: MulAssign<LMC::Scalar>,
-        IPC::Message: MulAssign<LMC::Scalar>,
-        RMC::Key: MulAssign<LMC::Scalar>,
-        IPC::Key: MulAssign<LMC::Scalar>,
-        RMC::Output: MulAssign<LMC::Scalar>,
-        IPC::Output: MulAssign<LMC::Scalar>,
+where
+    D: Digest,
+    P: PairingEngine,
+    IP: InnerProduct<
+        LeftMessage = LMC::Message,
+        RightMessage = RMC::Message,
+        Output = IPC::Message,
+    >,
+    LMC: DoublyHomomorphicCommitment + TIPACompatibleSetup,
+    RMC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar, Message = P::Fr> + TIPACompatibleSetup,
+    IPC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar>,
+    RMC::Message: MulAssign<LMC::Scalar>,
+    IPC::Message: MulAssign<LMC::Scalar>,
+    RMC::Key: MulAssign<LMC::Scalar>,
+    IPC::Key: MulAssign<LMC::Scalar>,
+    RMC::Output: MulAssign<LMC::Scalar>,
+    IPC::Output: MulAssign<LMC::Scalar>,
 {
     tipa_proof: TIPAProof<IP, LMC, RMC, IPC, P, D>,
     com_b: RMC::Output, //TODO: Needed because reusing TIPA
 }
 
-
-
 impl<IP, LMC, RMC, IPC, P, D> TIPA<IP, LMC, RMC, IPC, P, D>
-    where
-        D: Digest,
-        P: PairingEngine,
-        IP: InnerProduct<
-            LeftMessage = LMC::Message,
-            RightMessage = RMC::Message,
-            Output = IPC::Message,
-        >,
-        LMC: DoublyHomomorphicCommitment<Scalar = P::Fr, Key = P::G2Projective>
+where
+    D: Digest,
+    P: PairingEngine,
+    IP: InnerProduct<
+        LeftMessage = LMC::Message,
+        RightMessage = RMC::Message,
+        Output = IPC::Message,
+    >,
+    LMC: DoublyHomomorphicCommitment<Scalar = P::Fr, Key = P::G2Projective> + TIPACompatibleSetup,
+    RMC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar, Key = P::G1Projective, Message = P::Fr>
         + TIPACompatibleSetup,
-        RMC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar, Key = P::G1Projective, Message = P::Fr>
-        + TIPACompatibleSetup,
-        IPC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar>,
-        LMC::Message: MulAssign<P::Fr>,
-        RMC::Message: MulAssign<P::Fr>,
-        IPC::Message: MulAssign<P::Fr>,
-        IPC::Key: MulAssign<P::Fr>,
-        LMC::Output: MulAssign<P::Fr>,
-        RMC::Output: MulAssign<P::Fr>,
-        IPC::Output: MulAssign<P::Fr>,
+    IPC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar>,
+    LMC::Message: MulAssign<P::Fr>,
+    RMC::Message: MulAssign<P::Fr>,
+    IPC::Message: MulAssign<P::Fr>,
+    IPC::Key: MulAssign<P::Fr>,
+    LMC::Output: MulAssign<P::Fr>,
+    RMC::Output: MulAssign<P::Fr>,
+    IPC::Output: MulAssign<P::Fr>,
 {
-
     pub fn prove_with_structured_scalar_message(
         srs: &SRS<P>,
         values: (&[IP::LeftMessage], &[IP::RightMessage]),
@@ -88,11 +79,15 @@ impl<IP, LMC, RMC, IPC, P, D> TIPA<IP, LMC, RMC, IPC, P, D>
         scalar_b: &P::Fr,
         proof: &TIPAWithSSMProof<IP, LMC, RMC, IPC, P, D>,
     ) -> Result<bool, Error> {
-        let tipa_valid = TIPA::verify(v_srs, ck_t, (com.0, &proof.com_b, com.1), &proof.tipa_proof)?;
+        let tipa_valid =
+            TIPA::verify(v_srs, ck_t, (com.0, &proof.com_b, com.1), &proof.tipa_proof)?;
 
         // Check final scalar
         //TODO: repeating gathering of transcript from TIPA verify
-        let (_, transcript) = GIPA::verify_recursive_challenge_transcript((com.0, &proof.com_b, com.1), &proof.tipa_proof.gipa_proof)?;
+        let (_, transcript) = GIPA::verify_recursive_challenge_transcript(
+            (com.0, &proof.com_b, com.1),
+            &proof.tipa_proof.gipa_proof,
+        )?;
         let mut power_2_b = scalar_b.clone();
         let mut product_form = Vec::new();
         for x in transcript.iter() {
@@ -104,16 +99,12 @@ impl<IP, LMC, RMC, IPC, P, D> TIPA<IP, LMC, RMC, IPC, P, D>
 
         Ok(tipa_valid && final_b_valid)
     }
-
 }
 
-pub fn structured_scalar_power<F: Field>(
-    num: usize,
-    s: &F,
-) -> Vec<F> {
-    let mut powers= vec![F::one()];
+pub fn structured_scalar_power<F: Field>(num: usize, s: &F) -> Vec<F> {
+    let mut powers = vec![F::one()];
     for i in 1..num {
-        powers.push(powers[i-1] * s);
+        powers.push(powers[i - 1] * s);
     }
     powers
 }
@@ -126,15 +117,10 @@ mod tests {
     use rand::{rngs::StdRng, SeedableRng};
 
     use dh_commitments::{
-        afgho16::{AFGHOCommitmentG1},
-        identity::IdentityCommitment,
-        pedersen::PedersenCommitment,
+        afgho16::AFGHOCommitmentG1, identity::IdentityCommitment, pedersen::PedersenCommitment,
         random_generators,
     };
-    use inner_products::{
-        InnerProduct, MultiexponentiationInnerProduct,
-        ScalarInnerProduct,
-    };
+    use inner_products::{InnerProduct, MultiexponentiationInnerProduct, ScalarInnerProduct};
 
     type GC1 = AFGHOCommitmentG1<Bls12_381>;
     type SC1 = PedersenCommitment<<Bls12_381 as PairingEngine>::G1Projective>;
@@ -167,18 +153,23 @@ mod tests {
             (&m_a, &m_b),
             (&ck_a, &ck_b, &ck_t),
         )
-            .unwrap();
+        .unwrap();
 
-        assert!(
-            MultiExpTIPA::verify_with_structured_scalar_message(&v_srs, &ck_t, (&com_a, &com_t), &b, &proof).unwrap()
-        );
+        assert!(MultiExpTIPA::verify_with_structured_scalar_message(
+            &v_srs,
+            &ck_t,
+            (&com_a, &com_t),
+            &b,
+            &proof
+        )
+        .unwrap());
     }
 
     #[test]
     fn scalar_inner_product_test() {
         type IP = ScalarInnerProduct<<Bls12_381 as PairingEngine>::Fr>;
         type IPC =
-        IdentityCommitment<<Bls12_381 as PairingEngine>::Fr, <Bls12_381 as PairingEngine>::Fr>;
+            IdentityCommitment<<Bls12_381 as PairingEngine>::Fr, <Bls12_381 as PairingEngine>::Fr>;
         type ScalarTIPA = TIPA<IP, SC2, SC1, IPC, Bls12_381, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
@@ -200,10 +191,15 @@ mod tests {
             (&m_a, &m_b),
             (&ck_a, &ck_b, &ck_t),
         )
-            .unwrap();
+        .unwrap();
 
-        assert!(
-            ScalarTIPA::verify_with_structured_scalar_message(&v_srs, &ck_t, (&com_a, &com_t), &b, &proof).unwrap()
-        );
+        assert!(ScalarTIPA::verify_with_structured_scalar_message(
+            &v_srs,
+            &ck_t,
+            (&com_a, &com_t),
+            &b,
+            &proof
+        )
+        .unwrap());
     }
 }
