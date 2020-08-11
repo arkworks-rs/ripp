@@ -1,12 +1,9 @@
-use groth16_aggregation::{aggregate_proofs, verify_aggregate_proof};
 use dh_commitments::{
     afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
     identity::IdentityCommitment,
 };
-use inner_products::{
-    ExtensionFieldElement,
-    PairingInnerProduct,
-};
+use groth16_aggregation::{aggregate_proofs, verify_aggregate_proof};
+use inner_products::{ExtensionFieldElement, PairingInnerProduct};
 use ip_proofs::tipa::TIPA;
 
 use std::time::Instant;
@@ -19,12 +16,12 @@ use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisError};
 use r1cs_std::{
     alloc::AllocGadget,
     eq::EqGadget,
-    fields::{FieldGadget, fp::FpGadget},
+    fields::{fp::FpGadget, FieldGadget},
 };
 use zexe_cp::nizk::{groth16::Groth16, NIZK};
 
-use rand::{rngs::StdRng, SeedableRng};
 use blake2::Blake2b;
+use rand::{rngs::StdRng, SeedableRng};
 
 mod groth16_aggregation;
 
@@ -40,7 +37,10 @@ impl ConstraintSynthesizer<Fr> for TestCircuit {
         self,
         cs: &mut CS,
     ) -> Result<(), SynthesisError> {
-        let input_variables = Vec::<FpGadget<Fr>>::alloc_input(&mut cs.ns(|| "public_inputs"), || Ok(self.public_inputs.clone()))?;
+        let input_variables =
+            Vec::<FpGadget<Fr>>::alloc_input(&mut cs.ns(|| "public_inputs"), || {
+                Ok(self.public_inputs.clone())
+            })?;
         let sum = <FpGadget<Fr>>::alloc_input(&mut cs.ns(|| "sum_input"), || Ok(&self.public_sum))?;
         let witness = <FpGadget<Fr>>::alloc(&mut cs.ns(|| "witness"), || Ok(&self.witness_input))?;
 
@@ -55,22 +55,22 @@ impl ConstraintSynthesizer<Fr> for TestCircuit {
     }
 }
 
-
 fn main() {
     const NUM_PUBLIC_INPUTS: usize = 4;
     const NUM_PROOFS_TO_AGGREGATE: usize = 16;
     let mut rng = StdRng::seed_from_u64(0u64);
-    let mut generation_time= 0.0;
+    let mut generation_time = 0.0;
     let mut prover_time = 0.0;
     let mut verifier_time = 0.0;
 
     // Generate parameters for Groth16
-    let test_circuit = TestCircuit{
+    let test_circuit = TestCircuit {
         public_inputs: vec![Default::default(); NUM_PUBLIC_INPUTS],
         public_sum: Default::default(),
         witness_input: Default::default(),
     };
-    let parameters = Groth16::<Bls12_381, TestCircuit, [Fr]>::setup(test_circuit, &mut rng).unwrap();
+    let parameters =
+        Groth16::<Bls12_381, TestCircuit, [Fr]>::setup(test_circuit, &mut rng).unwrap();
 
     // Generate parameters for inner product aggregation
     type IP = PairingInnerProduct<Bls12_381>;
@@ -102,7 +102,12 @@ fn main() {
             witness_input: w,
         };
 
-        let proof = Groth16::<Bls12_381, TestCircuit, [Fr]>::prove(&parameters.0, circuit.clone(), &mut rng).unwrap();
+        let proof = Groth16::<Bls12_381, TestCircuit, [Fr]>::prove(
+            &parameters.0,
+            circuit.clone(),
+            &mut rng,
+        )
+        .unwrap();
         proofs.push(proof);
         statements.push(statement);
 
@@ -124,7 +129,8 @@ fn main() {
         &parameters.0.vk,
         &statements,
         &aggregate_proof,
-    ).unwrap();
+    )
+    .unwrap();
     verifier_time += (start.elapsed().as_millis() as f64) / 1_000.0;
     assert!(result);
 
