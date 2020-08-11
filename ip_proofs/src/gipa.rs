@@ -313,10 +313,7 @@ where
     pub fn verify_recursive_challenge_transcript(
         com: (&LMC::Output, &RMC::Output, &IPC::Output),
         proof: &GIPAProof<IP, LMC, RMC, IPC, D>,
-        ) -> Result<(
-            (LMC::Output, RMC::Output, IPC::Output),
-            Vec<LMC::Scalar>,
-        ), Error> {
+    ) -> Result<((LMC::Output, RMC::Output, IPC::Output), Vec<LMC::Scalar>), Error> {
         let mut clone = Clone::clone(proof);
         Self::_verify_recursive_challenges(com, &mut clone, &Default::default())
     }
@@ -325,10 +322,7 @@ where
         com: (&LMC::Output, &RMC::Output, &IPC::Output),
         proof: &mut GIPAProof<IP, LMC, RMC, IPC, D>,
         transcript: &LMC::Scalar,
-    ) -> Result<(
-        (LMC::Output, RMC::Output, IPC::Output),
-        Vec<LMC::Scalar>,
-    ), Error> {
+    ) -> Result<((LMC::Output, RMC::Output, IPC::Output), Vec<LMC::Scalar>), Error> {
         let (com_a, com_b, com_t) = com;
         match proof.r_commitment_steps.len() {
             0 => Ok(((com_a.clone(), com_b.clone(), com_t.clone()), Vec::new())), // base case

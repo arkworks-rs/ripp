@@ -107,8 +107,7 @@ where
         RightMessage = RMC::Message,
         Output = IPC::Message,
     >,
-    LMC: DoublyHomomorphicCommitment<Scalar = P::Fr, Key = P::G2Projective>
-        + TIPACompatibleSetup,
+    LMC: DoublyHomomorphicCommitment<Scalar = P::Fr, Key = P::G2Projective> + TIPACompatibleSetup,
     RMC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar, Key = P::G1Projective>
         + TIPACompatibleSetup,
     IPC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar>,
@@ -152,7 +151,10 @@ where
         r_shift: &P::Fr,
     ) -> Result<TIPAProof<IP, LMC, RMC, IPC, P, D>, Error> {
         // Run GIPA
-        let (proof, aux) = <GIPA<IP, LMC, RMC, IPC, D>>::prove_with_aux(values, (ck.0, ck.1, &vec![ck.2.clone()]))?;
+        let (proof, aux) = <GIPA<IP, LMC, RMC, IPC, D>>::prove_with_aux(
+            values,
+            (ck.0, ck.1, &vec![ck.2.clone()]),
+        )?;
 
         // Prove final commitment keys are wellformed
         let (ck_a_final, ck_b_final) = aux.ck_base;
@@ -164,7 +166,7 @@ where
             &polynomial_coefficients_from_transcript(&transcript, &<P::Fr>::one()),
         );
         let ck_a_polynomial = DensePolynomial::from_coefficients_slice(
-            &polynomial_coefficients_from_transcript(&transcript_inverse, &r_inverse)
+            &polynomial_coefficients_from_transcript(&transcript_inverse, &r_inverse),
         );
         assert_eq!(srs.g_alpha_powers.len(), ck_a_polynomial.coeffs.len());
 
@@ -186,8 +188,10 @@ where
         };
 
         // Complete KZG proofs
-        let ck_a_polynomial_c_eval = polynomial_evaluation_product_form_from_transcript(&transcript_inverse, &c, &r_inverse);
-        let ck_b_polynomial_c_eval = polynomial_evaluation_product_form_from_transcript(&transcript, &c, &<P::Fr>::one());
+        let ck_a_polynomial_c_eval =
+            polynomial_evaluation_product_form_from_transcript(&transcript_inverse, &c, &r_inverse);
+        let ck_b_polynomial_c_eval =
+            polynomial_evaluation_product_form_from_transcript(&transcript, &c, &<P::Fr>::one());
 
         let quotient_polynomial_a = &(&ck_a_polynomial
             - &DensePolynomial::from_coefficients_vec(vec![ck_a_polynomial_c_eval]))
@@ -234,8 +238,8 @@ where
         proof: &TIPAProof<IP, LMC, RMC, IPC, P, D>,
         r_shift: &P::Fr,
     ) -> Result<bool, Error> {
-
-        let (base_com, transcript) = GIPA::verify_recursive_challenge_transcript(com, &proof.gipa_proof)?;
+        let (base_com, transcript) =
+            GIPA::verify_recursive_challenge_transcript(com, &proof.gipa_proof)?;
         let transcript_inverse = transcript.iter().map(|x| x.inverse().unwrap()).collect();
 
         // Verify commitment keys wellformed
@@ -259,8 +263,13 @@ where
             counter_nonce += 1;
         };
 
-        let ck_a_polynomial_c_eval = polynomial_evaluation_product_form_from_transcript(&transcript_inverse, &c, &r_shift.inverse().unwrap());
-        let ck_b_polynomial_c_eval = polynomial_evaluation_product_form_from_transcript(&transcript, &c, &<P::Fr>::one());
+        let ck_a_polynomial_c_eval = polynomial_evaluation_product_form_from_transcript(
+            &transcript_inverse,
+            &c,
+            &r_shift.inverse().unwrap(),
+        );
+        let ck_b_polynomial_c_eval =
+            polynomial_evaluation_product_form_from_transcript(&transcript, &c, &<P::Fr>::one());
 
         let ck_a_valid =
             P::pairing(
@@ -300,7 +309,11 @@ pub fn structured_generators_scalar_power<G: Group>(
     generators
 }
 
-fn polynomial_evaluation_product_form_from_transcript<F: Field>(transcript: &Vec<F>, z: &F, r_shift: &F) -> F {
+fn polynomial_evaluation_product_form_from_transcript<F: Field>(
+    transcript: &Vec<F>,
+    z: &F,
+    r_shift: &F,
+) -> F {
     let mut power_2_zr = (z.clone() * z) * r_shift;
     let mut product_form = Vec::new();
     for x in transcript.iter() {
@@ -334,6 +347,7 @@ mod tests {
     use blake2::Blake2b;
     use rand::{rngs::StdRng, SeedableRng};
 
+    use crate::tipa::structured_scalar_message::structured_scalar_power;
     use dh_commitments::{
         afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
         identity::IdentityCommitment,
@@ -344,7 +358,6 @@ mod tests {
         ExtensionFieldElement, InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct,
         ScalarInnerProduct,
     };
-    use crate::tipa::structured_scalar_message::structured_scalar_power;
 
     type GC1 = AFGHOCommitmentG1<Bls12_381>;
     type GC2 = AFGHOCommitmentG2<Bls12_381>;
@@ -357,7 +370,7 @@ mod tests {
     fn pairing_inner_product_test() {
         type IP = PairingInnerProduct<Bls12_381>;
         type IPC =
-        IdentityCommitment<ExtensionFieldElement<Bls12_381>, <Bls12_381 as PairingEngine>::Fr>;
+            IdentityCommitment<ExtensionFieldElement<Bls12_381>, <Bls12_381 as PairingEngine>::Fr>;
         type PairingTIPA = TIPA<IP, GC1, GC2, IPC, Bls12_381, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
@@ -371,15 +384,9 @@ mod tests {
         let t = vec![IP::inner_product(&m_a, &m_b).unwrap()];
         let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
 
-        let proof = PairingTIPA::prove(
-            &srs,
-            (&m_a, &m_b),
-            (&ck_a, &ck_b, &ck_t),
-        ).unwrap();
+        let proof = PairingTIPA::prove(&srs, (&m_a, &m_b), (&ck_a, &ck_b, &ck_t)).unwrap();
 
-        assert!(
-            PairingTIPA::verify(&v_srs, &ck_t, (&com_a, &com_b, &com_t), &proof).unwrap()
-        );
+        assert!(PairingTIPA::verify(&v_srs, &ck_t, (&com_a, &com_b, &com_t), &proof).unwrap());
     }
 
     #[test]
@@ -405,23 +412,16 @@ mod tests {
         let t = vec![IP::inner_product(&m_a, &m_b).unwrap()];
         let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
 
-        let proof = MultiExpTIPA::prove(
-            &srs,
-            (&m_a, &m_b),
-            (&ck_a, &ck_b, &ck_t),
-        )
-            .unwrap();
+        let proof = MultiExpTIPA::prove(&srs, (&m_a, &m_b), (&ck_a, &ck_b, &ck_t)).unwrap();
 
-        assert!(
-            MultiExpTIPA::verify(&v_srs, &ck_t, (&com_a, &com_b, &com_t), &proof).unwrap()
-        );
+        assert!(MultiExpTIPA::verify(&v_srs, &ck_t, (&com_a, &com_b, &com_t), &proof).unwrap());
     }
 
     #[test]
     fn scalar_inner_product_test() {
         type IP = ScalarInnerProduct<<Bls12_381 as PairingEngine>::Fr>;
         type IPC =
-        IdentityCommitment<<Bls12_381 as PairingEngine>::Fr, <Bls12_381 as PairingEngine>::Fr>;
+            IdentityCommitment<<Bls12_381 as PairingEngine>::Fr, <Bls12_381 as PairingEngine>::Fr>;
         type ScalarTIPA = TIPA<IP, SC2, SC1, IPC, Bls12_381, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
@@ -439,23 +439,16 @@ mod tests {
         let t = vec![IP::inner_product(&m_a, &m_b).unwrap()];
         let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
 
-        let proof = ScalarTIPA::prove(
-            &srs,
-            (&m_a, &m_b),
-            (&ck_a, &ck_b, &ck_t),
-        )
-            .unwrap();
+        let proof = ScalarTIPA::prove(&srs, (&m_a, &m_b), (&ck_a, &ck_b, &ck_t)).unwrap();
 
-        assert!(
-            ScalarTIPA::verify(&v_srs, &ck_t, (&com_a, &com_b, &com_t), &proof).unwrap()
-        );
+        assert!(ScalarTIPA::verify(&v_srs, &ck_t, (&com_a, &com_b, &com_t), &proof).unwrap());
     }
 
     #[test]
     fn pairing_inner_product_with_srs_shift_test() {
         type IP = PairingInnerProduct<Bls12_381>;
         type IPC =
-        IdentityCommitment<ExtensionFieldElement<Bls12_381>, <Bls12_381 as PairingEngine>::Fr>;
+            IdentityCommitment<ExtensionFieldElement<Bls12_381>, <Bls12_381 as PairingEngine>::Fr>;
         type PairingTIPA = TIPA<IP, GC1, GC2, IPC, Bls12_381, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
@@ -470,8 +463,13 @@ mod tests {
 
         let r_scalar = <<Bls12_381 as PairingEngine>::Fr>::rand(&mut rng);
         let r_vec = structured_scalar_power(TEST_SIZE, &r_scalar);
-        let m_a_r = m_a.iter().zip(&r_vec).map(|(a, r)| a.mul(r)).collect::<Vec<<Bls12_381 as PairingEngine>::G1Projective>>();
-        let ck_a_r = ck_a.iter()
+        let m_a_r = m_a
+            .iter()
+            .zip(&r_vec)
+            .map(|(a, r)| a.mul(r))
+            .collect::<Vec<<Bls12_381 as PairingEngine>::G1Projective>>();
+        let ck_a_r = ck_a
+            .iter()
             .zip(&r_vec)
             .map(|(ck, r)| ck.mul(&r.inverse().unwrap()))
             .collect::<Vec<<Bls12_381 as PairingEngine>::G2Projective>>();
@@ -479,21 +477,23 @@ mod tests {
         let t = vec![IP::inner_product(&m_a_r, &m_b).unwrap()];
         let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
 
-        assert_eq!(
-            com_a,
-            IP::inner_product(&m_a_r, &ck_a_r).unwrap()
-        );
+        assert_eq!(com_a, IP::inner_product(&m_a_r, &ck_a_r).unwrap());
 
         let proof = PairingTIPA::prove_with_srs_shift(
             &srs,
             (&m_a_r, &m_b),
             (&ck_a_r, &ck_b, &ck_t),
             &r_scalar,
-        ).unwrap();
+        )
+        .unwrap();
 
-        assert!(
-            PairingTIPA::verify_with_srs_shift(&v_srs, &ck_t, (&com_a, &com_b, &com_t), &proof, &r_scalar).unwrap()
-        );
+        assert!(PairingTIPA::verify_with_srs_shift(
+            &v_srs,
+            &ck_t,
+            (&com_a, &com_b, &com_t),
+            &proof,
+            &r_scalar
+        )
+        .unwrap());
     }
-
 }
