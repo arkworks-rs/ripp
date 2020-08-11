@@ -3,7 +3,7 @@ use digest::Digest;
 use rand::Rng;
 use std::{marker::PhantomData, ops::MulAssign};
 
-use crate::{mul_helper, Error, InnerProductArgumentError, InnerProductCommitmentArgument};
+use crate::{mul_helper, Error, InnerProductArgumentError};
 use dh_commitments::DoublyHomomorphicCommitment;
 use inner_products::InnerProduct;
 
@@ -67,7 +67,7 @@ where
 
 //TODO: Can extend GIPA to support "identity commitments" in addition to "compact commitments", i.e. for SIPP
 
-impl<IP, LMC, RMC, IPC, D> InnerProductCommitmentArgument for GIPA<IP, LMC, RMC, IPC, D>
+impl<IP, LMC, RMC, IPC, D> GIPA<IP, LMC, RMC, IPC, D>
 where
     D: Digest,
     IP: InnerProduct<
@@ -85,14 +85,7 @@ where
     RMC::Output: MulAssign<LMC::Scalar>,
     IPC::Output: MulAssign<LMC::Scalar>,
 {
-    type IP = IP;
-    type LMC = LMC;
-    type RMC = RMC;
-    type IPC = IPC;
-    type Proof = GIPAProof<IP, LMC, RMC, IPC, D>;
-    type SetupOutput = (Vec<LMC::Key>, Vec<RMC::Key>, IPC::Key);
-
-    fn setup<R: Rng>(
+    pub fn setup<R: Rng>(
         rng: &mut R,
         size: usize,
     ) -> Result<(Vec<LMC::Key>, Vec<RMC::Key>, IPC::Key), Error> {
@@ -103,7 +96,7 @@ where
         ))
     }
 
-    fn prove(
+    pub fn prove(
         values: (&[IP::LeftMessage], &[IP::RightMessage], &IP::Output),
         ck: (&[LMC::Key], &[RMC::Key], &IPC::Key),
         com: (&LMC::Output, &RMC::Output, &IPC::Output),
@@ -130,7 +123,7 @@ where
         Ok(proof)
     }
 
-    fn verify(
+    pub fn verify(
         ck: (&[LMC::Key], &[RMC::Key], &IPC::Key),
         com: (&LMC::Output, &RMC::Output, &IPC::Output),
         proof: &GIPAProof<IP, LMC, RMC, IPC, D>,
@@ -150,26 +143,7 @@ where
             &Default::default(),
         )
     }
-}
 
-impl<IP, LMC, RMC, IPC, D> GIPA<IP, LMC, RMC, IPC, D>
-where
-    D: Digest,
-    IP: InnerProduct<
-        LeftMessage = LMC::Message,
-        RightMessage = RMC::Message,
-        Output = IPC::Message,
-    >,
-    LMC: DoublyHomomorphicCommitment,
-    RMC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar>,
-    IPC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar>,
-    RMC::Message: MulAssign<LMC::Scalar>,
-    IPC::Message: MulAssign<LMC::Scalar>,
-    RMC::Key: MulAssign<LMC::Scalar>,
-    IPC::Key: MulAssign<LMC::Scalar>,
-    RMC::Output: MulAssign<LMC::Scalar>,
-    IPC::Output: MulAssign<LMC::Scalar>,
-{
     pub fn prove_with_aux(
         values: (&[IP::LeftMessage], &[IP::RightMessage]),
         ck: (&[LMC::Key], &[RMC::Key], &[IPC::Key]),
