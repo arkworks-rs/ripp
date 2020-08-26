@@ -1,0 +1,32 @@
+[package]
+name = "benches"
+version = "0.1.0"
+authors = ["Nirvan Tyagi <nirvan.tyagi@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dev-dependencies]
+algebra = {git = "https://github.com/scipr-lab/zexe/", package = "algebra", features = [ "ed_on_bls12_381", "bls12_381" ] }
+rand = { version = "0.7" }
+digest = { version = "0.9" }
+blake2 = { version = "0.9" }
+
+inner_products = { path = "../inner_products" }
+ip_proofs = { path = "../ip_proofs" }
+dh_commitments = { path = "../dh_commitments" }
+
+[[bench]]
+name = "inner_products"
+path = "benches/inner_products.rs"
+harness = false
+
+[[bench]]
+name = "gipa"
+path = "benches/gipa.rs"
+harness = false
+
+[[bench]]
+name = "tipa"
+path = "benches/tipa.rs"
+harness = false

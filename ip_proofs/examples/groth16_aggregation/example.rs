@@ -59,9 +59,6 @@ fn main() {
     const NUM_PUBLIC_INPUTS: usize = 4;
     const NUM_PROOFS_TO_AGGREGATE: usize = 16;
     let mut rng = StdRng::seed_from_u64(0u64);
-    let mut generation_time = 0.0;
-    let mut prover_time = 0.0;
-    let mut verifier_time = 0.0;
 
     // Generate parameters for Groth16
     let test_circuit = TestCircuit {
@@ -82,7 +79,7 @@ fn main() {
 
     // Generate proofs
     println!("Generating {} Groth16 proofs...", NUM_PROOFS_TO_AGGREGATE);
-    let start = Instant::now();
+    let mut start = Instant::now();
     let mut proofs = Vec::new();
     let mut statements = Vec::new();
     for _ in 0..NUM_PROOFS_TO_AGGREGATE {
@@ -114,16 +111,16 @@ fn main() {
         //let result = Groth16::<Bls12_381, TestCircuit, [Fr]>::verify(&parameters.1, &statement, &proof).unwrap();
         //assert!(result);
     }
-    generation_time += (start.elapsed().as_millis() as f64) / 1_000.0;
+    let generation_time = start.elapsed().as_millis();
 
     // Aggregate proofs using inner product proofs
-    let start = Instant::now();
+    start = Instant::now();
     println!("Aggregating {} Groth16 proofs...", NUM_PROOFS_TO_AGGREGATE);
     let aggregate_proof = aggregate_proofs::<Bls12_381, Blake2b>(&srs, &proofs).unwrap();
-    prover_time += (start.elapsed().as_millis() as f64) / 1_000.0;
+    let prover_time = start.elapsed().as_millis();
 
     println!("Verifying aggregated proof...");
-    let start = Instant::now();
+    start = Instant::now();
     let result = verify_aggregate_proof(
         &srs.get_verifier_key(),
         &parameters.0.vk,
@@ -131,10 +128,10 @@ fn main() {
         &aggregate_proof,
     )
     .unwrap();
-    verifier_time += (start.elapsed().as_millis() as f64) / 1_000.0;
+    let verifier_time = start.elapsed().as_millis();
     assert!(result);
 
-    println!("Proof generation time: {:?} seconds", generation_time);
-    println!("Proof aggregation time: {:?} seconds", prover_time);
-    println!("Proof verification time: {:?} seconds", verifier_time);
+    println!("Proof generation time: {} ms", generation_time);
+    println!("Proof aggregation time: {} ms", prover_time);
+    println!("Proof verification time: {} ms", verifier_time);
 }
