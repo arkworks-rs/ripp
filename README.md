@@ -36,7 +36,12 @@ This library comes with unit tests for each of the provided crates. Run the test
 cargo test
 ``` 
 
-Lastly, the library comes with benchmarks. Run these with `cargo run --release --example scaling-ipp`.
+Lastly, the library comes with benchmarks.
+```bash
+cargo bench
+cargo run --release --example groth16_aggregation
+cargo run --release --example scaling-ipp
+```
 
 ## License
 

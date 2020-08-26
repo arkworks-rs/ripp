@@ -5,4 +5,5 @@ members = [
   "dh_commitments",
   "ip_proofs",
   "inner_products",
+  "benches",
 ]
