@@ -9,6 +9,7 @@ edition = "2018"
 [dependencies]
 algebra = {git = "https://github.com/scipr-lab/zexe/", package = "algebra" }
 ff_fft = {git = "https://github.com/scipr-lab/zexe/", package = "ff-fft" }
+groth16 = {git = "https://github.com/scipr-lab/zexe/", package = "groth16" }
 rand = { version = "0.7" }
 digest = { version = "0.9" }
 num-traits = { version = "0.2" }
@@ -19,12 +20,6 @@ dh_commitments = { path = "../dh_commitments" }
 
 [dev-dependencies]
 algebra = {git = "https://github.com/scipr-lab/zexe/", package = "algebra", features = [ "ed_on_bls12_381", "bls12_381" ] }
-groth16 = {git = "https://github.com/scipr-lab/zexe/", package = "groth16" }
-zexe_cp = {git = "https://github.com/scipr-lab/zexe/", package = "crypto-primitives", features = [ "groth16" ] }
 r1cs_core = {git = "https://github.com/scipr-lab/zexe/", package = "r1cs-core" }
 r1cs_std = {git = "https://github.com/scipr-lab/zexe/", package = "r1cs-std" }
 blake2 = { version = "0.9" }
-
-[[example]]
-name = "groth16_aggregation"
-path = "examples/groth16_aggregation/example.rs"
