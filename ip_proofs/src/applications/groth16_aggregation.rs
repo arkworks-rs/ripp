@@ -21,7 +21,7 @@ use inner_products::{
     ExtensionFieldElement, InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct,
     ScalarInnerProduct,
 };
-use ip_proofs::{
+use crate::{
     tipa::{
         structured_scalar_message::{structured_scalar_power, TIPAWithSSMProof},
         TIPAProof, VerifierSRS, SRS, TIPA,

@@ -2,9 +2,11 @@ use dh_commitments::{
     afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
     identity::IdentityCommitment,
 };
-use groth16_aggregation::{aggregate_proofs, verify_aggregate_proof};
 use inner_products::{ExtensionFieldElement, PairingInnerProduct};
-use ip_proofs::tipa::TIPA;
+use ip_proofs::{
+    tipa::TIPA,
+    applications::groth16_aggregation::{aggregate_proofs, verify_aggregate_proof},
+};
 
 use std::time::Instant;
 
@@ -23,7 +25,6 @@ use zexe_cp::nizk::{groth16::Groth16, NIZK};
 use blake2::Blake2b;
 use rand::{rngs::StdRng, SeedableRng};
 
-mod groth16_aggregation;
 
 #[derive(Clone)]
 struct TestCircuit {
