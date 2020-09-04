@@ -67,6 +67,7 @@ where
     _pair: PhantomData<P>,
 }
 
+#[derive(Clone)]
 pub struct SRS<P: PairingEngine> {
     g_alpha_powers: Vec<P::G1Projective>,
     h_beta_powers: Vec<P::G2Projective>,
@@ -74,6 +75,7 @@ pub struct SRS<P: PairingEngine> {
     h_alpha: P::G2Projective,
 }
 
+#[derive(Clone)]
 pub struct VerifierSRS<P: PairingEngine> {
     g: P::G1Projective,
     h: P::G2Projective,
