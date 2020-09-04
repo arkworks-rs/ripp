@@ -9,6 +9,7 @@ use groth16::{Proof, VerifyingKey};
 
 use std::ops::AddAssign;
 
+use rand::Rng;
 use digest::Digest;
 use num_traits::identities::One;
 
@@ -73,6 +74,15 @@ pub struct AggregateProof<P: PairingEngine, D: Digest> {
     agg_c: P::G1Projective,
     tipa_proof_ab: PairingInnerProductABProof<P, D>,
     tipa_proof_c: MultiExpInnerProductCProof<P, D>,
+}
+
+pub fn setup_inner_product<P, D, R: Rng>(rng: &mut R, size: usize) -> Result<SRS<P>, Error>
+    where
+    P: PairingEngine,
+    D: Digest,
+{
+    let (srs, _) = PairingInnerProductAB::<P, D>::setup(rng, size)?;
+    Ok(srs)
 }
 
 pub fn aggregate_proofs<P, D>(

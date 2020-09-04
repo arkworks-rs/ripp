@@ -1,11 +1,5 @@
-use dh_commitments::{
-    afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
-    identity::IdentityCommitment,
-};
-use inner_products::{ExtensionFieldElement, PairingInnerProduct};
 use ip_proofs::{
-    tipa::TIPA,
-    applications::groth16_aggregation::{aggregate_proofs, verify_aggregate_proof},
+    applications::groth16_aggregation::{aggregate_proofs, verify_aggregate_proof, setup_inner_product},
 };
 
 use std::time::Instant;
@@ -71,12 +65,7 @@ fn main() {
         Groth16::<Bls12_381, TestCircuit, [Fr]>::setup(test_circuit, &mut rng).unwrap();
 
     // Generate parameters for inner product aggregation
-    type IP = PairingInnerProduct<Bls12_381>;
-    type GC1 = AFGHOCommitmentG1<Bls12_381>;
-    type GC2 = AFGHOCommitmentG2<Bls12_381>;
-    type IPC = IdentityCommitment<ExtensionFieldElement<Bls12_381>, Fr>;
-    type PairingTIPA = TIPA<IP, GC1, GC2, IPC, Bls12_381, Blake2b>;
-    let (srs, _) = PairingTIPA::setup(&mut rng, NUM_PROOFS_TO_AGGREGATE).unwrap();
+    let srs = setup_inner_product::<_, Blake2b, _>(&mut rng, NUM_PROOFS_TO_AGGREGATE).unwrap();
 
     // Generate proofs
     println!("Generating {} Groth16 proofs...", NUM_PROOFS_TO_AGGREGATE);
