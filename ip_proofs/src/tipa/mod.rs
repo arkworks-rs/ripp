@@ -67,6 +67,36 @@ where
     _pair: PhantomData<P>,
 }
 
+impl<IP, LMC, RMC, IPC, P, D> Clone for TIPAProof<IP, LMC, RMC, IPC, P, D>
+    where
+        D: Digest,
+        P: PairingEngine,
+        IP: InnerProduct<
+            LeftMessage = LMC::Message,
+            RightMessage = RMC::Message,
+            Output = IPC::Message,
+        >,
+        LMC: DoublyHomomorphicCommitment + TIPACompatibleSetup,
+        RMC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar> + TIPACompatibleSetup,
+        IPC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar>,
+        RMC::Message: MulAssign<LMC::Scalar>,
+        IPC::Message: MulAssign<LMC::Scalar>,
+        RMC::Key: MulAssign<LMC::Scalar>,
+        IPC::Key: MulAssign<LMC::Scalar>,
+        RMC::Output: MulAssign<LMC::Scalar>,
+        IPC::Output: MulAssign<LMC::Scalar>,
+{
+    fn clone(&self) -> Self {
+        Self {
+            gipa_proof: self.gipa_proof.clone(),
+            final_ck: self.final_ck.clone(),
+            final_ck_proof: self.final_ck_proof.clone(),
+            _pair: PhantomData,
+        }
+    }
+}
+
+
 #[derive(Clone)]
 pub struct SRS<P: PairingEngine> {
     g_alpha_powers: Vec<P::G1Projective>,
