@@ -87,7 +87,7 @@ pub fn setup_inner_product<P, D, R: Rng>(rng: &mut R, size: usize) -> Result<SRS
 
 pub fn aggregate_proofs<P, D>(
     ip_srs: &SRS<P>,
-    proofs: &Vec<Proof<P>>,
+    proofs: &[Proof<P>],
 ) -> Result<AggregateProof<P, D>, Error>
 where
     P: PairingEngine,
@@ -172,7 +172,7 @@ where
 pub fn verify_aggregate_proof<P, D>(
     ip_verifier_srs: &VerifierSRS<P>,
     vk: &VerifyingKey<P>,
-    public_inputs: &Vec<Vec<P::Fr>>,
+    public_inputs: &Vec<Vec<P::Fr>>, //TODO: Should use ToConstraintField instead
     proof: &AggregateProof<P, D>,
 ) -> Result<bool, Error>
 where
