@@ -136,11 +136,10 @@ where
             )));
         }
         let mut clone = Clone::clone(proof);
-        Self::recursive_verify(
-            (ck.0, ck.1, &vec![ck.2.clone()]),
-            com,
+        Self::_verify(
+            (ck.0.to_vec(), ck.1.to_vec(), vec![ck.2.clone()]),
+            (com.0.clone(), com.1.clone(), com.2.clone()),
             &mut clone,
-            &Default::default(),
         )
     }
 
@@ -154,50 +153,31 @@ where
         ),
         Error,
     > {
-        let (r_commitment_steps, r_base, r_transcript, ck_base) =
-            Self::recursive_prove(values, ck, &Default::default())?;
-
-        Ok((
-            GIPAProof {
-                r_commitment_steps,
-                r_base,
-                _gipa: PhantomData,
-            },
-            GIPAAux {
-                r_transcript,
-                ck_base,
-                _gipa: PhantomData,
-            },
-        ))
+        let (m_a, m_b) = values;
+        let (ck_a, ck_b, ck_t) = ck;
+        Self::_prove((m_a.to_vec(), m_b.to_vec()), (ck_a.to_vec(), ck_b.to_vec(), ck_t.to_vec()))
     }
 
     // Returns vector of recursive commitments and transcripts in reverse order
-    fn recursive_prove(
-        values: (&[IP::LeftMessage], &[IP::RightMessage]),
-        ck: (&[LMC::Key], &[RMC::Key], &[IPC::Key]),
-        transcript: &LMC::Scalar,
+    fn _prove(
+        values: (Vec<IP::LeftMessage>, Vec<IP::RightMessage>),
+        ck: (Vec<LMC::Key>, Vec<RMC::Key>, Vec<IPC::Key>),
     ) -> Result<
         (
-            Vec<(
-                (LMC::Output, RMC::Output, IPC::Output),
-                (LMC::Output, RMC::Output, IPC::Output),
-            )>,
-            (LMC::Message, RMC::Message),
-            Vec<LMC::Scalar>,
-            (LMC::Key, RMC::Key),
+            GIPAProof<IP, LMC, RMC, IPC, D>,
+            GIPAAux<IP, LMC, RMC, IPC, D>,
         ),
         Error,
     > {
-        let (m_a, m_b) = values;
-        let (ck_a, ck_b, ck_t) = ck;
-        match m_a.len() {
-            1 => Ok((
-                Vec::new(),
-                (m_a[0].clone(), m_b[0].clone()),
-                Vec::new(),
-                (ck_a[0].clone(), ck_b[0].clone()),
-            )), // base case
-            2..=usize::MAX if m_a.len().count_ones() == 1 => {
+        let (mut m_a, mut m_b) = values;
+        let (mut ck_a, mut ck_b, ck_t) = ck;
+        let mut r_commitment_steps = Vec::new();
+        let mut r_transcript = Vec::new();
+        assert!(m_a.len().is_power_of_two());
+        let (m_base, ck_base) = 'recurse: loop {
+            if m_a.len() == 1 { // base case
+                break 'recurse ((m_a[0].clone(), m_b[0].clone()), (ck_a[0].clone(), ck_b[0].clone()));
+            } else {
                 // recursive step
                 // Recurse with problem of half size
                 let split = m_a.len() / 2;
@@ -215,72 +195,81 @@ where
                 let com_1 = (
                     LMC::commit(ck_a_1, m_a_1)?,
                     RMC::commit(ck_b_1, m_b_1)?,
-                    IPC::commit(ck_t, &vec![IP::inner_product(m_a_1, m_b_1)?])?,
+                    IPC::commit(&ck_t, &vec![IP::inner_product(m_a_1, m_b_1)?])?,
                 );
                 let com_2 = (
                     LMC::commit(ck_a_2, m_a_2)?,
                     RMC::commit(ck_b_2, m_b_2)?,
-                    IPC::commit(ck_t, &vec![IP::inner_product(m_a_2, m_b_2)?])?,
+                    IPC::commit(&ck_t, &vec![IP::inner_product(m_a_2, m_b_2)?])?,
                 );
 
                 // Fiat-Shamir challenge
                 let mut counter_nonce: usize = 0;
-                let (c, c_inv) = loop {
+                let default_transcript = Default::default();
+                let transcript = r_transcript.last().unwrap_or(&default_transcript);
+                let (c, c_inv) = 'challenge: loop {
                     let mut hash_input = Vec::new();
                     hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
                     //TODO: Should use CanonicalSerialize instead of ToBytes
                     hash_input.extend_from_slice(&to_bytes![
-                        transcript, com_1.0, com_1.1, com_1.2, com_2.0, com_2.1, com_2.2
-                    ]?);
+                    transcript, com_1.0, com_1.1, com_1.2, com_2.0, com_2.1, com_2.2
+                ]?);
                     if let Some(c) = LMC::Scalar::from_random_bytes(&D::digest(&hash_input)) {
                         if let Some(c_inv) = c.inverse() {
-                            break (c, c_inv);
+                            break 'challenge (c, c_inv);
                         }
                     };
                     counter_nonce += 1;
                 };
 
                 // Set up values for next step of recursion
-                let m_a_recurse = m_a_1
+                //TODO: Optimization: using mul_helper to individually multiply; could require a "EfficientVectorMul<Scalar>" trait on msgs/cks to make use of VariableMSM
+                m_a = m_a_1
                     .iter()
                     .map(|a| mul_helper(a, &c))
                     .zip(m_a_2)
                     .map(|(a_1, a_2)| a_1.clone() + a_2.clone())
                     .collect::<Vec<LMC::Message>>();
 
-                let m_b_recurse = m_b_2
+                m_b = m_b_2
                     .iter()
                     .map(|b| mul_helper(b, &c_inv))
                     .zip(m_b_1)
                     .map(|(b_1, b_2)| b_1.clone() + b_2.clone())
                     .collect::<Vec<RMC::Message>>();
 
-                let ck_a_recurse = ck_a_2
+                ck_a = ck_a_2
                     .iter()
                     .map(|a| mul_helper(a, &c_inv))
                     .zip(ck_a_1)
                     .map(|(a_1, a_2)| a_1.clone() + a_2.clone())
                     .collect::<Vec<LMC::Key>>();
 
-                let ck_b_recurse = ck_b_1
+                ck_b = ck_b_1
                     .iter()
                     .map(|b| mul_helper(b, &c))
                     .zip(ck_b_2)
                     .map(|(b_1, b_2)| b_1.clone() + b_2.clone())
                     .collect::<Vec<RMC::Key>>();
 
-                let (mut r_steps, r_base, mut r_transcript, ck_base) = Self::recursive_prove(
-                    (&m_a_recurse, &m_b_recurse),
-                    (&ck_a_recurse, &ck_b_recurse, ck_t),
-                    &c,
-                )?;
-
-                r_steps.push((com_1, com_2));
+                r_commitment_steps.push((com_1, com_2));
                 r_transcript.push(c);
-                Ok((r_steps, r_base, r_transcript, ck_base))
             }
-            _ => unreachable!(), // If called only on message lengths power of 2
-        }
+        };
+        r_transcript.reverse();
+        r_commitment_steps.reverse();
+        Ok((
+            GIPAProof {
+                r_commitment_steps,
+                r_base: m_base,
+                _gipa: PhantomData,
+            },
+            GIPAAux {
+                r_transcript,
+                ck_base,
+                _gipa: PhantomData,
+            },
+        ))
     }
 
     // Helper function used to calculate recursive challenges from proof execution (transcript in reverse)
@@ -288,132 +277,109 @@ where
         com: (&LMC::Output, &RMC::Output, &IPC::Output),
         proof: &GIPAProof<IP, LMC, RMC, IPC, D>,
     ) -> Result<((LMC::Output, RMC::Output, IPC::Output), Vec<LMC::Scalar>), Error> {
-        let mut clone = Clone::clone(proof);
-        Self::_verify_recursive_challenges(com, &mut clone, &Default::default())
+        Self::_verify_recursive_challenges((com.0.clone(), com.1.clone(), com.2.clone()), proof)
     }
 
     fn _verify_recursive_challenges(
-        com: (&LMC::Output, &RMC::Output, &IPC::Output),
-        proof: &mut GIPAProof<IP, LMC, RMC, IPC, D>,
-        transcript: &LMC::Scalar,
+        com: (LMC::Output, RMC::Output, IPC::Output),
+        proof: &GIPAProof<IP, LMC, RMC, IPC, D>,
     ) -> Result<((LMC::Output, RMC::Output, IPC::Output), Vec<LMC::Scalar>), Error> {
-        let (com_a, com_b, com_t) = com;
-        match proof.r_commitment_steps.len() {
-            0 => Ok(((com_a.clone(), com_b.clone(), com_t.clone()), Vec::new())), // base case
-            _ => {
-                // recursive step
-                // Fiat-Shamir challenge
-                let (com_1, com_2) = proof.r_commitment_steps.pop().unwrap();
-                let mut counter_nonce: usize = 0;
-                let (c, c_inv) = loop {
-                    let mut hash_input = Vec::new();
-                    hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
-                    hash_input.extend_from_slice(&to_bytes![
-                        transcript, com_1.0, com_1.1, com_1.2, com_2.0, com_2.1, com_2.2
-                    ]?);
-                    if let Some(c) = LMC::Scalar::from_random_bytes(&D::digest(&hash_input)) {
-                        if let Some(c_inv) = c.inverse() {
-                            break (c, c_inv);
-                        }
-                    };
-                    counter_nonce += 1;
+        let (mut com_a, mut com_b, mut com_t) = com;
+        let mut r_transcript = Vec::new();
+        for (com_1, com_2) in proof.r_commitment_steps.iter().rev() {
+            // Fiat-Shamir challenge
+            let mut counter_nonce: usize = 0;
+            let default_transcript = Default::default();
+            let transcript = r_transcript.last().unwrap_or(&default_transcript);
+            let (c, c_inv) = 'challenge: loop {
+                let mut hash_input = Vec::new();
+                hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
+                hash_input.extend_from_slice(&to_bytes![
+                transcript, com_1.0, com_1.1, com_1.2, com_2.0, com_2.1, com_2.2
+            ]?);
+                if let Some(c) = LMC::Scalar::from_random_bytes(&D::digest(&hash_input)) {
+                    if let Some(c_inv) = c.inverse() {
+                        break 'challenge (c, c_inv);
+                    }
                 };
+                counter_nonce += 1;
+            };
 
-                let com_recurse = (
-                    mul_helper(&com_1.0, &c) + com_a.clone() + mul_helper(&com_2.0, &c_inv),
-                    mul_helper(&com_1.1, &c) + com_b.clone() + mul_helper(&com_2.1, &c_inv),
-                    mul_helper(&com_1.2, &c) + com_t.clone() + mul_helper(&com_2.2, &c_inv),
-                );
+            com_a = mul_helper(&com_1.0, &c) + com_a.clone() + mul_helper(&com_2.0, &c_inv);
+            com_b = mul_helper(&com_1.1, &c) + com_b.clone() + mul_helper(&com_2.1, &c_inv);
+            com_t = mul_helper(&com_1.2, &c) + com_t.clone() + mul_helper(&com_2.2, &c_inv);
 
-                let (base_com, mut challenges) = Self::_verify_recursive_challenges(
-                    (&com_recurse.0, &com_recurse.1, &com_recurse.2),
-                    proof,
-                    &c,
-                )?;
-                challenges.push(c);
-                Ok((base_com, challenges))
-            }
+            r_transcript.push(c);
         }
+        r_transcript.reverse();
+        Ok(((com_a, com_b, com_t), r_transcript))
     }
 
-    fn recursive_verify(
-        ck: (&[LMC::Key], &[RMC::Key], &[IPC::Key]),
-        com: (&LMC::Output, &RMC::Output, &IPC::Output),
-        proof: &mut GIPAProof<IP, LMC, RMC, IPC, D>,
-        transcript: &LMC::Scalar,
+    fn _verify(
+        ck: (Vec<LMC::Key>, Vec<RMC::Key>, Vec<IPC::Key>),
+        com: (LMC::Output, RMC::Output, IPC::Output),
+        proof: &GIPAProof<IP, LMC, RMC, IPC, D>,
     ) -> Result<bool, Error> {
-        let (ck_a, ck_b, ck_t) = ck;
-        let (com_a, com_b, com_t) = com;
-        match ck_a.len() {
-            1 => {
-                let a_base = vec![proof.r_base.0.clone()];
-                let b_base = vec![proof.r_base.1.clone()];
-                let t_base = vec![IP::inner_product(&a_base, &b_base)?];
-                Ok(LMC::verify(ck_a, &a_base, com_a)?
-                    && RMC::verify(ck_b, &b_base, com_b)?
-                    && IPC::verify(ck_t, &t_base, com_t)?)
-            } // base case
-            2..=usize::MAX if ck_a.len().count_ones() == 1 => {
-                // recursive step
-                // Fiat-Shamir challenge
-                let (com_1, com_2) = proof.r_commitment_steps.pop().unwrap();
-                let mut counter_nonce: usize = 0;
-                let (c, c_inv) = loop {
-                    let mut hash_input = Vec::new();
-                    hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
-                    hash_input.extend_from_slice(&to_bytes![
-                        transcript, com_1.0, com_1.1, com_1.2, com_2.0, com_2.1, com_2.2
-                    ]?);
-                    if let Some(c) = LMC::Scalar::from_random_bytes(&D::digest(&hash_input)) {
-                        if let Some(c_inv) = c.inverse() {
-                            break (c, c_inv);
-                        }
-                    };
-                    counter_nonce += 1;
+        let (mut ck_a, mut ck_b, ck_t) = ck;
+        let (mut com_a, mut com_b, mut com_t) = com;
+        assert!(ck_a.len().is_power_of_two());
+        let mut transcript = Default::default();
+        for (com_1, com_2) in proof.r_commitment_steps.iter().rev() {
+            // Fiat-Shamir challenge
+            let mut counter_nonce: usize = 0;
+            let (c, c_inv) = loop {
+                let mut hash_input = Vec::new();
+                hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
+                hash_input.extend_from_slice(&to_bytes![
+                    transcript, com_1.0, com_1.1, com_1.2, com_2.0, com_2.1, com_2.2
+                ]?);
+                if let Some(c) = LMC::Scalar::from_random_bytes(&D::digest(&hash_input)) {
+                    if let Some(c_inv) = c.inverse() {
+                        break (c, c_inv);
+                    }
                 };
+                counter_nonce += 1;
+            };
+            transcript = c;
 
-                let split = ck_a.len() / 2;
-                let ck_a_1 = &ck_a[..split];
-                let ck_a_2 = &ck_a[split..];
-                let ck_b_1 = &ck_b[split..];
-                let ck_b_2 = &ck_b[..split];
+            let split = ck_a.len() / 2;
+            let ck_a_1 = &ck_a[..split];
+            let ck_a_2 = &ck_a[split..];
+            let ck_b_1 = &ck_b[split..];
+            let ck_b_2 = &ck_b[..split];
 
-                let ck_a_recurse = ck_a_2
-                    .iter()
-                    .map(|a| mul_helper(a, &c_inv))
-                    .zip(ck_a_1)
-                    .map(|(a_1, a_2)| a_1.clone() + a_2.clone())
-                    .collect::<Vec<LMC::Key>>();
+            ck_a = ck_a_2
+                .iter()
+                .map(|a| mul_helper(a, &c_inv))
+                .zip(ck_a_1)
+                .map(|(a_1, a_2)| a_1.clone() + a_2.clone())
+                .collect::<Vec<LMC::Key>>();
 
-                let ck_b_recurse = ck_b_1
-                    .iter()
-                    .map(|b| mul_helper(b, &c))
-                    .zip(ck_b_2)
-                    .map(|(b_1, b_2)| b_1.clone() + b_2.clone())
-                    .collect::<Vec<RMC::Key>>();
+            ck_b = ck_b_1
+                .iter()
+                .map(|b| mul_helper(b, &c))
+                .zip(ck_b_2)
+                .map(|(b_1, b_2)| b_1.clone() + b_2.clone())
+                .collect::<Vec<RMC::Key>>();
 
-                let com_recurse = (
-                    mul_helper(&com_1.0, &c) + com_a.clone() + mul_helper(&com_2.0, &c_inv),
-                    mul_helper(&com_1.1, &c) + com_b.clone() + mul_helper(&com_2.1, &c_inv),
-                    mul_helper(&com_1.2, &c) + com_t.clone() + mul_helper(&com_2.2, &c_inv),
-                );
-
-                Self::recursive_verify(
-                    (&ck_a_recurse, &ck_b_recurse, ck_t),
-                    (&com_recurse.0, &com_recurse.1, &com_recurse.2),
-                    proof,
-                    &c,
-                )
-            }
-            _ => unreachable!(), // If called only on message lengths power of 2
+            com_a = mul_helper(&com_1.0, &c) + com_a.clone() + mul_helper(&com_2.0, &c_inv);
+            com_b = mul_helper(&com_1.1, &c) + com_b.clone() + mul_helper(&com_2.1, &c_inv);
+            com_t = mul_helper(&com_1.2, &c) + com_t.clone() + mul_helper(&com_2.2, &c_inv);
         }
+        let a_base = vec![proof.r_base.0.clone()];
+        let b_base = vec![proof.r_base.1.clone()];
+        let t_base = vec![IP::inner_product(&a_base, &b_base)?];
+        Ok(LMC::verify(&ck_a, &a_base, &com_a)?
+            && RMC::verify(&ck_b, &b_base, &com_b)?
+            && IPC::verify(&ck_t, &t_base, &com_t)?)
     }
+
 }
 
 impl<IP, LMC, RMC, IPC, D> Clone for GIPAProof<IP, LMC, RMC, IPC, D>
-where
-    D: Digest,
-    IP: InnerProduct<
+    where
+        D: Digest,
+        IP: InnerProduct<
         LeftMessage = LMC::Message,
         RightMessage = RMC::Message,
         Output = IPC::Message,
