@@ -79,8 +79,6 @@ where
     }
 
     fn commit(_k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {
-        let mut out = Vec::new();
-        out.extend_from_slice(m);
-        Ok(IdentityOutput(out))
+        Ok(IdentityOutput(m.to_vec()))
     }
 }

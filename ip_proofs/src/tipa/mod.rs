@@ -28,7 +28,7 @@ pub mod structured_scalar_message;
 //TODO: Could generalize: Don't need TIPA over G1 and G2, would work with G1 and G1 or over different pairing engines
 pub trait TIPACompatibleSetup {}
 
-impl<G: Group> TIPACompatibleSetup for PedersenCommitment<G> {}
+impl<G: ProjectiveCurve> TIPACompatibleSetup for PedersenCommitment<G> {}
 impl<P: PairingEngine> TIPACompatibleSetup for AFGHOCommitmentG1<P> {}
 impl<P: PairingEngine> TIPACompatibleSetup for AFGHOCommitmentG2<P> {}
 

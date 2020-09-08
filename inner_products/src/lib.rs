@@ -1,8 +1,8 @@
 use algebra::{
     bytes::ToBytes,
-    curves::PairingEngine,
+    curves::{PairingEngine, ProjectiveCurve},
     fields::{Field, PrimeField},
-    groups::Group,
+    msm::VariableBaseMSM,
 };
 use std::{
     error::Error as ErrorTrait,
@@ -68,20 +68,24 @@ impl<P: PairingEngine> InnerProduct for PairingInnerProduct<P> {
             )));
         };
         Ok(ExtensionFieldElement(
-            left.iter()
-                .zip(right)
-                .map(|(v, a)| P::pairing(v.clone().into(), a.clone().into()))
-                .product(),
+            P::product_of_pairings(
+                &P::G1Projective::batch_normalization_into_affine(left).iter()
+                    .zip(P::G2Projective::batch_normalization_into_affine(&right))
+                    .map(|(a, b)| (P::G1Prepared::from(*a), P::G2Prepared::from(b)))
+                    .collect::<Vec<_>>()
+            )
         ))
     }
 }
 
+
 #[derive(Copy, Clone)]
-pub struct MultiexponentiationInnerProduct<G: Group> {
-    _group: PhantomData<G>,
+pub struct MultiexponentiationInnerProduct<G: ProjectiveCurve> {
+    _projective: PhantomData<G>,
 }
 
-impl<G: Group> InnerProduct for MultiexponentiationInnerProduct<G> {
+impl<G: ProjectiveCurve> InnerProduct for MultiexponentiationInnerProduct<G>
+{
     type LeftMessage = G;
     type RightMessage = G::ScalarField;
     type Output = G;
@@ -96,7 +100,7 @@ impl<G: Group> InnerProduct for MultiexponentiationInnerProduct<G> {
                 right.len(),
             )));
         };
-        Ok(left.iter().zip(right).map(|(g, x)| g.mul(x)).sum())
+        Ok(VariableBaseMSM::multi_scalar_mul(&G::batch_normalization_into_affine(left), &right.iter().map(|b| b.into_repr()).collect::<Vec<_>>()))
     }
 }
 
