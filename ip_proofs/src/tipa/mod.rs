@@ -1,8 +1,9 @@
 use algebra::{
     bytes::ToBytes,
     curves::{PairingEngine, ProjectiveCurve},
-    fields::Field,
+    fields::{Field, PrimeField},
     groups::Group,
+    msm::FixedBaseMSM,
     to_bytes, UniformRand,
 };
 use digest::Digest;
@@ -327,18 +328,30 @@ where
     }
 }
 
-pub fn structured_generators_scalar_power<G: Group>(
+pub fn structured_generators_scalar_power<G: ProjectiveCurve>(
     num: usize,
     g: &G,
     s: &G::ScalarField,
 ) -> Vec<G> {
-    let mut generators = Vec::new();
+    assert!(num > 0);
+    let mut powers_of_scalar = vec![];
     let mut pow_s = G::ScalarField::one();
     for _ in 0..num {
-        generators.push(g.mul(&pow_s));
+        powers_of_scalar.push(pow_s);
         pow_s *= s;
     }
-    generators
+
+    let window_size = FixedBaseMSM::get_mul_window_size(num);
+
+    let scalar_bits = G::ScalarField::size_in_bits();
+    let g_table = FixedBaseMSM::get_window_table(scalar_bits, window_size, g.clone());
+    let powers_of_g = FixedBaseMSM::multi_scalar_mul::<G>(
+        scalar_bits,
+        window_size,
+        &g_table,
+        &powers_of_scalar,
+    );
+    powers_of_g
 }
 
 fn polynomial_evaluation_product_form_from_transcript<F: Field>(
