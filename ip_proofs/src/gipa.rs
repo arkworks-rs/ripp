@@ -1,6 +1,7 @@
 use algebra::{bytes::ToBytes, fields::Field, to_bytes};
 use digest::Digest;
 use rand::Rng;
+use num_traits::identities::One;
 use std::{marker::PhantomData, ops::MulAssign};
 
 use crate::{mul_helper, Error, InnerProductArgumentError};
@@ -320,57 +321,36 @@ where
         com: (LMC::Output, RMC::Output, IPC::Output),
         proof: &GIPAProof<IP, LMC, RMC, IPC, D>,
     ) -> Result<bool, Error> {
-        let (mut ck_a, mut ck_b, ck_t) = ck;
-        let (mut com_a, mut com_b, mut com_t) = com;
+        let (base_com, transcript) = Self::_verify_recursive_challenges(com, &proof)?;
+        let (com_a, com_b, com_t) = base_com;
+
+        // Calculate base commitment keys
+        let (ck_a, ck_b, ck_t) = ck;
         assert!(ck_a.len().is_power_of_two());
-        let mut transcript = Default::default();
-        for (com_1, com_2) in proof.r_commitment_steps.iter().rev() {
-            // Fiat-Shamir challenge
-            let mut counter_nonce: usize = 0;
-            let (c, c_inv) = loop {
-                let mut hash_input = Vec::new();
-                hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
-                hash_input.extend_from_slice(&to_bytes![
-                    transcript, com_1.0, com_1.1, com_1.2, com_2.0, com_2.1, com_2.2
-                ]?);
-                if let Some(c) = LMC::Scalar::from_random_bytes(&D::digest(&hash_input)) {
-                    if let Some(c_inv) = c.inverse() {
-                        break (c, c_inv);
-                    }
-                };
-                counter_nonce += 1;
-            };
-            transcript = c;
 
-            let split = ck_a.len() / 2;
-            let ck_a_1 = &ck_a[..split];
-            let ck_a_2 = &ck_a[split..];
-            let ck_b_1 = &ck_b[split..];
-            let ck_b_2 = &ck_b[..split];
-
-            ck_a = ck_a_2
-                .iter()
-                .map(|a| mul_helper(a, &c_inv))
-                .zip(ck_a_1)
-                .map(|(a_1, a_2)| a_1.clone() + a_2.clone())
-                .collect::<Vec<LMC::Key>>();
-
-            ck_b = ck_b_1
-                .iter()
-                .map(|b| mul_helper(b, &c))
-                .zip(ck_b_2)
-                .map(|(b_1, b_2)| b_1.clone() + b_2.clone())
-                .collect::<Vec<RMC::Key>>();
-
-            com_a = mul_helper(&com_1.0, &c) + com_a.clone() + mul_helper(&com_2.0, &c_inv);
-            com_b = mul_helper(&com_1.1, &c) + com_b.clone() + mul_helper(&com_2.1, &c_inv);
-            com_t = mul_helper(&com_1.2, &c) + com_t.clone() + mul_helper(&com_2.2, &c_inv);
+        let mut ck_a_agg_challenge_exponents = vec![LMC::Scalar::one()];
+        let mut ck_b_agg_challenge_exponents = vec![LMC::Scalar::one()];
+        for (i, c) in transcript.iter().enumerate() {
+            let c_inv = c.inverse().unwrap();
+            for j in 0..(2_usize).pow(i as u32) {
+                ck_a_agg_challenge_exponents.push(ck_a_agg_challenge_exponents[j] * &c_inv);
+                ck_b_agg_challenge_exponents.push(ck_b_agg_challenge_exponents[j] * &c);
+            }
         }
+        assert_eq!(ck_a_agg_challenge_exponents.len(), ck_a.len());
+        //TODO: Optimization: Use VariableMSM multiexponentiation
+        let ck_a_base_init = mul_helper(&ck_a[0], &ck_a_agg_challenge_exponents[0]);
+        let ck_a_base = ck_a[1..].iter().zip(&ck_a_agg_challenge_exponents[1..]).map(|(g, x)| mul_helper(g, &x))
+            .fold(ck_a_base_init, |sum, x| sum + x);
+        let ck_b_base_init = mul_helper(&ck_b[0], &ck_b_agg_challenge_exponents[0]);
+        let ck_b_base = ck_b[1..].iter().zip(&ck_b_agg_challenge_exponents[1..]).map(|(g, x)| mul_helper(g, &x))
+            .fold(ck_b_base_init, |sum, x| sum + x);
+
         let a_base = vec![proof.r_base.0.clone()];
         let b_base = vec![proof.r_base.1.clone()];
         let t_base = vec![IP::inner_product(&a_base, &b_base)?];
-        Ok(LMC::verify(&ck_a, &a_base, &com_a)?
-            && RMC::verify(&ck_b, &b_base, &com_b)?
+        Ok(LMC::verify(&vec![ck_a_base], &a_base, &com_a)?
+            && RMC::verify(&vec![ck_b_base], &b_base, &com_b)?
             && IPC::verify(&ck_t, &t_base, &com_t)?)
     }
 
