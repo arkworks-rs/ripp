@@ -67,25 +67,22 @@ impl<P: PairingEngine> InnerProduct for PairingInnerProduct<P> {
                 right.len(),
             )));
         };
-        Ok(ExtensionFieldElement(
-            P::product_of_pairings(
-                &P::G1Projective::batch_normalization_into_affine(left).iter()
-                    .zip(P::G2Projective::batch_normalization_into_affine(&right))
-                    .map(|(a, b)| (P::G1Prepared::from(*a), P::G2Prepared::from(b)))
-                    .collect::<Vec<_>>()
-            )
-        ))
+        Ok(ExtensionFieldElement(P::product_of_pairings(
+            &P::G1Projective::batch_normalization_into_affine(left)
+                .iter()
+                .zip(P::G2Projective::batch_normalization_into_affine(&right))
+                .map(|(a, b)| (P::G1Prepared::from(*a), P::G2Prepared::from(b)))
+                .collect::<Vec<_>>(),
+        )))
     }
 }
-
 
 #[derive(Copy, Clone)]
 pub struct MultiexponentiationInnerProduct<G: ProjectiveCurve> {
     _projective: PhantomData<G>,
 }
 
-impl<G: ProjectiveCurve> InnerProduct for MultiexponentiationInnerProduct<G>
-{
+impl<G: ProjectiveCurve> InnerProduct for MultiexponentiationInnerProduct<G> {
     type LeftMessage = G;
     type RightMessage = G::ScalarField;
     type Output = G;
@@ -100,7 +97,10 @@ impl<G: ProjectiveCurve> InnerProduct for MultiexponentiationInnerProduct<G>
                 right.len(),
             )));
         };
-        Ok(VariableBaseMSM::multi_scalar_mul(&G::batch_normalization_into_affine(left), &right.iter().map(|b| b.into_repr()).collect::<Vec<_>>()))
+        Ok(VariableBaseMSM::multi_scalar_mul(
+            &G::batch_normalization_into_affine(left),
+            &right.iter().map(|b| b.into_repr()).collect::<Vec<_>>(),
+        ))
     }
 }
 

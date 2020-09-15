@@ -1,6 +1,4 @@
-use algebra::{
-    curves::ProjectiveCurve,
-};
+use algebra::curves::ProjectiveCurve;
 use rand::Rng;
 use std::marker::PhantomData;
 

@@ -69,23 +69,23 @@ where
 }
 
 impl<IP, LMC, RMC, IPC, P, D> Clone for TIPAProof<IP, LMC, RMC, IPC, P, D>
-    where
-        D: Digest,
-        P: PairingEngine,
-        IP: InnerProduct<
-            LeftMessage = LMC::Message,
-            RightMessage = RMC::Message,
-            Output = IPC::Message,
-        >,
-        LMC: DoublyHomomorphicCommitment + TIPACompatibleSetup,
-        RMC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar> + TIPACompatibleSetup,
-        IPC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar>,
-        RMC::Message: MulAssign<LMC::Scalar>,
-        IPC::Message: MulAssign<LMC::Scalar>,
-        RMC::Key: MulAssign<LMC::Scalar>,
-        IPC::Key: MulAssign<LMC::Scalar>,
-        RMC::Output: MulAssign<LMC::Scalar>,
-        IPC::Output: MulAssign<LMC::Scalar>,
+where
+    D: Digest,
+    P: PairingEngine,
+    IP: InnerProduct<
+        LeftMessage = LMC::Message,
+        RightMessage = RMC::Message,
+        Output = IPC::Message,
+    >,
+    LMC: DoublyHomomorphicCommitment + TIPACompatibleSetup,
+    RMC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar> + TIPACompatibleSetup,
+    IPC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar>,
+    RMC::Message: MulAssign<LMC::Scalar>,
+    IPC::Message: MulAssign<LMC::Scalar>,
+    RMC::Key: MulAssign<LMC::Scalar>,
+    IPC::Key: MulAssign<LMC::Scalar>,
+    RMC::Output: MulAssign<LMC::Scalar>,
+    IPC::Output: MulAssign<LMC::Scalar>,
 {
     fn clone(&self) -> Self {
         Self {
@@ -96,7 +96,6 @@ impl<IP, LMC, RMC, IPC, P, D> Clone for TIPAProof<IP, LMC, RMC, IPC, P, D>
         }
     }
 }
-
 
 #[derive(Clone)]
 pub struct SRS<P: PairingEngine> {
@@ -345,12 +344,8 @@ pub fn structured_generators_scalar_power<G: ProjectiveCurve>(
 
     let scalar_bits = G::ScalarField::size_in_bits();
     let g_table = FixedBaseMSM::get_window_table(scalar_bits, window_size, g.clone());
-    let powers_of_g = FixedBaseMSM::multi_scalar_mul::<G>(
-        scalar_bits,
-        window_size,
-        &g_table,
-        &powers_of_scalar,
-    );
+    let powers_of_g =
+        FixedBaseMSM::multi_scalar_mul::<G>(scalar_bits, window_size, &g_table, &powers_of_scalar);
     powers_of_g
 }
 

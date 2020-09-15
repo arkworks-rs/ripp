@@ -1,7 +1,7 @@
 use algebra::{bytes::ToBytes, fields::Field, to_bytes};
 use digest::Digest;
-use rand::Rng;
 use num_traits::identities::One;
+use rand::Rng;
 use std::{marker::PhantomData, ops::MulAssign};
 
 use crate::{mul_helper, Error, InnerProductArgumentError};
@@ -156,7 +156,10 @@ where
     > {
         let (m_a, m_b) = values;
         let (ck_a, ck_b, ck_t) = ck;
-        Self::_prove((m_a.to_vec(), m_b.to_vec()), (ck_a.to_vec(), ck_b.to_vec(), ck_t.to_vec()))
+        Self::_prove(
+            (m_a.to_vec(), m_b.to_vec()),
+            (ck_a.to_vec(), ck_b.to_vec(), ck_t.to_vec()),
+        )
     }
 
     // Returns vector of recursive commitments and transcripts in reverse order
@@ -176,8 +179,12 @@ where
         let mut r_transcript = Vec::new();
         assert!(m_a.len().is_power_of_two());
         let (m_base, ck_base) = 'recurse: loop {
-            if m_a.len() == 1 { // base case
-                break 'recurse ((m_a[0].clone(), m_b[0].clone()), (ck_a[0].clone(), ck_b[0].clone()));
+            if m_a.len() == 1 {
+                // base case
+                break 'recurse (
+                    (m_a[0].clone(), m_b[0].clone()),
+                    (ck_a[0].clone(), ck_b[0].clone()),
+                );
             } else {
                 // recursive step
                 // Recurse with problem of half size
@@ -213,8 +220,8 @@ where
                     hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
                     //TODO: Should use CanonicalSerialize instead of ToBytes
                     hash_input.extend_from_slice(&to_bytes![
-                    transcript, com_1.0, com_1.1, com_1.2, com_2.0, com_2.1, com_2.2
-                ]?);
+                        transcript, com_1.0, com_1.1, com_1.2, com_2.0, com_2.1, com_2.2
+                    ]?);
                     if let Some(c) = LMC::Scalar::from_random_bytes(&D::digest(&hash_input)) {
                         if let Some(c_inv) = c.inverse() {
                             break 'challenge (c, c_inv);
@@ -296,8 +303,8 @@ where
                 let mut hash_input = Vec::new();
                 hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
                 hash_input.extend_from_slice(&to_bytes![
-                transcript, com_1.0, com_1.1, com_1.2, com_2.0, com_2.1, com_2.2
-            ]?);
+                    transcript, com_1.0, com_1.1, com_1.2, com_2.0, com_2.1, com_2.2
+                ]?);
                 if let Some(c) = LMC::Scalar::from_random_bytes(&D::digest(&hash_input)) {
                     if let Some(c_inv) = c.inverse() {
                         break 'challenge (c, c_inv);
@@ -340,10 +347,16 @@ where
         assert_eq!(ck_a_agg_challenge_exponents.len(), ck_a.len());
         //TODO: Optimization: Use VariableMSM multiexponentiation
         let ck_a_base_init = mul_helper(&ck_a[0], &ck_a_agg_challenge_exponents[0]);
-        let ck_a_base = ck_a[1..].iter().zip(&ck_a_agg_challenge_exponents[1..]).map(|(g, x)| mul_helper(g, &x))
+        let ck_a_base = ck_a[1..]
+            .iter()
+            .zip(&ck_a_agg_challenge_exponents[1..])
+            .map(|(g, x)| mul_helper(g, &x))
             .fold(ck_a_base_init, |sum, x| sum + x);
         let ck_b_base_init = mul_helper(&ck_b[0], &ck_b_agg_challenge_exponents[0]);
-        let ck_b_base = ck_b[1..].iter().zip(&ck_b_agg_challenge_exponents[1..]).map(|(g, x)| mul_helper(g, &x))
+        let ck_b_base = ck_b[1..]
+            .iter()
+            .zip(&ck_b_agg_challenge_exponents[1..])
+            .map(|(g, x)| mul_helper(g, &x))
             .fold(ck_b_base_init, |sum, x| sum + x);
 
         let a_base = vec![proof.r_base.0.clone()];
@@ -353,13 +366,12 @@ where
             && RMC::verify(&vec![ck_b_base], &b_base, &com_b)?
             && IPC::verify(&ck_t, &t_base, &com_t)?)
     }
-
 }
 
 impl<IP, LMC, RMC, IPC, D> Clone for GIPAProof<IP, LMC, RMC, IPC, D>
-    where
-        D: Digest,
-        IP: InnerProduct<
+where
+    D: Digest,
+    IP: InnerProduct<
         LeftMessage = LMC::Message,
         RightMessage = RMC::Message,
         Output = IPC::Message,
