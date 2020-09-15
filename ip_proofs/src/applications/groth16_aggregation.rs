@@ -1,5 +1,4 @@
 use algebra::{
-    bytes::ToBytes,
     curves::{AffineCurve, PairingEngine},
     fields::Field,
     groups::Group,
