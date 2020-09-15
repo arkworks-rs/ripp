@@ -41,23 +41,23 @@ where
 }
 
 impl<IP, LMC, RMC, IPC, P, D> Clone for TIPAWithSSMProof<IP, LMC, RMC, IPC, P, D>
-    where
-        D: Digest,
-        P: PairingEngine,
-        IP: InnerProduct<
-            LeftMessage = LMC::Message,
-            RightMessage = RMC::Message,
-            Output = IPC::Message,
-        >,
-        LMC: DoublyHomomorphicCommitment + TIPACompatibleSetup,
-        RMC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar, Message = P::Fr> + TIPACompatibleSetup,
-        IPC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar>,
-        RMC::Message: MulAssign<LMC::Scalar>,
-        IPC::Message: MulAssign<LMC::Scalar>,
-        RMC::Key: MulAssign<LMC::Scalar>,
-        IPC::Key: MulAssign<LMC::Scalar>,
-        RMC::Output: MulAssign<LMC::Scalar>,
-        IPC::Output: MulAssign<LMC::Scalar>,
+where
+    D: Digest,
+    P: PairingEngine,
+    IP: InnerProduct<
+        LeftMessage = LMC::Message,
+        RightMessage = RMC::Message,
+        Output = IPC::Message,
+    >,
+    LMC: DoublyHomomorphicCommitment + TIPACompatibleSetup,
+    RMC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar, Message = P::Fr> + TIPACompatibleSetup,
+    IPC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar>,
+    RMC::Message: MulAssign<LMC::Scalar>,
+    IPC::Message: MulAssign<LMC::Scalar>,
+    RMC::Key: MulAssign<LMC::Scalar>,
+    IPC::Key: MulAssign<LMC::Scalar>,
+    RMC::Output: MulAssign<LMC::Scalar>,
+    IPC::Output: MulAssign<LMC::Scalar>,
 {
     fn clone(&self) -> Self {
         Self {

@@ -4,9 +4,9 @@ use std::{
     ops::MulAssign,
 };
 
+pub mod applications;
 pub mod gipa;
 pub mod tipa;
-pub mod applications;
 
 pub type Error = Box<dyn ErrorTrait>;
 

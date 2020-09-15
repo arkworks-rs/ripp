@@ -1,5 +1,5 @@
-use ip_proofs::{
-    applications::groth16_aggregation::{aggregate_proofs, verify_aggregate_proof, setup_inner_product},
+use ip_proofs::applications::groth16_aggregation::{
+    aggregate_proofs, setup_inner_product, verify_aggregate_proof,
 };
 
 use std::time::Instant;
@@ -18,7 +18,6 @@ use zexe_cp::nizk::{groth16::Groth16, NIZK};
 
 use blake2::Blake2b;
 use rand::{rngs::StdRng, SeedableRng};
-
 
 #[derive(Clone)]
 struct TestCircuit {

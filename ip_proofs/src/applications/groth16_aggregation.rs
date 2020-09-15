@@ -9,10 +9,17 @@ use groth16::{Proof, VerifyingKey};
 
 use std::ops::AddAssign;
 
-use rand::Rng;
 use digest::Digest;
 use num_traits::identities::One;
+use rand::Rng;
 
+use crate::{
+    tipa::{
+        structured_scalar_message::{structured_scalar_power, TIPAWithSSMProof},
+        TIPAProof, VerifierSRS, SRS, TIPA,
+    },
+    Error,
+};
 use dh_commitments::{
     afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
     identity::{HomomorphicPlaceholderValue, IdentityCommitment, IdentityOutput},
@@ -21,13 +28,6 @@ use dh_commitments::{
 use inner_products::{
     ExtensionFieldElement, InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct,
     ScalarInnerProduct,
-};
-use crate::{
-    tipa::{
-        structured_scalar_message::{structured_scalar_power, TIPAWithSSMProof},
-        TIPAProof, VerifierSRS, SRS, TIPA,
-    },
-    Error,
 };
 
 type PairingInnerProductAB<P, D> = TIPA<
@@ -77,7 +77,7 @@ pub struct AggregateProof<P: PairingEngine, D: Digest> {
 }
 
 pub fn setup_inner_product<P, D, R: Rng>(rng: &mut R, size: usize) -> Result<SRS<P>, Error>
-    where
+where
     P: PairingEngine,
     D: Digest,
 {
