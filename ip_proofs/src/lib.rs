@@ -1,3 +1,4 @@
+#![deny(warnings, unused, future_incompatible, nonstandard_style)]
 use std::{
     error::Error as ErrorTrait,
     fmt::{Display, Formatter, Result as FmtResult},

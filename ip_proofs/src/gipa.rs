@@ -1,4 +1,4 @@
-use algebra::{bytes::ToBytes, fields::Field, to_bytes};
+use algebra::{fields::Field, to_bytes};
 use digest::Digest;
 use num_traits::identities::One;
 use rand::Rng;

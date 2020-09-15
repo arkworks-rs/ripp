@@ -9,7 +9,7 @@
 
 use algebra_core::{
     msm::VariableBaseMSM, to_bytes, AffineCurve, Field, One, PairingEngine, PrimeField,
-    ProjectiveCurve, ToBytes, UniformRand,
+    ProjectiveCurve, UniformRand,
 };
 use digest::Digest;
 use rayon::prelude::*;

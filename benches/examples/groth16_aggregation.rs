@@ -8,12 +8,8 @@ use algebra::{
     bls12_381::{Bls12_381, Fr},
     UniformRand,
 };
-use r1cs_core::{ConstraintSynthesizer, ConstraintSystem, SynthesisError};
-use r1cs_std::{
-    alloc::AllocGadget,
-    eq::EqGadget,
-    fields::{fp::FpGadget, FieldGadget},
-};
+use r1cs_core::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
+use r1cs_std::{fields::fp::FpVar, prelude::*};
 use zexe_cp::nizk::{groth16::Groth16, NIZK};
 
 use blake2::Blake2b;
@@ -27,23 +23,18 @@ struct TestCircuit {
 }
 
 impl ConstraintSynthesizer<Fr> for TestCircuit {
-    fn generate_constraints<CS: ConstraintSystem<Fr>>(
-        self,
-        cs: &mut CS,
-    ) -> Result<(), SynthesisError> {
+    fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
         let input_variables =
-            Vec::<FpGadget<Fr>>::alloc_input(&mut cs.ns(|| "public_inputs"), || {
-                Ok(self.public_inputs.clone())
-            })?;
-        let sum = <FpGadget<Fr>>::alloc_input(&mut cs.ns(|| "sum_input"), || Ok(&self.public_sum))?;
-        let witness = <FpGadget<Fr>>::alloc(&mut cs.ns(|| "witness"), || Ok(&self.witness_input))?;
+            Vec::<FpVar<Fr>>::new_input(cs.clone(), || Ok(self.public_inputs.clone()))?;
+        let sum = FpVar::new_input(cs.clone(), || Ok(&self.public_sum))?;
+        let witness = FpVar::new_witness(cs.clone(), || Ok(&self.witness_input))?;
 
         let mut computed_sum = witness;
-        for (i, x) in input_variables.iter().enumerate() {
-            computed_sum = computed_sum.add(&mut cs.ns(|| format!("comp_sum_{}", i)), x)?;
+        for x in &input_variables {
+            computed_sum += x;
         }
 
-        sum.enforce_equal(&mut cs.ns(|| "check_sum"), &computed_sum)?;
+        sum.enforce_equal(&computed_sum)?;
 
         Ok(())
     }
