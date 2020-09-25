@@ -98,20 +98,21 @@ where
 
 #[derive(Clone)]
 pub struct SRS<P: PairingEngine> {
-    g_alpha_powers: Vec<P::G1Projective>,
-    h_beta_powers: Vec<P::G2Projective>,
-    g_beta: P::G1Projective,
-    h_alpha: P::G2Projective,
+    pub g_alpha_powers: Vec<P::G1Projective>,
+    pub h_beta_powers: Vec<P::G2Projective>,
+    pub g_beta: P::G1Projective,
+    pub h_alpha: P::G2Projective,
 }
 
 #[derive(Clone)]
 pub struct VerifierSRS<P: PairingEngine> {
-    g: P::G1Projective,
-    h: P::G2Projective,
-    g_beta: P::G1Projective,
-    h_alpha: P::G2Projective,
+    pub g: P::G1Projective,
+    pub h: P::G2Projective,
+    pub g_beta: P::G1Projective,
+    pub h_alpha: P::G2Projective,
 }
 
+//TODO: Change SRS to return reference iterator - requires changes to TIPA and GIPA signatures
 impl<P: PairingEngine> SRS<P> {
     pub fn get_commitment_keys(&self) -> (Vec<P::G2Projective>, Vec<P::G1Projective>) {
         let ck_1 = self.h_beta_powers.iter().step_by(2).cloned().collect();
