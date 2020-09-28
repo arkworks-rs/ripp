@@ -10,6 +10,7 @@ edition = "2018"
 algebra = {git = "https://github.com/scipr-lab/zexe/", package = "algebra" }
 ff_fft = {git = "https://github.com/scipr-lab/zexe/", package = "ff-fft" }
 groth16 = {git = "https://github.com/scipr-lab/zexe/", package = "groth16" }
+bench_utils = { git = "https://github.com/scipr-lab/zexe", package = "bench-utils" }
 rand = { version = "0.7" }
 digest = { version = "0.9" }
 num-traits = { version = "0.2" }
@@ -23,3 +24,6 @@ algebra = {git = "https://github.com/scipr-lab/zexe/", package = "algebra", feat
 r1cs_core = {git = "https://github.com/scipr-lab/zexe/", package = "r1cs-core" }
 r1cs_std = {git = "https://github.com/scipr-lab/zexe/", package = "r1cs-std" }
 blake2 = { version = "0.9" }
+
+[features]
+print-trace = [ "bench_utils/print-trace" ]

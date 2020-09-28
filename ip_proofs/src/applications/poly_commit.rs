@@ -3,10 +3,12 @@ use algebra::{
     fields::{Field, PrimeField},
     groups::Group,
     msm::VariableBaseMSM,
+    UniformRand,
 };
 use ff_fft::polynomial::DensePolynomial as UnivariatePolynomial;
 
 use std::marker::PhantomData;
+use bench_utils::{start_timer, end_timer};
 
 use digest::Digest;
 use rand::Rng;
@@ -15,6 +17,7 @@ use num_traits::identities::{Zero, One};
 use crate::{
     tipa::{
         structured_scalar_message::{TIPAWithSSMProof},
+        structured_generators_scalar_power,
         VerifierSRS, SRS, TIPA,
     },
     Error,
@@ -54,6 +57,23 @@ pub struct KZG<P: PairingEngine> {
 
 // Simple implementation of KZG polynomial commitment scheme
 impl<P: PairingEngine> KZG<P> {
+    pub fn setup<R: Rng>(rng: &mut R, degree: usize) -> Result<(Vec<P::G1Affine>, VerifierSRS<P>), Error> {
+        let alpha = <P::Fr>::rand(rng);
+        let beta = <P::Fr>::rand(rng);
+        let g = <P::G1Projective>::prime_subgroup_generator();
+        let h = <P::G2Projective>::prime_subgroup_generator();
+        let g_alpha_powers = structured_generators_scalar_power(degree + 1, &g, &alpha);
+        Ok((
+            <P as PairingEngine>::G1Projective::batch_normalization_into_affine(&g_alpha_powers),
+            VerifierSRS {
+                g: g.clone(),
+                h: h.clone(),
+                g_beta: <P::G1Projective as Group>::mul(&g, &beta),
+                h_alpha: <P::G2Projective as Group>::mul(&h, &alpha),
+            },
+        ))
+    }
+
     pub fn commit(
         powers: &[P::G1Affine],
         polynomial: &UnivariatePolynomial<P::Fr>,
@@ -161,6 +181,7 @@ impl<P: PairingEngine, D: Digest> BivariatePolynomialCommitment<P, D> {
         let (ck_1, ck_2) = ip_srs.get_commitment_keys();
         assert!(ck_1.len() >= bivariate_polynomial.y_polynomials.len());
 
+        let precomp_time = start_timer!(|| "Computing coefficients and KZG commitment");
         let mut powers_of_x = vec![];
         let mut cur = P::Fr::one();
         for _ in 0..(ck_1.len()) {
@@ -180,13 +201,18 @@ impl<P: PairingEngine, D: Digest> BivariatePolynomialCommitment<P, D> {
             (0..ck_1.len()).map(|i| powers_of_x[i].clone() * &coeffs[i][j]).sum()
         }).collect::<Vec<P::Fr>>();
         let y_eval_comm = VariableBaseMSM::multi_scalar_mul(kzg_srs, &y_eval_coeffs.iter().map(|b| b.into_repr()).collect::<Vec<_>>());
+        end_timer!(precomp_time);
 
+        let ipa_time = start_timer!(|| "Computing IPA proof");
         let ip_proof = PolynomialEvaluationSecondTierIPA::<P, D>::prove_with_structured_scalar_message(
             &ip_srs,
             (y_polynomial_comms, &powers_of_x),
             (&ck_1, &ck_2, &HomomorphicPlaceholderValue),
         )?;
+        end_timer!(ipa_time);
+        let kzg_time = start_timer!(|| "Computing KZG opening proof");
         let kzg_proof = KZG::<P>::open(kzg_srs, &UnivariatePolynomial::from_coefficients_slice(&y_eval_coeffs), y)?;
+        end_timer!(kzg_time);
 
         Ok(OpeningProof {
             ip_proof,
@@ -271,12 +297,13 @@ impl<P: PairingEngine, D: Digest> UnivariatePolynomialCommitment<P, D> {
 
     pub fn verify(
         v_srs: &VerifierSRS<P>,
-        bivariate_degree: usize,
+        max_degree: usize,
         com: &ExtensionFieldElement<P>,
         point: &P::Fr,
         eval: &P::Fr,
         proof: &OpeningProof<P, D>,
     ) -> Result<bool, Error> {
+        let bivariate_degree = Self::bivariate_degrees(max_degree);
         let y = point.clone();
         let x = y.pow(&vec![(bivariate_degree + 1) as u64]);
         BivariatePolynomialCommitment::verify(v_srs, com, &(x, y), eval, proof)
@@ -294,7 +321,8 @@ mod tests {
 
     const BIVARIATE_X_DEGREE: usize = 7;
     const BIVARIATE_Y_DEGREE: usize = 7;
-    const UNIVARIATE_DEGREE: usize = 56;
+    //const UNIVARIATE_DEGREE: usize = 56;
+    const UNIVARIATE_DEGREE: usize = 65535;
 
     type TestBivariatePolyCommitment = BivariatePolynomialCommitment<Bls12_381, Blake2b>;
     type TestUnivariatePolyCommitment = UnivariatePolynomialCommitment<Bls12_381, Blake2b>;
@@ -327,6 +355,7 @@ mod tests {
         assert!(TestBivariatePolyCommitment::verify(&v_srs, &com, &point, &eval, &eval_proof).unwrap());
     }
 
+    // `cargo test univariate_poly_commit_test --release --features print-trace -- --nocapture`
     #[test]
     fn univariate_poly_commit_test() {
         let mut rng = StdRng::seed_from_u64(0u64);
@@ -348,7 +377,7 @@ mod tests {
         let eval = polynomial.evaluate(point.clone());
 
         // Verify proof
-        assert!(TestUnivariatePolyCommitment::verify(&v_srs, BIVARIATE_X_DEGREE, &com, &point, &eval, &eval_proof).unwrap());
+        assert!(TestUnivariatePolyCommitment::verify(&v_srs, UNIVARIATE_DEGREE, &com, &point, &eval, &eval_proof).unwrap());
     }
 
 }
