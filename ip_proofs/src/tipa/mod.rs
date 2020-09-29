@@ -166,6 +166,7 @@ where
             IPC::setup(rng, 1)?.pop().unwrap(),
         ))
     }
+
     pub fn prove(
         srs: &SRS<P>,
         values: (&[IP::LeftMessage], &[IP::RightMessage]),
@@ -194,14 +195,6 @@ where
         let transcript_inverse = transcript.iter().map(|x| x.inverse().unwrap()).collect();
         let r_inverse = r_shift.inverse().unwrap();
 
-        let ck_b_polynomial = DensePolynomial::from_coefficients_slice(
-            &polynomial_coefficients_from_transcript(&transcript, &<P::Fr>::one()),
-        );
-        let ck_a_polynomial = DensePolynomial::from_coefficients_slice(
-            &polynomial_coefficients_from_transcript(&transcript_inverse, &r_inverse),
-        );
-        assert_eq!(srs.g_alpha_powers.len(), ck_a_polynomial.coeffs.len());
-
         // KZG challenge point
         let mut counter_nonce: usize = 0;
         let c = loop {
@@ -220,36 +213,23 @@ where
         };
 
         // Complete KZG proofs
-        let ck_a_polynomial_c_eval =
-            polynomial_evaluation_product_form_from_transcript(&transcript_inverse, &c, &r_inverse);
-        let ck_b_polynomial_c_eval =
-            polynomial_evaluation_product_form_from_transcript(&transcript, &c, &<P::Fr>::one());
-
-        let quotient_polynomial_a = &(&ck_a_polynomial
-            - &DensePolynomial::from_coefficients_vec(vec![ck_a_polynomial_c_eval]))
-            / &(DensePolynomial::from_coefficients_vec(vec![-c, LMC::Scalar::one()]));
-        let quotient_polynomial_b = &(&ck_b_polynomial
-            - &DensePolynomial::from_coefficients_vec(vec![ck_b_polynomial_c_eval]))
-            / &(DensePolynomial::from_coefficients_vec(vec![-c, LMC::Scalar::one()]));
-
-        let mut quotient_polynomial_a_coeffs = quotient_polynomial_a.coeffs;
-        quotient_polynomial_a_coeffs.resize(srs.g_alpha_powers.len(), <P::Fr>::zero());
-        let mut quotient_polynomial_b_coeffs = quotient_polynomial_b.coeffs;
-        quotient_polynomial_b_coeffs.resize(srs.g_alpha_powers.len(), <P::Fr>::zero());
-
-        let quotient_a_proof = MultiexponentiationInnerProduct::inner_product(
+        let ck_a_kzg_opening = prove_commitment_key_kzg_opening(
             &srs.h_beta_powers,
-            &quotient_polynomial_a_coeffs,
+            &transcript_inverse,
+            &r_inverse,
+            &c,
         )?;
-        let quotient_b_proof = MultiexponentiationInnerProduct::inner_product(
+        let ck_b_kzg_opening = prove_commitment_key_kzg_opening(
             &srs.g_alpha_powers,
-            &quotient_polynomial_b_coeffs,
+            &transcript,
+            &<P::Fr>::one(),
+            &c,
         )?;
 
         Ok(TIPAProof {
             gipa_proof: proof,
             final_ck: (ck_a_final, ck_b_final),
-            final_ck_proof: (quotient_a_proof, quotient_b_proof),
+            final_ck_proof: (ck_a_kzg_opening, ck_b_kzg_opening),
             _pair: PhantomData,
         })
     }
@@ -295,24 +275,22 @@ where
             counter_nonce += 1;
         };
 
-        let ck_a_polynomial_c_eval = polynomial_evaluation_product_form_from_transcript(
+        let ck_a_valid = verify_commitment_key_g2_kzg_opening(
+            v_srs,
+            &ck_a_final,
+            &ck_a_proof,
             &transcript_inverse,
-            &c,
             &r_shift.inverse().unwrap(),
-        );
-        let ck_b_polynomial_c_eval =
-            polynomial_evaluation_product_form_from_transcript(&transcript, &c, &<P::Fr>::one());
-
-        let ck_a_valid =
-            P::pairing(
-                v_srs.g.clone(),
-                ck_a_final.clone() - &v_srs.h.mul(ck_a_polynomial_c_eval),
-            ) == P::pairing(v_srs.g_beta.clone() - &v_srs.g.mul(c), ck_a_proof.clone());
-        let ck_b_valid =
-            P::pairing(
-                ck_b_final.clone() - &v_srs.g.mul(ck_b_polynomial_c_eval),
-                v_srs.h.clone(),
-            ) == P::pairing(ck_b_proof.clone(), v_srs.h_alpha.clone() - &v_srs.h.mul(c));
+            &c,
+        )?;
+        let ck_b_valid = verify_commitment_key_g1_kzg_opening(
+            v_srs,
+            &ck_b_final,
+            &ck_b_proof,
+            &transcript,
+            &<P::Fr>::one(),
+            &c,
+        )?;
 
         // Verify base inner product commitment
         let (com_a, com_b, com_t) = base_com;
@@ -325,6 +303,73 @@ where
 
         Ok(ck_a_valid && ck_b_valid && base_valid)
     }
+}
+
+
+pub fn prove_commitment_key_kzg_opening<G: ProjectiveCurve>(
+    srs_powers: &Vec<G>,
+    transcript: &Vec<G::ScalarField>,
+    r_shift: &G::ScalarField,
+    kzg_challenge: &G::ScalarField,
+) -> Result<G, Error> {
+    let ck_polynomial = DensePolynomial::from_coefficients_slice(
+        &polynomial_coefficients_from_transcript(transcript, r_shift),
+    );
+    assert_eq!(srs_powers.len(), ck_polynomial.coeffs.len());
+
+    let ck_polynomial_c_eval =
+        polynomial_evaluation_product_form_from_transcript(&transcript, kzg_challenge, &r_shift);
+
+    let quotient_polynomial = &(&ck_polynomial
+        - &DensePolynomial::from_coefficients_vec(vec![ck_polynomial_c_eval]))
+        / &(DensePolynomial::from_coefficients_vec(vec![-kzg_challenge.clone(), <G::ScalarField>::one()]));
+
+    let mut quotient_polynomial_coeffs = quotient_polynomial.coeffs;
+    quotient_polynomial_coeffs.resize(srs_powers.len(), <G::ScalarField>::zero());
+
+    MultiexponentiationInnerProduct::inner_product(
+        srs_powers,
+        &quotient_polynomial_coeffs,
+    )
+}
+
+//TODO: Figure out how to avoid needing two separate methods for verification of opposite groups
+pub fn verify_commitment_key_g2_kzg_opening<P: PairingEngine>(
+    v_srs: &VerifierSRS<P>,
+    ck_final: &P::G2Projective,
+    ck_opening: &P::G2Projective,
+    transcript: &Vec<P::Fr>,
+    r_shift: &P::Fr,
+    kzg_challenge: &P::Fr,
+) -> Result<bool, Error> {
+    let ck_polynomial_c_eval = polynomial_evaluation_product_form_from_transcript(
+        transcript,
+        kzg_challenge,
+        r_shift,
+    );
+    Ok(P::pairing(
+        v_srs.g.clone(),
+        ck_final.clone() - &v_srs.h.mul(ck_polynomial_c_eval),
+    ) == P::pairing(v_srs.g_beta.clone() - &v_srs.g.mul(kzg_challenge.clone()), ck_opening.clone()))
+}
+
+pub fn verify_commitment_key_g1_kzg_opening<P: PairingEngine>(
+    v_srs: &VerifierSRS<P>,
+    ck_final: &P::G1Projective,
+    ck_opening: &P::G1Projective,
+    transcript: &Vec<P::Fr>,
+    r_shift: &P::Fr,
+    kzg_challenge: &P::Fr,
+) -> Result<bool, Error> {
+    let ck_polynomial_c_eval = polynomial_evaluation_product_form_from_transcript(
+        transcript,
+        kzg_challenge,
+        r_shift,
+    );
+    Ok(P::pairing(
+        ck_final.clone() - &v_srs.g.mul(ck_polynomial_c_eval),
+        v_srs.h.clone(),
+    ) == P::pairing(ck_opening.clone(), v_srs.h_alpha.clone() - &v_srs.h.mul(kzg_challenge.clone())))
 }
 
 pub fn structured_generators_scalar_power<G: ProjectiveCurve>(

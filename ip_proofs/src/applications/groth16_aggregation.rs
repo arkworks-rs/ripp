@@ -14,7 +14,7 @@ use rand::Rng;
 
 use crate::{
     tipa::{
-        structured_scalar_message::{structured_scalar_power, TIPAWithSSMProof},
+        structured_scalar_message::{structured_scalar_power, TIPAWithSSMProof, TIPAWithSSM},
         TIPAProof, VerifierSRS, SRS, TIPA,
     },
     Error,
@@ -22,7 +22,6 @@ use crate::{
 use dh_commitments::{
     afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
     identity::{HomomorphicPlaceholderValue, IdentityCommitment, IdentityOutput},
-    pedersen::PedersenCommitment,
 };
 use inner_products::{
     ExtensionFieldElement, InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct,
@@ -47,10 +46,9 @@ type PairingInnerProductABProof<P, D> = TIPAProof<
     D,
 >;
 
-type MultiExpInnerProductC<P, D> = TIPA<
+type MultiExpInnerProductC<P, D> = TIPAWithSSM<
     MultiexponentiationInnerProduct<<P as PairingEngine>::G1Projective>,
     AFGHOCommitmentG1<P>,
-    PedersenCommitment<<P as PairingEngine>::G1Projective>,
     IdentityCommitment<<P as PairingEngine>::G1Projective, <P as PairingEngine>::Fr>,
     P,
     D,
@@ -59,7 +57,6 @@ type MultiExpInnerProductC<P, D> = TIPA<
 type MultiExpInnerProductCProof<P, D> = TIPAWithSSMProof<
     MultiexponentiationInnerProduct<<P as PairingEngine>::G1Projective>,
     AFGHOCommitmentG1<P>,
-    PedersenCommitment<<P as PairingEngine>::G1Projective>,
     IdentityCommitment<<P as PairingEngine>::G1Projective, <P as PairingEngine>::Fr>,
     P,
     D,
@@ -154,7 +151,7 @@ where
     let tipa_proof_c = MultiExpInnerProductC::<P, D>::prove_with_structured_scalar_message(
         &ip_srs,
         (&c, &r_vec),
-        (&ck_1, &ck_2, &HomomorphicPlaceholderValue),
+        (&ck_1, &HomomorphicPlaceholderValue),
     )?;
 
     Ok(AggregateProof {
