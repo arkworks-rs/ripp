@@ -16,16 +16,15 @@ use num_traits::identities::{Zero, One};
 
 use crate::{
     tipa::{
-        structured_scalar_message::{TIPAWithSSMProof},
+        structured_scalar_message::{TIPAWithSSMProof, TIPAWithSSM},
         structured_generators_scalar_power,
-        VerifierSRS, SRS, TIPA,
+        VerifierSRS, SRS,
     },
     Error,
 };
 use dh_commitments::{
     identity::{HomomorphicPlaceholderValue, IdentityCommitment, IdentityOutput},
     afgho16::AFGHOCommitmentG1,
-    pedersen::PedersenCommitment,
     DoublyHomomorphicCommitment,
 };
 use inner_products::{
@@ -33,10 +32,9 @@ use inner_products::{
     ExtensionFieldElement,
 };
 
-type PolynomialEvaluationSecondTierIPA<P, D> = TIPA<
+type PolynomialEvaluationSecondTierIPA<P, D> = TIPAWithSSM<
     MultiexponentiationInnerProduct<<P as PairingEngine>::G1Projective>,
     AFGHOCommitmentG1<P>,
-    PedersenCommitment<<P as PairingEngine>::G1Projective>,
     IdentityCommitment<<P as PairingEngine>::G1Projective, <P as PairingEngine>::Fr>,
     P,
     D,
@@ -45,7 +43,6 @@ type PolynomialEvaluationSecondTierIPA<P, D> = TIPA<
 type PolynomialEvaluationSecondTierIPAProof<P, D> = TIPAWithSSMProof<
     MultiexponentiationInnerProduct<<P as PairingEngine>::G1Projective>,
     AFGHOCommitmentG1<P>,
-    PedersenCommitment<<P as PairingEngine>::G1Projective>,
     IdentityCommitment<<P as PairingEngine>::G1Projective, <P as PairingEngine>::Fr>,
     P,
     D,
@@ -143,7 +140,7 @@ pub struct BivariatePolynomialCommitment<P: PairingEngine, D: Digest> {
 
 impl<P: PairingEngine, D: Digest> BivariatePolynomialCommitment<P, D> {
     pub fn setup<R: Rng>(rng: &mut R, x_degree: usize, y_degree: usize) -> Result<(SRS<P>, Vec<P::G1Affine>), Error> {
-        //TODO: Fix when make TIPA with SSM less wasteful with second message
+        //TODO: Don't need full TIPA SRS since only using one set of powers
         //TODO: Fails when x_degree is smaller than half of y_degree because of kzg setup
         let srs = PolynomialEvaluationSecondTierIPA::<P, D>::setup(rng, x_degree + 1)?.0;
         let kzg_srs = <P as PairingEngine>::G1Projective::batch_normalization_into_affine(&srs.g_alpha_powers[0..y_degree + 1]);
@@ -178,7 +175,7 @@ impl<P: PairingEngine, D: Digest> BivariatePolynomialCommitment<P, D> {
     ) -> Result<OpeningProof<P, D>, Error> {
         let (x, y) = point;
         let (ip_srs, kzg_srs) = srs;
-        let (ck_1, ck_2) = ip_srs.get_commitment_keys();
+        let (ck_1, _) = ip_srs.get_commitment_keys();
         assert!(ck_1.len() >= bivariate_polynomial.y_polynomials.len());
 
         let precomp_time = start_timer!(|| "Computing coefficients and KZG commitment");
@@ -207,7 +204,7 @@ impl<P: PairingEngine, D: Digest> BivariatePolynomialCommitment<P, D> {
         let ip_proof = PolynomialEvaluationSecondTierIPA::<P, D>::prove_with_structured_scalar_message(
             &ip_srs,
             (y_polynomial_comms, &powers_of_x),
-            (&ck_1, &ck_2, &HomomorphicPlaceholderValue),
+            (&ck_1, &HomomorphicPlaceholderValue),
         )?;
         end_timer!(ipa_time);
         let kzg_time = start_timer!(|| "Computing KZG opening proof");
@@ -355,7 +352,8 @@ mod tests {
         assert!(TestBivariatePolyCommitment::verify(&v_srs, &com, &point, &eval, &eval_proof).unwrap());
     }
 
-    // `cargo test univariate_poly_commit_test --release --features print-trace -- --nocapture`
+    // `cargo test univariate_poly_commit_test --release --features print-trace -- --ignored --nocapture`
+    #[ignore]
     #[test]
     fn univariate_poly_commit_test() {
         let mut rng = StdRng::seed_from_u64(0u64);
