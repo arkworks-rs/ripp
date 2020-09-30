@@ -11,6 +11,7 @@ use std::{
     marker::PhantomData,
 };
 use rand::Rng;
+use bench_utils::{start_timer, end_timer};
 
 use crate::{
     gipa::{GIPA, GIPAProof},
@@ -152,12 +153,15 @@ where
         ck: (&[LMC::Key], &IPC::Key),
     ) -> Result<TIPAWithSSMProof<IP, LMC, IPC, P, D>, Error> {
         // Run GIPA
+        let gipa = start_timer!(|| "GIPA");
         let (proof, aux) = <GIPA<IP, LMC, SSMPlaceholderCommitment<P::Fr>, IPC, D>>::prove_with_aux(
             values,
             (ck.0, &vec![HomomorphicPlaceholderValue {}; values.1.len()], &vec![ck.1.clone()]),
         )?;
+        end_timer!(gipa);
 
         // Prove final commitment key is wellformed
+        let ck_kzg = start_timer!(|| "Prove commitment key");
         let (ck_a_final, _) = aux.ck_base;
         let transcript = aux.r_transcript;
         let transcript_inverse = transcript.iter().map(|x| x.inverse().unwrap()).collect();
@@ -185,6 +189,7 @@ where
             &<P::Fr>::one(),
             &c,
         )?;
+        end_timer!(ck_kzg);
 
         Ok(TIPAWithSSMProof {
             gipa_proof: proof,

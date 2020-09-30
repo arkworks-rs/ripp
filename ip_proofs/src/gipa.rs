@@ -2,7 +2,8 @@ use algebra::{fields::Field, to_bytes};
 use digest::Digest;
 use num_traits::identities::One;
 use rand::Rng;
-use std::{marker::PhantomData, ops::MulAssign};
+use std::{marker::PhantomData, ops::MulAssign, convert::TryInto};
+use bench_utils::{start_timer, end_timer};
 
 use crate::{mul_helper, Error, InnerProductArgumentError};
 use dh_commitments::DoublyHomomorphicCommitment;
@@ -179,6 +180,7 @@ where
         let mut r_transcript = Vec::new();
         assert!(m_a.len().is_power_of_two());
         let (m_base, ck_base) = 'recurse: loop {
+            let recurse = start_timer!(|| format!("Recurse round size {}", m_a.len()));
             if m_a.len() == 1 {
                 // base case
                 break 'recurse (
@@ -200,16 +202,20 @@ where
                 let ck_b_1 = &ck_b[split..];
                 let ck_b_2 = &ck_b[..split];
 
+                let cl = start_timer!(|| "Commit L");
                 let com_1 = (
                     LMC::commit(ck_a_1, m_a_1)?,
                     RMC::commit(ck_b_1, m_b_1)?,
                     IPC::commit(&ck_t, &vec![IP::inner_product(m_a_1, m_b_1)?])?,
                 );
+                end_timer!(cl);
+                let cr = start_timer!(|| "Commit R");
                 let com_2 = (
                     LMC::commit(ck_a_2, m_a_2)?,
                     RMC::commit(ck_b_2, m_b_2)?,
                     IPC::commit(&ck_t, &vec![IP::inner_product(m_a_2, m_b_2)?])?,
                 );
+                end_timer!(cr);
 
                 // Fiat-Shamir challenge
                 let mut counter_nonce: usize = 0;
@@ -222,46 +228,55 @@ where
                     hash_input.extend_from_slice(&to_bytes![
                         transcript, com_1.0, com_1.1, com_1.2, com_2.0, com_2.1, com_2.2
                     ]?);
-                    if let Some(c) = LMC::Scalar::from_random_bytes(&D::digest(&hash_input)) {
-                        if let Some(c_inv) = c.inverse() {
-                            break 'challenge (c, c_inv);
-                        }
-                    };
+                    let c: LMC::Scalar = u128::from_be_bytes(D::digest(&hash_input).as_slice()[0..16].try_into().unwrap()).into();
+                    if let Some(c_inv) = c.inverse() {
+                        // Optimization for multiexponentiation to rescale G2 elements with 128-bit challenge
+                        // Swap 'c' and 'c_inv' since can't control bit size of c_inv
+                        break 'challenge (c_inv, c);
+                    }
                     counter_nonce += 1;
                 };
 
                 // Set up values for next step of recursion
-                //TODO: Optimization: using mul_helper to individually multiply; could require a "EfficientVectorMul<Scalar>" trait on msgs/cks to make use of VariableMSM
+                let rescale_m1 = start_timer!(|| "Rescale M1");
                 m_a = m_a_1
                     .iter()
                     .map(|a| mul_helper(a, &c))
                     .zip(m_a_2)
                     .map(|(a_1, a_2)| a_1.clone() + a_2.clone())
                     .collect::<Vec<LMC::Message>>();
+                end_timer!(rescale_m1);
 
+                let rescale_m2 = start_timer!(|| "Rescale M2");
                 m_b = m_b_2
                     .iter()
                     .map(|b| mul_helper(b, &c_inv))
                     .zip(m_b_1)
                     .map(|(b_1, b_2)| b_1.clone() + b_2.clone())
                     .collect::<Vec<RMC::Message>>();
+                end_timer!(rescale_m2);
 
+                let rescale_ck1 = start_timer!(|| "Rescale CK1");
                 ck_a = ck_a_2
                     .iter()
                     .map(|a| mul_helper(a, &c_inv))
                     .zip(ck_a_1)
                     .map(|(a_1, a_2)| a_1.clone() + a_2.clone())
                     .collect::<Vec<LMC::Key>>();
+                end_timer!(rescale_ck1);
 
+                let rescale_ck2 = start_timer!(|| "Rescale CK2");
                 ck_b = ck_b_1
                     .iter()
                     .map(|b| mul_helper(b, &c))
                     .zip(ck_b_2)
                     .map(|(b_1, b_2)| b_1.clone() + b_2.clone())
                     .collect::<Vec<RMC::Key>>();
+                end_timer!(rescale_ck2);
 
                 r_commitment_steps.push((com_1, com_2));
                 r_transcript.push(c);
+                end_timer!(recurse);
             }
         };
         r_transcript.reverse();
@@ -305,11 +320,12 @@ where
                 hash_input.extend_from_slice(&to_bytes![
                     transcript, com_1.0, com_1.1, com_1.2, com_2.0, com_2.1, com_2.2
                 ]?);
-                if let Some(c) = LMC::Scalar::from_random_bytes(&D::digest(&hash_input)) {
-                    if let Some(c_inv) = c.inverse() {
-                        break 'challenge (c, c_inv);
-                    }
-                };
+                let c: LMC::Scalar = u128::from_be_bytes(D::digest(&hash_input).as_slice()[0..16].try_into().unwrap()).into();
+                if let Some(c_inv) = c.inverse() {
+                    // Optimization for multiexponentiation to rescale G2 elements with 128-bit challenge
+                    // Swap 'c' and 'c_inv' since can't control bit size of c_inv
+                    break 'challenge (c_inv, c);
+                }
                 counter_nonce += 1;
             };
 

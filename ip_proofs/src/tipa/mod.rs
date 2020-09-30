@@ -11,6 +11,7 @@ use itertools::Itertools;
 use num_traits::identities::{One, Zero};
 use rand::Rng;
 use std::{marker::PhantomData, ops::MulAssign};
+use bench_utils::{start_timer, end_timer};
 
 use crate::{
     gipa::{GIPAProof, GIPA},
@@ -317,20 +318,28 @@ pub fn prove_commitment_key_kzg_opening<G: ProjectiveCurve>(
     );
     assert_eq!(srs_powers.len(), ck_polynomial.coeffs.len());
 
+    let eval = start_timer!(|| "polynomial eval");
     let ck_polynomial_c_eval =
         polynomial_evaluation_product_form_from_transcript(&transcript, kzg_challenge, &r_shift);
+    end_timer!(eval);
 
+    let quotient = start_timer!(|| "polynomial quotient");
     let quotient_polynomial = &(&ck_polynomial
         - &DensePolynomial::from_coefficients_vec(vec![ck_polynomial_c_eval]))
         / &(DensePolynomial::from_coefficients_vec(vec![-kzg_challenge.clone(), <G::ScalarField>::one()]));
+    end_timer!(quotient);
 
     let mut quotient_polynomial_coeffs = quotient_polynomial.coeffs;
     quotient_polynomial_coeffs.resize(srs_powers.len(), <G::ScalarField>::zero());
 
-    MultiexponentiationInnerProduct::inner_product(
+
+    let multiexp = start_timer!(|| "opening multiexp");
+    let opening = MultiexponentiationInnerProduct::inner_product(
         srs_powers,
         &quotient_polynomial_coeffs,
-    )
+    );
+    end_timer!(multiexp);
+    opening
 }
 
 //TODO: Figure out how to avoid needing two separate methods for verification of opposite groups
