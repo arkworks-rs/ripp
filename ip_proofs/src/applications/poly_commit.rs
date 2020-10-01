@@ -140,10 +140,17 @@ pub struct BivariatePolynomialCommitment<P: PairingEngine, D: Digest> {
 
 impl<P: PairingEngine, D: Digest> BivariatePolynomialCommitment<P, D> {
     pub fn setup<R: Rng>(rng: &mut R, x_degree: usize, y_degree: usize) -> Result<(SRS<P>, Vec<P::G1Affine>), Error> {
-        //TODO: Don't need full TIPA SRS since only using one set of powers
-        //TODO: Fails when x_degree is smaller than half of y_degree because of kzg setup
-        let srs = PolynomialEvaluationSecondTierIPA::<P, D>::setup(rng, x_degree + 1)?.0;
-        let kzg_srs = <P as PairingEngine>::G1Projective::batch_normalization_into_affine(&srs.g_alpha_powers[0..y_degree + 1]);
+        let alpha = <P::Fr>::rand(rng);
+        let beta = <P::Fr>::rand(rng);
+        let g = <P::G1Projective>::prime_subgroup_generator();
+        let h = <P::G2Projective>::prime_subgroup_generator();
+        let kzg_srs = <P as PairingEngine>::G1Projective::batch_normalization_into_affine(&structured_generators_scalar_power(y_degree + 1, &g, &alpha));
+        let srs = SRS {
+            g_alpha_powers: vec![g.clone()],
+            h_beta_powers: structured_generators_scalar_power(2 * x_degree + 1, &h, &beta),
+            g_beta: <P::G1Projective as Group>::mul(&g, &beta),
+            h_alpha: <P::G2Projective as Group>::mul(&h, &alpha),
+        };
         Ok((srs, kzg_srs))
     }
 
@@ -245,19 +252,30 @@ pub struct UnivariatePolynomialCommitment<P: PairingEngine, D: Digest> {
 
 
 impl<P: PairingEngine, D: Digest> UnivariatePolynomialCommitment<P, D> {
-    fn bivariate_degrees(univariate_degree: usize) -> usize {
-        (((univariate_degree + 1) as f64).sqrt().ceil() as usize).next_power_of_two() - 1
+    fn bivariate_degrees(univariate_degree: usize) -> (usize, usize) {
+        //(((univariate_degree + 1) as f64).sqrt().ceil() as usize).next_power_of_two() - 1;
+        let sqrt = (((univariate_degree + 1) as f64).sqrt().ceil() as usize).next_power_of_two();
+        // Skew split between bivariate degrees to account for KZG being less expensive than MIPP
+        let skew_factor = if sqrt >= 32 {16_usize } else { sqrt / 2 };
+        (sqrt / skew_factor - 1, sqrt * skew_factor - 1)
     }
 
-    fn bivariate_form(bivariate_degree: usize, polynomial: &UnivariatePolynomial<P::Fr>) -> BivariatePolynomial<P::Fr> {
+    fn parse_bivariate_degrees_from_srs(srs: &(SRS<P>, Vec<P::G1Affine>)) -> (usize, usize) {
+        let x_degree = (srs.0.h_beta_powers.len() - 1) / 2;
+        let y_degree = srs.1.len() - 1;
+        (x_degree, y_degree)
+    }
+
+    fn bivariate_form(bivariate_degrees: (usize, usize), polynomial: &UnivariatePolynomial<P::Fr>) -> BivariatePolynomial<P::Fr> {
+        let (x_degree, y_degree) = bivariate_degrees;
         let default_zero = vec![P::Fr::zero()];
         let mut coeff_iter = polynomial.coeffs.iter().chain(default_zero.iter().cycle())
-            .take((bivariate_degree + 1).pow(2));
+            .take((x_degree + 1) * (y_degree + 1));
 
         let mut y_polynomials = Vec::new();
-        for _ in 0..bivariate_degree + 1 {
+        for _ in 0..x_degree + 1 {
             let mut y_polynomial_coeffs = vec![];
-            for _ in 0..bivariate_degree + 1 {
+            for _ in 0..y_degree + 1 {
                 y_polynomial_coeffs.push(Clone::clone(coeff_iter.next().unwrap()))
             }
             y_polynomials.push(UnivariatePolynomial::from_coefficients_slice(&y_polynomial_coeffs));
@@ -266,18 +284,16 @@ impl<P: PairingEngine, D: Digest> UnivariatePolynomialCommitment<P, D> {
     }
 
     pub fn setup<R: Rng>(rng: &mut R, degree: usize) -> Result<(SRS<P>, Vec<P::G1Affine>), Error> {
-        //TODO: Fix when make TIPA with SSM less wasteful with second message
-        //TODO: Fails when x_degree is smaller than half of y_degree because of kzg setup
-        let bivariate_degree = Self::bivariate_degrees(degree);
-        BivariatePolynomialCommitment::<P, D>::setup(rng, bivariate_degree, bivariate_degree)
+        let (x_degree, y_degree) = Self::bivariate_degrees(degree);
+        BivariatePolynomialCommitment::<P, D>::setup(rng, x_degree, y_degree)
     }
 
     pub fn commit(
         srs: &(SRS<P>, Vec<P::G1Affine>),
         polynomial: &UnivariatePolynomial<P::Fr>,
     ) -> Result<(ExtensionFieldElement<P>, Vec<P::G1Projective>), Error> {
-        let bivariate_degree = srs.1.len() - 1;
-        BivariatePolynomialCommitment::<P,D>::commit(srs, &Self::bivariate_form(bivariate_degree, polynomial))
+        let bivariate_degrees = Self::parse_bivariate_degrees_from_srs(srs);
+        BivariatePolynomialCommitment::<P,D>::commit(srs, &Self::bivariate_form(bivariate_degrees, polynomial))
     }
 
     pub fn open(
@@ -286,10 +302,10 @@ impl<P: PairingEngine, D: Digest> UnivariatePolynomialCommitment<P, D> {
         y_polynomial_comms: &Vec<P::G1Projective>,
         point: &P::Fr,
     ) -> Result<OpeningProof<P, D>, Error> {
-        let bivariate_degree = srs.1.len() - 1;
+        let (x_degree, y_degree) = Self::parse_bivariate_degrees_from_srs(srs);
         let y = point.clone();
-        let x = point.pow(&vec![(bivariate_degree + 1) as u64]);
-        BivariatePolynomialCommitment::open(srs, &Self::bivariate_form(bivariate_degree, polynomial), y_polynomial_comms, &(x, y))
+        let x = point.pow(&vec![(y_degree + 1) as u64]);
+        BivariatePolynomialCommitment::open(srs, &Self::bivariate_form((x_degree, y_degree), polynomial), y_polynomial_comms, &(x, y))
     }
 
     pub fn verify(
@@ -300,9 +316,9 @@ impl<P: PairingEngine, D: Digest> UnivariatePolynomialCommitment<P, D> {
         eval: &P::Fr,
         proof: &OpeningProof<P, D>,
     ) -> Result<bool, Error> {
-        let bivariate_degree = Self::bivariate_degrees(max_degree);
+        let (_, y_degree) = Self::bivariate_degrees(max_degree);
         let y = point.clone();
-        let x = y.pow(&vec![(bivariate_degree + 1) as u64]);
+        let x = y.pow(&vec![(y_degree + 1) as u64]);
         BivariatePolynomialCommitment::verify(v_srs, com, &(x, y), eval, proof)
     }
 }
@@ -320,6 +336,7 @@ mod tests {
     const BIVARIATE_Y_DEGREE: usize = 7;
     //const UNIVARIATE_DEGREE: usize = 56;
     const UNIVARIATE_DEGREE: usize = 65535;
+    //const UNIVARIATE_DEGREE: usize = 1048575;
 
     type TestBivariatePolyCommitment = BivariatePolynomialCommitment<Bls12_381, Blake2b>;
     type TestUnivariatePolyCommitment = UnivariatePolynomialCommitment<Bls12_381, Blake2b>;
