@@ -1,9 +1,7 @@
 use algebra::{
     biginteger::BigInteger,
     fields::{PrimeField, FftParameters},
-    curves::{PairingEngine, AffineCurve},
-    curves::models::{SWModelParameters},
-    curves::short_weierstrass_jacobian::{GroupAffine as SWAffine, GroupProjective as SWProjective},
+    curves::{PairingEngine},
     bls12_377::{Bls12_377, Fr as BLS12Fr, FrParameters as BLS12FrParameters},
     bw6_761::{BW6_761, Fr as BW6Fr},
     UniformRand, ToConstraintField};
@@ -24,7 +22,6 @@ use ip_proofs::applications::groth16_aggregation::{
 use ip_proofs::Error;
 
 use rand::{rngs::StdRng, SeedableRng};
-use num_traits::identities::One;
 use blake2::Blake2b;
 use csv::Writer;
 
@@ -66,7 +63,7 @@ impl ConstraintSynthesizer<BW6Fr> for AggregateBlake2SCircuitVerificationCircuit
             .map(|h| h.to_field_elements())
             .collect::<Result<Vec<Vec<BLS12Fr>>, Error>>().unwrap()
             .iter()
-            .map(|h_as_bls_fr| { //TODO: Use flat_map?
+            .map(|h_as_bls_fr| {
                 let h_as_bls_fr_bytes = h_as_bls_fr.iter()
                     .map(|bls_fr| bls_fr.into_repr()
                         .as_ref().iter()
@@ -88,9 +85,9 @@ impl ConstraintSynthesizer<BW6Fr> for AggregateBlake2SCircuitVerificationCircuit
                     .collect::<Vec<Vec<UInt8<BW6Fr>>>>()
             }).collect::<Vec<Vec<Vec<UInt8<BW6Fr>>>>>();
 
-        let vk_gadget = VerifyingKeyVar::<Bls12_377, BLS12PairingVar>::new_input(
+        let vk_gadget = VerifyingKeyVar::<Bls12_377, BLS12PairingVar>::new_constant(
             cs.clone(),
-            || Ok(self.vk.clone()),
+            &self.vk,
         )?;
         let proof_gadgets = self.proofs.iter()
             .map(|proof| {
@@ -116,7 +113,6 @@ impl ConstraintSynthesizer<BW6Fr> for AggregateBlake2SCircuitVerificationCircuit
 
 struct AggregateBlake2SCircuitVerificationCircuitInput {
     hash_outputs: Vec<[u8; 32]>,
-    vk: VerifyingKey<Bls12_377>,
 }
 
 impl ToConstraintField<BW6Fr> for AggregateBlake2SCircuitVerificationCircuitInput {
@@ -127,7 +123,7 @@ impl ToConstraintField<BW6Fr> for AggregateBlake2SCircuitVerificationCircuitInpu
             .map(|h| h.to_field_elements())
             .collect::<Result<Vec<Vec<BLS12Fr>>, Error>>()?
             .iter()
-            .map(|h_as_bls_fr| { //TODO: Use flat_map?
+            .map(|h_as_bls_fr| {
                 h_as_bls_fr.iter()
                     .map(|bls_fr| bls_fr.into_repr()
                         .as_ref().iter()
@@ -140,37 +136,8 @@ impl ToConstraintField<BW6Fr> for AggregateBlake2SCircuitVerificationCircuitInpu
             fr_elements.extend_from_slice(&h_as_bls_fr_bytes.to_field_elements()?);
         }
 
-        let VerifyingKey {
-            alpha_g1,
-            beta_g2,
-            gamma_g2,
-            delta_g2,
-            gamma_abc_g1,
-        } = &self.vk;
-        fr_elements.extend_from_slice(&projective_to_field_elements(&alpha_g1.into_projective())?);
-        fr_elements.extend_from_slice(&projective_to_field_elements(&beta_g2.into_projective())?);
-        fr_elements.extend_from_slice(&projective_to_field_elements(&gamma_g2.into_projective())?);
-        fr_elements.extend_from_slice(&projective_to_field_elements(&delta_g2.into_projective())?);
-        for g1 in gamma_abc_g1.iter() {
-            fr_elements.extend_from_slice(&projective_to_field_elements(&g1.into_projective())?);
-        }
         Ok(fr_elements)
     }
-}
-
-//TODO: Should add ToConstraintField impl for ProjectiveCurve that doesn't just convert to Affine
-fn projective_to_field_elements<M: SWModelParameters>
-(p: &SWProjective<M>) -> Result<Vec<BW6Fr>, Error>
-where
-M::BaseField: ToConstraintField<BW6Fr>,
-{
-    let affine = SWAffine::from(*p);
-    let mut x_fe = affine.x.to_field_elements()?;
-    let y_fe = affine.y.to_field_elements()?;
-    let z_fe = M::BaseField::one().to_field_elements()?;
-    x_fe.extend_from_slice(&y_fe);
-    x_fe.extend_from_slice(&z_fe);
-    Ok(x_fe)
 }
 
 
@@ -267,7 +234,6 @@ fn main() {
         };
         let agg_verifier_input = AggregateBlake2SCircuitVerificationCircuitInput {
             hash_outputs: hash_outputs.clone(),
-            vk: hash_circuit_parameters.0.vk.clone(),
         };
         start = Instant::now();
         let agg_verification_circuit_parameters = Groth16::<BW6_761, AggregateBlake2SCircuitVerificationCircuit, AggregateBlake2SCircuitVerificationCircuitInput>::setup(
