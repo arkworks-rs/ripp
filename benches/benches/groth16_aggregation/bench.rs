@@ -1,13 +1,15 @@
 use algebra::{
-    fields::PrimeField,
-    curves::PairingEngine,
-    bls12_377::{Bls12_377, Fr as BLS12Fr},
-    bw6_761::{BW6_761, Fr as BW6Fr, Fq as BW6Fq},
-    UniformRand, ToConstraintField,
-};
+    biginteger::BigInteger,
+    fields::{PrimeField, FftParameters},
+    curves::{PairingEngine, AffineCurve},
+    curves::models::{SWModelParameters},
+    curves::short_weierstrass_jacobian::{GroupAffine as SWAffine, GroupProjective as SWProjective},
+    bls12_377::{Bls12_377, Fr as BLS12Fr, FrParameters as BLS12FrParameters},
+    bw6_761::{BW6_761, Fr as BW6Fr},
+    UniformRand, ToConstraintField};
 use zexe_cp::{
     prf::{PRF, constraints::PRFGadget, blake2s::{Blake2s, constraints::Blake2sGadget}},
-    nizk::{groth16::{Groth16, constraints::Groth16VerifierGadget}, NIZK, constraints::NIZKVerifierGadget},
+    nizk::{groth16::{Groth16, constraints::{Groth16VerifierGadget, VerifyingKeyVar, ProofVar}}, NIZK, constraints::NIZKVerifierGadget},
 };
 use r1cs_core::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 use r1cs_std::{
@@ -22,6 +24,7 @@ use ip_proofs::applications::groth16_aggregation::{
 use ip_proofs::Error;
 
 use rand::{rngs::StdRng, SeedableRng};
+use num_traits::identities::One;
 use blake2::Blake2b;
 use csv::Writer;
 
@@ -60,22 +63,42 @@ impl ConstraintSynthesizer<BW6Fr> for AggregateBlake2SCircuitVerificationCircuit
         cs: ConstraintSystemRef<BW6Fr>,
     ) -> Result<(), SynthesisError> {
         let input_gadgets = self.hash_outputs.iter()
-            .map(|h| UInt8::new_input_vec(cs.clone(), h))
-            .collect::<Result<Vec<Vec<UInt8<BW6Fr>>>, SynthesisError>>()?;
-        let vk_gadget = <Groth16VerifierGadget<Bls12_377, BLS12PairingVar> as NIZKVerifierGadget<Groth16<Bls12_377, SingleBlake2SCircuit, [u8; 32]>, BW6Fr>>::VerificationKeyVar::new_variable(
+            .map(|h| h.to_field_elements())
+            .collect::<Result<Vec<Vec<BLS12Fr>>, Error>>().unwrap()
+            .iter()
+            .map(|h_as_bls_fr| { //TODO: Use flat_map?
+                let h_as_bls_fr_bytes = h_as_bls_fr.iter()
+                    .map(|bls_fr| bls_fr.into_repr()
+                        .as_ref().iter()
+                        .map(|bls_fr_int| bls_fr_int.to_le_bytes().to_vec())
+                        .collect::<Vec<Vec<u8>>>()
+                    ).collect::<Vec<Vec<Vec<u8>>>>()
+                    .iter().flatten().flatten().cloned()
+                    .collect::<Vec<u8>>();
+                UInt8::new_input_vec(cs.clone(), &h_as_bls_fr_bytes)
+            })
+            .collect::<Result<Vec<Vec<UInt8<BW6Fr>>>, SynthesisError>>()?
+            // Allocated as BLS12-377 field elements byte representation packed together to BW6-761 field elements
+            // Now split BW6-761 byte representation back to iterator over BLS12-377 field element byte representations
+            .iter()
+            .map(|h_as_bls_fr_bytes| {
+                let bls_field_element_size_in_bytes = <BLS12FrParameters as FftParameters>::BigInt::NUM_LIMBS * 8;
+                h_as_bls_fr_bytes.chunks(bls_field_element_size_in_bytes)
+                    .map(|bls_field_element_chunk| bls_field_element_chunk.to_vec())
+                    .collect::<Vec<Vec<UInt8<BW6Fr>>>>()
+            }).collect::<Vec<Vec<Vec<UInt8<BW6Fr>>>>>();
+
+        let vk_gadget = VerifyingKeyVar::<Bls12_377, BLS12PairingVar>::new_input(
             cs.clone(),
             || Ok(self.vk.clone()),
-            AllocationMode::Input,
         )?;
         let proof_gadgets = self.proofs.iter()
             .map(|proof| {
-                <Groth16VerifierGadget<Bls12_377, BLS12PairingVar> as NIZKVerifierGadget<Groth16<Bls12_377, SingleBlake2SCircuit, [u8; 32]>, BW6Fr>>::ProofVar::new_variable(
+                ProofVar::<Bls12_377, BLS12PairingVar>::new_witness(
                     cs.clone(),
                     || Ok(proof.clone()),
-                    AllocationMode::Witness,
                 )
-            }).collect::<Result<Vec<
-            <Groth16VerifierGadget<Bls12_377, BLS12PairingVar> as NIZKVerifierGadget<Groth16<Bls12_377, SingleBlake2SCircuit, [u8; 32]>, BW6Fr>>::ProofVar>, SynthesisError>>()?;
+            }).collect::<Result<Vec<ProofVar<Bls12_377, BLS12PairingVar>>, SynthesisError>>()?;
 
         assert_eq!(input_gadgets.len(), proof_gadgets.len());
 
@@ -98,10 +121,25 @@ struct AggregateBlake2SCircuitVerificationCircuitInput {
 
 impl ToConstraintField<BW6Fr> for AggregateBlake2SCircuitVerificationCircuitInput {
     fn to_field_elements(&self) -> Result<Vec<BW6Fr>, Error> {
-        let mut fr_elements = vec![];
-        for h in self.hash_outputs.iter() {
-            fr_elements.extend_from_slice(&h.to_field_elements()?);
+        let mut fr_elements: Vec<BW6Fr> = vec![];
+
+        for h_as_bls_fr_bytes in self.hash_outputs.iter()
+            .map(|h| h.to_field_elements())
+            .collect::<Result<Vec<Vec<BLS12Fr>>, Error>>()?
+            .iter()
+            .map(|h_as_bls_fr| { //TODO: Use flat_map?
+                h_as_bls_fr.iter()
+                    .map(|bls_fr| bls_fr.into_repr()
+                        .as_ref().iter()
+                        .map(|bls_fr_int| bls_fr_int.to_le_bytes().to_vec())
+                        .collect::<Vec<Vec<u8>>>()
+                    ).collect::<Vec<Vec<Vec<u8>>>>()
+                    .iter().flatten().flatten().cloned()
+                    .collect::<Vec<u8>>()
+            }) {
+            fr_elements.extend_from_slice(&h_as_bls_fr_bytes.to_field_elements()?);
         }
+
         let VerifyingKey {
             alpha_g1,
             beta_g2,
@@ -109,16 +147,32 @@ impl ToConstraintField<BW6Fr> for AggregateBlake2SCircuitVerificationCircuitInpu
             delta_g2,
             gamma_abc_g1,
         } = &self.vk;
-        fr_elements.extend_from_slice(&alpha_g1.to_field_elements()?);
-        fr_elements.extend_from_slice(&beta_g2.to_field_elements()?);
-        fr_elements.extend_from_slice(&gamma_g2.to_field_elements()?);
-        fr_elements.extend_from_slice(&delta_g2.to_field_elements()?);
+        fr_elements.extend_from_slice(&projective_to_field_elements(&alpha_g1.into_projective())?);
+        fr_elements.extend_from_slice(&projective_to_field_elements(&beta_g2.into_projective())?);
+        fr_elements.extend_from_slice(&projective_to_field_elements(&gamma_g2.into_projective())?);
+        fr_elements.extend_from_slice(&projective_to_field_elements(&delta_g2.into_projective())?);
         for g1 in gamma_abc_g1.iter() {
-            fr_elements.extend_from_slice(&g1.to_field_elements()?);
+            fr_elements.extend_from_slice(&projective_to_field_elements(&g1.into_projective())?);
         }
         Ok(fr_elements)
     }
 }
+
+//TODO: Should add ToConstraintField impl for ProjectiveCurve that doesn't just convert to Affine
+fn projective_to_field_elements<M: SWModelParameters>
+(p: &SWProjective<M>) -> Result<Vec<BW6Fr>, Error>
+where
+M::BaseField: ToConstraintField<BW6Fr>,
+{
+    let affine = SWAffine::from(*p);
+    let mut x_fe = affine.x.to_field_elements()?;
+    let y_fe = affine.y.to_field_elements()?;
+    let z_fe = M::BaseField::one().to_field_elements()?;
+    x_fe.extend_from_slice(&y_fe);
+    x_fe.extend_from_slice(&z_fe);
+    Ok(x_fe)
+}
+
 
 fn main() {
     let mut args: Vec<String> = std::env::args().collect();
@@ -211,7 +265,7 @@ fn main() {
             proofs: proofs.clone(),
             vk: hash_circuit_parameters.0.vk.clone(),
         };
-        let agg_verififier_input = AggregateBlake2SCircuitVerificationCircuitInput {
+        let agg_verifier_input = AggregateBlake2SCircuitVerificationCircuitInput {
             hash_outputs: hash_outputs.clone(),
             vk: hash_circuit_parameters.0.vk.clone(),
         };
@@ -237,7 +291,7 @@ fn main() {
             start = Instant::now();
             let result = Groth16::<BW6_761, AggregateBlake2SCircuitVerificationCircuit, AggregateBlake2SCircuitVerificationCircuitInput>::verify(
                 &agg_verification_circuit_parameters.1,
-                &agg_verififier_input,
+                &agg_verifier_input,
                 &aggregate_proof,
             ).unwrap();
             time = start.elapsed().as_millis();
