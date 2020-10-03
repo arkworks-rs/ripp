@@ -48,6 +48,30 @@ impl<F: PrimeField> ConstraintSynthesizer<F> for SingleBlake2SCircuit {
 }
 
 #[derive(Clone)]
+struct ManyBlake2SCircuit {
+    input: Vec<[u8; 32]>,
+    output: Vec<[u8; 32]>,
+}
+
+impl<F: PrimeField> ConstraintSynthesizer<F> for ManyBlake2SCircuit {
+    fn generate_constraints(self, cs: ConstraintSystemRef<F>) -> Result<(), SynthesisError> {
+        let seed = UInt8::constant_vec(&[0; 32]);
+
+        for (hash_input, hash_output) in self.input.iter().zip(&self.output) {
+            let input = UInt8::new_witness_vec(cs.clone(), hash_input)?;
+            let hash = <Blake2sGadget as PRFGadget<_, F>>::OutputVar::new_variable(
+                cs.clone(),
+                || Ok(hash_output.clone()),
+                AllocationMode::Input,
+            )?;
+            hash.enforce_equal(&<Blake2sGadget as PRFGadget<_, F>>::evaluate(&seed, &input)?)?;
+        }
+        Ok(())
+    }
+}
+
+
+#[derive(Clone)]
 struct AggregateBlake2SCircuitVerificationCircuit {
     hash_outputs: Vec<[u8; 32]>,
     proofs: Vec<Proof<Bls12_377>>,
@@ -89,6 +113,7 @@ impl ConstraintSynthesizer<BW6Fr> for AggregateBlake2SCircuitVerificationCircuit
             cs.clone(),
             &self.vk,
         )?;
+
         let proof_gadgets = self.proofs.iter()
             .map(|proof| {
                 ProofVar::<Bls12_377, BLS12PairingVar>::new_witness(
@@ -163,15 +188,7 @@ fn main() {
     let mut time;
     let mut rng = StdRng::seed_from_u64(0u64);
 
-    // Prove individual proofs
-    start = Instant::now();
-    let hash_circuit_parameters = Groth16::<Bls12_377, SingleBlake2SCircuit, [u8; 32]>::setup(
-        SingleBlake2SCircuit::default(), &mut rng,
-    ).unwrap();
-    time = start.elapsed().as_millis();
-    csv_writer.write_record(&[1.to_string(), num_proofs.to_string(), "ipa_and_olr".to_string(), "individual_proof_setup".to_string(), time.to_string()]).unwrap();
-    csv_writer.flush().unwrap();
-
+    // Compute hashes
     let mut hash_inputs = vec![];
     let mut hash_outputs = vec![];
     for _ in 0..num_proofs {
@@ -179,91 +196,138 @@ fn main() {
         hash_outputs.push(Blake2s::evaluate(&[0; 32], &hash_input).unwrap());
         hash_inputs.push(hash_input);
     }
-    start = Instant::now();
-    let mut proofs = vec![];
-    for i in 0..num_proofs {
-        proofs.push(Groth16::<Bls12_377, SingleBlake2SCircuit, [u8; 32]>::prove(
-            &hash_circuit_parameters.0,
-            SingleBlake2SCircuit {
-                input: hash_inputs[i].clone(),
-                output: hash_outputs[i].clone(),
-            },
-            &mut rng,
-        ).unwrap());
-        //assert!(Groth16::<Bls12_377, SingleBlake2SCircuit, [u8; 32]>::verify(&hash_circuit_parameters.1, &hash_outputs[i], &proofs[i]).unwrap());
-    }
-    time = start.elapsed().as_millis();
-    csv_writer.write_record(&[1.to_string(), num_proofs.to_string(), "ipa_and_olr".to_string(), "individual_proof_prove".to_string(), time.to_string()]).unwrap();
-    csv_writer.flush().unwrap();
 
-    // Benchmark aggregation via IPA
     {
+        // Prove individual proofs
         start = Instant::now();
-        let srs = setup_inner_product::<Bls12_377, Blake2b, _>(&mut rng, num_proofs).unwrap();
-        time = start.elapsed().as_millis();
-        csv_writer.write_record(&[1.to_string(), num_proofs.to_string(), "ipa".to_string(), "setup".to_string(), time.to_string()]).unwrap();
-        csv_writer.flush().unwrap();
-        let v_srs = srs.get_verifier_key();
-
-        for i in 1..=num_trials {
-            start = Instant::now();
-            let aggregate_proof = aggregate_proofs::<Bls12_377, Blake2b>(&srs, &proofs).unwrap();
-            time = start.elapsed().as_millis();
-            csv_writer.write_record(&[i.to_string(), num_proofs.to_string(), "ipa".to_string(), "aggregate".to_string(), time.to_string()]).unwrap();
-            csv_writer.flush().unwrap();
-
-            start = Instant::now();
-            let result = verify_aggregate_proof(
-                &v_srs,
-                &hash_circuit_parameters.0.vk,
-                &hash_outputs.iter().map(|h| h.to_field_elements()).collect::<Result<Vec<Vec<<Bls12_377 as PairingEngine>::Fr>>, Error>>().unwrap(),
-                &aggregate_proof,
-            ).unwrap();
-            time = start.elapsed().as_millis();
-            csv_writer.write_record(&[i.to_string(), num_proofs.to_string(), "ipa".to_string(), "verify".to_string(), time.to_string()]).unwrap();
-            csv_writer.flush().unwrap();
-            assert!(result);
-        }
-    }
-    // Benchmark aggregation via one-layer recursion
-    {
-        let agg_verification_circuit = AggregateBlake2SCircuitVerificationCircuit {
-            hash_outputs: hash_outputs.clone(),
-            proofs: proofs.clone(),
-            vk: hash_circuit_parameters.0.vk.clone(),
-        };
-        let agg_verifier_input = AggregateBlake2SCircuitVerificationCircuitInput {
-            hash_outputs: hash_outputs.clone(),
-        };
-        start = Instant::now();
-        let agg_verification_circuit_parameters = Groth16::<BW6_761, AggregateBlake2SCircuitVerificationCircuit, AggregateBlake2SCircuitVerificationCircuitInput>::setup(
-            agg_verification_circuit.clone(), &mut rng,
+        let hash_circuit_parameters = Groth16::<Bls12_377, SingleBlake2SCircuit, [u8; 32]>::setup(
+            SingleBlake2SCircuit::default(), &mut rng,
         ).unwrap();
         time = start.elapsed().as_millis();
-        csv_writer.write_record(&[1.to_string(), num_proofs.to_string(), "olr".to_string(), "setup".to_string(), time.to_string()]).unwrap();
+        csv_writer.write_record(&[1.to_string(), num_proofs.to_string(), "ipa_and_olr".to_string(), "individual_proof_setup".to_string(), time.to_string()]).unwrap();
         csv_writer.flush().unwrap();
 
-        for i in 1..=num_trials {
-            start = Instant::now();
-            let aggregate_proof = Groth16::<BW6_761, AggregateBlake2SCircuitVerificationCircuit, AggregateBlake2SCircuitVerificationCircuitInput>::prove(
-                &agg_verification_circuit_parameters.0,
-                agg_verification_circuit.clone(),
+        start = Instant::now();
+        let mut proofs = vec![];
+        for i in 0..num_proofs {
+            proofs.push(Groth16::<Bls12_377, SingleBlake2SCircuit, [u8; 32]>::prove(
+                &hash_circuit_parameters.0,
+                SingleBlake2SCircuit {
+                    input: hash_inputs[i].clone(),
+                    output: hash_outputs[i].clone(),
+                },
                 &mut rng,
+            ).unwrap());
+            //assert!(Groth16::<Bls12_377, SingleBlake2SCircuit, [u8; 32]>::verify(&hash_circuit_parameters.1, &hash_outputs[i], &proofs[i]).unwrap());
+        }
+        time = start.elapsed().as_millis();
+        csv_writer.write_record(&[1.to_string(), num_proofs.to_string(), "ipa_and_olr".to_string(), "individual_proof_prove".to_string(), time.to_string()]).unwrap();
+        csv_writer.flush().unwrap();
+
+        // Benchmark aggregation via IPA
+        {
+            start = Instant::now();
+            let srs = setup_inner_product::<Bls12_377, Blake2b, _>(&mut rng, num_proofs).unwrap();
+            time = start.elapsed().as_millis();
+            csv_writer.write_record(&[1.to_string(), num_proofs.to_string(), "ipa".to_string(), "setup".to_string(), time.to_string()]).unwrap();
+            csv_writer.flush().unwrap();
+            let v_srs = srs.get_verifier_key();
+
+            for i in 1..=num_trials {
+                start = Instant::now();
+                let aggregate_proof = aggregate_proofs::<Bls12_377, Blake2b>(&srs, &proofs).unwrap();
+                time = start.elapsed().as_millis();
+                csv_writer.write_record(&[i.to_string(), num_proofs.to_string(), "ipa".to_string(), "aggregate".to_string(), time.to_string()]).unwrap();
+                csv_writer.flush().unwrap();
+
+                start = Instant::now();
+                let result = verify_aggregate_proof(
+                    &v_srs,
+                    &hash_circuit_parameters.0.vk,
+                    &hash_outputs.iter().map(|h| h.to_field_elements()).collect::<Result<Vec<Vec<<Bls12_377 as PairingEngine>::Fr>>, Error>>().unwrap(),
+                    &aggregate_proof,
+                ).unwrap();
+                time = start.elapsed().as_millis();
+                csv_writer.write_record(&[i.to_string(), num_proofs.to_string(), "ipa".to_string(), "verify".to_string(), time.to_string()]).unwrap();
+                csv_writer.flush().unwrap();
+                assert!(result);
+            }
+        }
+
+        // Benchmark aggregation via one-layer recursion
+        {
+            let agg_verification_circuit = AggregateBlake2SCircuitVerificationCircuit {
+                hash_outputs: hash_outputs.clone(),
+                proofs: proofs.clone(),
+                vk: hash_circuit_parameters.0.vk.clone(),
+            };
+            let agg_verifier_input = AggregateBlake2SCircuitVerificationCircuitInput {
+                hash_outputs: hash_outputs.clone(),
+            };
+            start = Instant::now();
+            let agg_verification_circuit_parameters = Groth16::<BW6_761, AggregateBlake2SCircuitVerificationCircuit, AggregateBlake2SCircuitVerificationCircuitInput>::setup(
+                agg_verification_circuit.clone(), &mut rng,
             ).unwrap();
             time = start.elapsed().as_millis();
-            csv_writer.write_record(&[i.to_string(), num_proofs.to_string(), "olr".to_string(), "aggregate".to_string(), time.to_string()]).unwrap();
+            csv_writer.write_record(&[1.to_string(), num_proofs.to_string(), "olr".to_string(), "setup".to_string(), time.to_string()]).unwrap();
             csv_writer.flush().unwrap();
 
-            start = Instant::now();
-            let result = Groth16::<BW6_761, AggregateBlake2SCircuitVerificationCircuit, AggregateBlake2SCircuitVerificationCircuitInput>::verify(
-                &agg_verification_circuit_parameters.1,
-                &agg_verifier_input,
-                &aggregate_proof,
-            ).unwrap();
-            time = start.elapsed().as_millis();
-            csv_writer.write_record(&[i.to_string(), num_proofs.to_string(), "olr".to_string(), "verify".to_string(), time.to_string()]).unwrap();
-            csv_writer.flush().unwrap();
-            assert!(result);
+            for i in 1..=num_trials {
+                start = Instant::now();
+                let aggregate_proof = Groth16::<BW6_761, AggregateBlake2SCircuitVerificationCircuit, AggregateBlake2SCircuitVerificationCircuitInput>::prove(
+                    &agg_verification_circuit_parameters.0,
+                    agg_verification_circuit.clone(),
+                    &mut rng,
+                ).unwrap();
+                time = start.elapsed().as_millis();
+                csv_writer.write_record(&[i.to_string(), num_proofs.to_string(), "olr".to_string(), "aggregate".to_string(), time.to_string()]).unwrap();
+                csv_writer.flush().unwrap();
+
+                start = Instant::now();
+                let result = Groth16::<BW6_761, AggregateBlake2SCircuitVerificationCircuit, AggregateBlake2SCircuitVerificationCircuitInput>::verify(
+                    &agg_verification_circuit_parameters.1,
+                    &agg_verifier_input,
+                    &aggregate_proof,
+                ).unwrap();
+                time = start.elapsed().as_millis();
+                csv_writer.write_record(&[i.to_string(), num_proofs.to_string(), "olr".to_string(), "verify".to_string(), time.to_string()]).unwrap();
+                csv_writer.flush().unwrap();
+                assert!(result);
+            }
         }
+    }
+
+    // Benchmark complete circuit
+    {
+        let circuit = ManyBlake2SCircuit{ input: hash_inputs.clone(), output: hash_outputs.clone() };
+        start = Instant::now();
+        let circuit_parameters = Groth16::<Bls12_377, ManyBlake2SCircuit, [u8; 32]>::setup(
+            circuit.clone(), &mut rng,
+        ).unwrap();
+        time = start.elapsed().as_millis();
+        csv_writer.write_record(&[1.to_string(), num_proofs.to_string(), "complete_circuit".to_string(), "setup".to_string(), time.to_string()]).unwrap();
+        csv_writer.flush().unwrap();
+
+        start = Instant::now();
+        let proof = Groth16::<Bls12_377, ManyBlake2SCircuit, [BLS12Fr]>::prove(
+            &circuit_parameters.0,
+            circuit,
+            &mut rng,
+        ).unwrap();
+        time = start.elapsed().as_millis();
+        csv_writer.write_record(&[1.to_string(), num_proofs.to_string(), "complete_circuit".to_string(), "prove".to_string(), time.to_string()]).unwrap();
+        csv_writer.flush().unwrap();
+
+        start = Instant::now();
+        let result = Groth16::<Bls12_377, ManyBlake2SCircuit, [BLS12Fr]>::verify(
+            &circuit_parameters.1,
+            &hash_outputs.iter().flat_map(|h| h.to_field_elements().unwrap()).collect::<Vec<BLS12Fr>>(),
+            &proof,
+        ).unwrap();
+        time = start.elapsed().as_millis();
+        csv_writer.write_record(&[1.to_string(), num_proofs.to_string(), "complete_circuit".to_string(), "verify".to_string(), time.to_string()]).unwrap();
+        csv_writer.flush().unwrap();
+        assert!(result);
+
     }
 }
