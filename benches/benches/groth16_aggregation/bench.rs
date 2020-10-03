@@ -204,7 +204,7 @@ fn main() {
             SingleBlake2SCircuit::default(), &mut rng,
         ).unwrap();
         time = start.elapsed().as_millis();
-        csv_writer.write_record(&[1.to_string(), num_proofs.to_string(), "ipa_and_olr".to_string(), "individual_proof_setup".to_string(), time.to_string()]).unwrap();
+        csv_writer.write_record(&[1.to_string(), num_proofs.to_string(), "single_circuit".to_string(), "setup".to_string(), time.to_string()]).unwrap();
         csv_writer.flush().unwrap();
 
         start = Instant::now();
@@ -221,7 +221,7 @@ fn main() {
             //assert!(Groth16::<Bls12_377, SingleBlake2SCircuit, [u8; 32]>::verify(&hash_circuit_parameters.1, &hash_outputs[i], &proofs[i]).unwrap());
         }
         time = start.elapsed().as_millis();
-        csv_writer.write_record(&[1.to_string(), num_proofs.to_string(), "ipa_and_olr".to_string(), "individual_proof_prove".to_string(), time.to_string()]).unwrap();
+        csv_writer.write_record(&[1.to_string(), num_proofs.to_string(), "single_circuit".to_string(), "prove".to_string(), time.to_string()]).unwrap();
         csv_writer.flush().unwrap();
 
         // Benchmark aggregation via IPA
