@@ -9,7 +9,7 @@ use ip_proofs::applications::poly_commit::{
 use rand::{rngs::StdRng, SeedableRng};
 use csv::Writer;
 
-use std::{io::stdout, time::Instant};
+use std::{io::stdout, time::{Instant, Duration}};
 use blake2::Blake2b;
 
 fn main() {
@@ -64,10 +64,13 @@ fn main() {
                 csv_writer.write_record(&[i.to_string(), "kzg".to_string(), "open".to_string(), degree.to_string(), time.to_string()]).unwrap();
 
                 // Verify
+                std::thread::sleep(Duration::from_millis(5000));
                 start = Instant::now();
-                let is_valid = KZG::<Bls12_381>::verify(&v_srs, &com, &point, &eval, &proof).unwrap();
-                time = start.elapsed().as_millis();
-                assert!(is_valid);
+                for i in 0..50 {
+                    let is_valid = KZG::<Bls12_381>::verify(&v_srs, &com, &point, &eval, &proof).unwrap();
+                    assert!(is_valid);
+                }
+                time = start.elapsed().as_millis() / 50;
                 csv_writer.write_record(&[i.to_string(), "kzg".to_string(), "verify".to_string(), degree.to_string(), time.to_string()]).unwrap();
                 csv_writer.flush().unwrap();
             }
@@ -104,16 +107,16 @@ fn main() {
                 csv_writer.write_record(&[i.to_string(), "ipa".to_string(), "open".to_string(), degree.to_string(), time.to_string()]).unwrap();
 
                 // Verify
+                std::thread::sleep(Duration::from_millis(5000));
                 start = Instant::now();
-                let is_valid = IPA::<Bls12_381, Blake2b>::verify(&v_srs, degree, &com, &point, &eval, &proof).unwrap();
-                time = start.elapsed().as_millis();
-                assert!(is_valid);
+                for i in 0..50 {
+                    let is_valid = IPA::<Bls12_381, Blake2b>::verify(&v_srs, degree, &com, &point, &eval, &proof).unwrap();
+                    assert!(is_valid);
+                }
+                time = start.elapsed().as_millis() / 50;
                 csv_writer.write_record(&[i.to_string(), "ipa".to_string(), "verify".to_string(), degree.to_string(), time.to_string()]).unwrap();
                 csv_writer.flush().unwrap();
             }
         }
     }
-
-
-
 }

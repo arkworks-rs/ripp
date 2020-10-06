@@ -171,13 +171,19 @@ fn main() {
     if args.last().unwrap() == "--bench" {
         args.pop();
     }
-    let (num_trials, num_proofs): (usize, usize) = if args.len() < 2 || args[1] == "-h" || args[1] == "--help" {
-        println!("Usage: ``cargo bench --bench groth16_aggregation -- <num_trials> <num_proofs>``");
+    let (num_trials, num_proofs, bench_recursion): (usize, usize, bool) = if args.len() < 2 || args[1] == "-h" || args[1] == "--help" {
+        println!("Usage: ``cargo bench --bench groth16_aggregation -- <num_trials> <num_proofs> <bench_rec=(true/false)>``");
         return
     } else {
+        let bench_recursion = match args.get(3).unwrap_or(&"true".to_string()).as_ref() {
+            "true" => true,
+            "false" => false,
+            _ => panic!("<bench_rec> should be true/false"),
+        };
         (
             String::from(args[1].clone()).parse().expect("<num_trials> should be integer"),
             String::from(args[2].clone()).parse().expect("<num_proofs> should be integer"),
+            bench_recursion,
         )
     };
 
@@ -255,7 +261,7 @@ fn main() {
         }
 
         // Benchmark aggregation via one-layer recursion
-        {
+        if bench_recursion {
             let agg_verification_circuit = AggregateBlake2SCircuitVerificationCircuit {
                 hash_outputs: hash_outputs.clone(),
                 proofs: proofs.clone(),
