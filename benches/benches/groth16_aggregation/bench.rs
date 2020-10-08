@@ -14,7 +14,7 @@ use r1cs_std::{
     prelude::*,
     bls12_377::PairingVar as BLS12PairingVar,
 };
-use groth16::{Proof, VerifyingKey};
+use groth16::{Proof, VerifyingKey, PreparedVerifyingKey};
 
 use ip_proofs::applications::groth16_aggregation::{
     aggregate_proofs, verify_aggregate_proof, setup_inner_product,
@@ -171,8 +171,9 @@ fn main() {
     if args.last().unwrap() == "--bench" {
         args.pop();
     }
-    let (num_trials, num_proofs, bench_recursion): (usize, usize, bool) = if args.len() < 2 || args[1] == "-h" || args[1] == "--help" {
-        println!("Usage: ``cargo bench --bench groth16_aggregation -- <num_trials> <num_proofs> <bench_rec=(true/false)>``");
+    let temp = 
+    if args.len() < 2 || args[1] == "-h" || args[1] == "--help" {
+        println!("Usage: ``cargo bench --bench groth16_aggregation -- <num_trials> <num_proofs> <bench_rec=(true/false)> <generate_all_proofs=(true/false)> <monolithic_proof=(true/false)>``");
         return
     } else {
         let bench_recursion = match args.get(3).unwrap_or(&"true".to_string()).as_ref() {
@@ -180,12 +181,25 @@ fn main() {
             "false" => false,
             _ => panic!("<bench_rec> should be true/false"),
         };
+        let generate_all_proofs = match args.get(4).unwrap_or(&"true".to_string()).as_ref() {
+            "true" => true,
+            "false" => false,
+            _ => panic!("<generate_all_proofs> should be true/false"),
+        };
+        let monolithic_proof = match args.get(4).unwrap_or(&"true".to_string()).as_ref() {
+            "true" => true,
+            "false" => false,
+            _ => panic!("<monolithic_proof> should be true/false"),
+        };
         (
             String::from(args[1].clone()).parse().expect("<num_trials> should be integer"),
             String::from(args[2].clone()).parse().expect("<num_proofs> should be integer"),
             bench_recursion,
+            generate_all_proofs,
+            monolithic_proof
         )
     };
+    let (num_trials, num_proofs, bench_recursion, generate_all_proofs, generate_monolithic_proof): (usize, usize, _, _, _)  = temp;
 
     let mut csv_writer = Writer::from_writer(stdout());
     csv_writer.write_record(&["trial", "num_proofs", "scheme", "function", "time"]).unwrap();
@@ -210,8 +224,10 @@ fn main() {
             SingleBlake2SCircuit::default(), &mut rng,
         ).unwrap();
         time = start.elapsed().as_millis();
-        csv_writer.write_record(&[1.to_string(), num_proofs.to_string(), "single_circuit".to_string(), "setup".to_string(), time.to_string()]).unwrap();
-        csv_writer.flush().unwrap();
+        if generate_all_proofs {
+            csv_writer.write_record(&[1.to_string(), num_proofs.to_string(), "single_circuit".to_string(), "setup".to_string(), time.to_string()]).unwrap();
+            csv_writer.flush().unwrap();
+        }
 
         start = Instant::now();
         let mut proofs = vec![];
@@ -224,11 +240,33 @@ fn main() {
                 },
                 &mut rng,
             ).unwrap());
+            if !generate_all_proofs {
+                break
+            }
             //assert!(Groth16::<Bls12_377, SingleBlake2SCircuit, [u8; 32]>::verify(&hash_circuit_parameters.1, &hash_outputs[i], &proofs[i]).unwrap());
         }
         time = start.elapsed().as_millis();
-        csv_writer.write_record(&[1.to_string(), num_proofs.to_string(), "single_circuit".to_string(), "prove".to_string(), time.to_string()]).unwrap();
-        csv_writer.flush().unwrap();
+
+        if !generate_all_proofs {
+            proofs = vec![proofs[0].clone(); num_proofs];
+            hash_inputs = vec![hash_inputs[0]; num_proofs];
+            hash_outputs = vec![hash_outputs[0]; num_proofs];
+        } else {
+            csv_writer.write_record(&[1.to_string(), num_proofs.to_string(), "single_circuit".to_string(), "prove".to_string(), time.to_string()]).unwrap();
+            csv_writer.flush().unwrap();
+        }
+        {
+            start = Instant::now();
+            let result = batch_verify_proof(
+                &groth16::prepare_verifying_key(&hash_circuit_parameters.0.vk),
+                &hash_outputs.iter().map(|h| h.to_field_elements()).collect::<Result<Vec<Vec<<Bls12_377 as PairingEngine>::Fr>>, Error>>().unwrap(),
+                &proofs,
+            ).unwrap();
+            time = start.elapsed().as_millis();
+            csv_writer.write_record(&[1.to_string(), num_proofs.to_string(), "single_circuit".to_string(), "verify".to_string(), time.to_string()]).unwrap();
+            csv_writer.flush().unwrap();
+            assert!(result);
+        }
 
         // Benchmark aggregation via IPA
         {
@@ -259,6 +297,8 @@ fn main() {
                 assert!(result);
             }
         }
+
+        
 
         // Benchmark aggregation via one-layer recursion
         if bench_recursion {
@@ -304,7 +344,7 @@ fn main() {
     }
 
     // Benchmark complete circuit
-    {
+    if generate_monolithic_proof {
         let circuit = ManyBlake2SCircuit{ input: hash_inputs.clone(), output: hash_outputs.clone() };
         start = Instant::now();
         let circuit_parameters = Groth16::<Bls12_377, ManyBlake2SCircuit, [u8; 32]>::setup(
@@ -336,4 +376,56 @@ fn main() {
         assert!(result);
 
     }
+}
+
+pub fn batch_verify_proof<E: PairingEngine>(
+    pvk: &PreparedVerifyingKey<E>,
+    public_inputs: &[Vec<E::Fr>],
+    proofs: &[Proof<E>],
+) -> Result<bool, SynthesisError> {
+    use algebra::{AffineCurve, ProjectiveCurve, One};
+
+    let mut rng = StdRng::seed_from_u64(0u64);
+    let mut r_powers = Vec::with_capacity(proofs.len());
+    for _ in 0..proofs.len() {
+        let challenge: E::Fr = u128::rand(&mut rng).into();
+        r_powers.push(challenge);
+    }
+
+    let combined_inputs = public_inputs.iter().zip(&r_powers).map(|(input, r)| {
+        let mut g_ic = pvk.gamma_abc_g1[0].into_projective();
+        for (i, b) in input.iter().zip(pvk.gamma_abc_g1.iter().skip(1)) {
+            g_ic += &b.mul(i.into_repr());
+        }
+        g_ic.mul(*r)
+    }).sum::<E::G1Projective>().into_affine();
+
+    let combined_proof_a_s = proofs.iter().zip(&r_powers).map(|(proof, r)| {
+        proof.a.mul(*r)
+    }).collect::<Vec<_>>();
+    let combined_proof_a_s = E::G1Projective::batch_normalization_into_affine(&combined_proof_a_s);
+    let ml_inputs = proofs.iter().zip(&combined_proof_a_s).map(|(proof, a)| {
+        ((*a).into(), proof.b.into())
+    }).collect::<Vec<_>>();
+    let a_r_times_b = E::miller_loop(ml_inputs.iter());
+
+    let combined_c_s = proofs.iter().zip(&r_powers).map(|(proof, r)| {
+        proof.c.mul(*r)
+    }).sum::<E::G1Projective>().into_affine();
+    
+
+    let sum_of_rs = (&r_powers).iter().copied().sum::<E::Fr>();
+    let combined_alpha = (-pvk.vk.alpha_g1.mul(sum_of_rs)).into_affine();
+    let qap = E::miller_loop(
+        [
+            (combined_alpha.into(), pvk.vk.beta_g2.into()),
+            (combined_inputs.into(), pvk.gamma_g2_neg_pc.clone()),
+            (combined_c_s.into(), pvk.delta_g2_neg_pc.clone()),
+        ]
+        .iter(),
+    );
+
+    let test = E::final_exponentiation(&(qap * &a_r_times_b)).ok_or(SynthesisError::UnexpectedIdentity)?;
+
+    Ok(test == E::Fqk::one())
 }
