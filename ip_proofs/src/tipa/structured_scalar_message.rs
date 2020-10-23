@@ -5,7 +5,7 @@ use algebra::{
     to_bytes, UniformRand,
 };
 use digest::Digest;
-use num_traits::identities::One;
+use num_traits::identities::{Zero, One};
 use std::{
     ops::MulAssign,
     marker::PhantomData,
@@ -35,7 +35,7 @@ use inner_products::InnerProduct;
 
 // Use placeholder commitment to commit to vector in clear during GIPA execution
 #[derive(Clone)]
-struct SSMPlaceholderCommitment<F: PrimeField> {
+pub struct SSMPlaceholderCommitment<F: PrimeField> {
     _field: PhantomData<F>,
 }
 
@@ -49,10 +49,98 @@ impl<F: PrimeField> DoublyHomomorphicCommitment for SSMPlaceholderCommitment<F> 
         Ok(vec![HomomorphicPlaceholderValue {}; size])
     }
 
-    fn commit(_k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {
-        Ok(m[0].clone())
+    //TODO: Doesn't include message which means scalar b not included in generating challenges
+    fn commit(_k: &[Self::Key], _m: &[Self::Message]) -> Result<Self::Output, Error> {
+        Ok(F::zero())
     }
 }
+
+pub struct GIPAWithSSM<IP, LMC, IPC, D>
+{
+    _inner_product: PhantomData<IP>,
+    _left_commitment: PhantomData<LMC>,
+    _inner_product_commitment: PhantomData<IPC>,
+    _digest: PhantomData<D>,
+}
+
+impl<IP, LMC, IPC, D> GIPAWithSSM<IP, LMC, IPC, D>
+    where
+        D: Digest,
+        IP: InnerProduct<
+            LeftMessage = LMC::Message,
+            RightMessage = LMC::Scalar,
+            Output = IPC::Message,
+        >,
+        LMC: DoublyHomomorphicCommitment,
+        IPC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar>,
+        IPC::Message: MulAssign<LMC::Scalar>,
+        IPC::Key: MulAssign<LMC::Scalar>,
+        IPC::Output: MulAssign<LMC::Scalar>,
+{
+    pub fn setup<R: Rng>(
+        rng: &mut R,
+        size: usize,
+    ) -> Result<(Vec<LMC::Key>, IPC::Key), Error> {
+        Ok((
+            LMC::setup(rng, size)?,
+            IPC::setup(rng, 1)?.pop().unwrap(),
+        ))
+    }
+
+    pub fn prove_with_structured_scalar_message(
+        values: (&[IP::LeftMessage], &[IP::RightMessage]),
+        ck: (&[LMC::Key], &IPC::Key),
+    ) -> Result<GIPAProof<IP, LMC, SSMPlaceholderCommitment<LMC::Scalar>, IPC, D>, Error> {
+        let (proof, _) = <GIPA<IP, LMC, SSMPlaceholderCommitment<LMC::Scalar>, IPC, D>>::prove_with_aux(
+            values,
+            (ck.0, &vec![HomomorphicPlaceholderValue {}; values.1.len()], &vec![ck.1.clone()]),
+        )?;
+        Ok(proof)
+    }
+
+    pub fn verify_with_structured_scalar_message(
+        ck: (&[LMC::Key], &IPC::Key),
+        com: (&LMC::Output, &IPC::Output),
+        scalar_b: &LMC::Scalar,
+        proof: &GIPAProof<IP, LMC, SSMPlaceholderCommitment<LMC::Scalar>, IPC, D>,
+    ) -> Result<bool, Error> {
+        // Calculate base commitments and recursive transcript
+        //TODO: Scalar b not included in generating challenges
+        let (base_com, transcript) =
+            GIPA::verify_recursive_challenge_transcript((com.0, &LMC::Scalar::zero(), com.1), proof)?;
+        // Calculate base commitment keys
+        let (ck_a_base, ck_b_base) = GIPA::<IP, LMC, SSMPlaceholderCommitment<LMC::Scalar>, IPC, D>::_compute_final_commitment_keys(
+            (&ck.0, &vec![HomomorphicPlaceholderValue {}; ck.0.len()], &ck.1),
+            &transcript,
+        )?;
+        // Verify base commitment
+        let gipa_valid = GIPA::_verify_base_commitment(
+            (&ck_a_base, &ck_b_base, &vec![ck.1.clone()]),
+            base_com.clone(),
+            proof,
+        )?;
+
+        // Compute final scalar
+        let mut power_2_b = scalar_b.clone();
+        let mut product_form = Vec::new();
+        for x in transcript.iter() {
+            product_form.push(<LMC::Scalar>::one() + &(x.inverse().unwrap() * &power_2_b));
+            power_2_b *= &power_2_b.clone();
+        }
+        let b_base = product_form.iter().product::<LMC::Scalar>();
+
+        // Verify base inner product commitment
+        let (com_a, _, com_t) = base_com;
+        let a_base = vec![proof.r_base.0.clone()];
+        let t_base = vec![IP::inner_product(&a_base, &vec![b_base])?];
+        let base_valid = LMC::verify(&vec![ck_a_base.clone()], &a_base, &com_a)?
+            && IPC::verify(&vec![ck.1.clone()], &t_base, &com_t)?;
+
+        Ok(gipa_valid && base_valid)
+    }
+
+}
+
 
 pub struct TIPAWithSSM<IP, LMC, IPC, P, D>
 {
@@ -281,12 +369,12 @@ mod tests {
     use inner_products::{InnerProduct, MultiexponentiationInnerProduct, ScalarInnerProduct};
 
     type GC1 = AFGHOCommitmentG1<Bls12_381>;
-    type SC2 = PedersenCommitment<<Bls12_381 as PairingEngine>::G2Projective>;
+    type SC1 = PedersenCommitment<<Bls12_381 as PairingEngine>::G1Projective>;
 
     const TEST_SIZE: usize = 8;
 
     #[test]
-    fn tipassm_multiexponentiation_inner_product_test() {
+    fn tipa_ssm_multiexponentiation_inner_product_test() {
         type IP = MultiexponentiationInnerProduct<<Bls12_381 as PairingEngine>::G1Projective>;
         type IPC = IdentityCommitment<
             <Bls12_381 as PairingEngine>::G1Projective,
@@ -323,36 +411,32 @@ mod tests {
     }
 
     #[test]
-    fn scalar_inner_product_test() {
+    fn gipa_ssm_scalar_inner_product_test() {
         type IP = ScalarInnerProduct<<Bls12_381 as PairingEngine>::Fr>;
         type IPC =
             IdentityCommitment<<Bls12_381 as PairingEngine>::Fr, <Bls12_381 as PairingEngine>::Fr>;
-        type ScalarTIPA = TIPAWithSSM<IP, SC2, IPC, Bls12_381, Blake2b>;
+        type ScalarGIPA = GIPAWithSSM<IP, SC1, IPC, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
-        let (srs, ck_t) = ScalarTIPA::setup(&mut rng, TEST_SIZE).unwrap();
-        let (ck_a, _) = srs.get_commitment_keys();
-        let v_srs = srs.get_verifier_key();
+        let (ck_a, ck_t) = ScalarGIPA::setup(&mut rng, TEST_SIZE).unwrap();
         let mut m_a = Vec::new();
         for _ in 0..TEST_SIZE {
             m_a.push(<Bls12_381 as PairingEngine>::Fr::rand(&mut rng));
         }
         let b = <<Bls12_381 as PairingEngine>::Fr>::rand(&mut rng);
         let m_b = structured_scalar_power(TEST_SIZE, &b);
-        let com_a = SC2::commit(&ck_a, &m_a).unwrap();
+        let com_a = SC1::commit(&ck_a, &m_a).unwrap();
         let t = vec![IP::inner_product(&m_a, &m_b).unwrap()];
         let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
 
-        let proof = ScalarTIPA::prove_with_structured_scalar_message(
-            &srs,
+        let proof = ScalarGIPA::prove_with_structured_scalar_message(
             (&m_a, &m_b),
             (&ck_a, &ck_t),
         )
         .unwrap();
 
-        assert!(ScalarTIPA::verify_with_structured_scalar_message(
-            &v_srs,
-            &ck_t,
+        assert!(ScalarGIPA::verify_with_structured_scalar_message(
+            (&ck_a, &ck_t),
             (&com_a, &com_t),
             &b,
             &proof

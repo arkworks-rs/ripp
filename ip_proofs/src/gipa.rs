@@ -137,11 +137,21 @@ where
                 ck.1.len(),
             )));
         }
-        let mut clone = Clone::clone(proof);
-        Self::_verify(
-            (ck.0.to_vec(), ck.1.to_vec(), vec![ck.2.clone()]),
+        // Calculate base commitment and transcript
+        let (base_com, transcript) = Self::_compute_recursive_challenges(
             (com.0.clone(), com.1.clone(), com.2.clone()),
-            &mut clone,
+            proof ,
+        )?;
+        // Calculate base commitment keys
+        let (ck_a_base, ck_b_base) = Self::_compute_final_commitment_keys(
+            ck,
+            &transcript,
+        )?;
+        // Verify base commitment
+        Self::_verify_base_commitment(
+            (&ck_a_base, &ck_b_base, &vec![ck.2.clone()]),
+            base_com,
+            proof,
         )
     }
 
@@ -300,10 +310,10 @@ where
         com: (&LMC::Output, &RMC::Output, &IPC::Output),
         proof: &GIPAProof<IP, LMC, RMC, IPC, D>,
     ) -> Result<((LMC::Output, RMC::Output, IPC::Output), Vec<LMC::Scalar>), Error> {
-        Self::_verify_recursive_challenges((com.0.clone(), com.1.clone(), com.2.clone()), proof)
+        Self::_compute_recursive_challenges((com.0.clone(), com.1.clone(), com.2.clone()), proof)
     }
 
-    fn _verify_recursive_challenges(
+    fn _compute_recursive_challenges(
         com: (LMC::Output, RMC::Output, IPC::Output),
         proof: &GIPAProof<IP, LMC, RMC, IPC, D>,
     ) -> Result<((LMC::Output, RMC::Output, IPC::Output), Vec<LMC::Scalar>), Error> {
@@ -339,16 +349,12 @@ where
         Ok(((com_a, com_b, com_t), r_transcript))
     }
 
-    fn _verify(
-        ck: (Vec<LMC::Key>, Vec<RMC::Key>, Vec<IPC::Key>),
-        com: (LMC::Output, RMC::Output, IPC::Output),
-        proof: &GIPAProof<IP, LMC, RMC, IPC, D>,
-    ) -> Result<bool, Error> {
-        let (base_com, transcript) = Self::_verify_recursive_challenges(com, &proof)?;
-        let (com_a, com_b, com_t) = base_com;
-
+    pub(crate) fn _compute_final_commitment_keys(
+        ck: (&[LMC::Key], &[RMC::Key], &IPC::Key),
+        transcript: &Vec<LMC::Scalar>,
+    ) -> Result<(LMC::Key, RMC::Key), Error> {
         // Calculate base commitment keys
-        let (ck_a, ck_b, ck_t) = ck;
+        let (ck_a, ck_b, _) = ck;
         assert!(ck_a.len().is_power_of_two());
 
         let mut ck_a_agg_challenge_exponents = vec![LMC::Scalar::one()];
@@ -374,12 +380,23 @@ where
             .zip(&ck_b_agg_challenge_exponents[1..])
             .map(|(g, x)| mul_helper(g, &x))
             .fold(ck_b_base_init, |sum, x| sum + x);
+        Ok((ck_a_base, ck_b_base))
+    }
 
+
+    pub(crate) fn _verify_base_commitment(
+        base_ck: (&LMC::Key, &RMC::Key, &Vec<IPC::Key>),
+        base_com: (LMC::Output, RMC::Output, IPC::Output),
+        proof: &GIPAProof<IP, LMC, RMC, IPC, D>,
+    ) -> Result<bool, Error> {
+        let (com_a, com_b, com_t) = base_com;
+        let (ck_a_base, ck_b_base, ck_t) = base_ck;
         let a_base = vec![proof.r_base.0.clone()];
         let b_base = vec![proof.r_base.1.clone()];
         let t_base = vec![IP::inner_product(&a_base, &b_base)?];
-        Ok(LMC::verify(&vec![ck_a_base], &a_base, &com_a)?
-            && RMC::verify(&vec![ck_b_base], &b_base, &com_b)?
+
+        Ok(LMC::verify(&vec![ck_a_base.clone()], &a_base, &com_a)?
+            && RMC::verify(&vec![ck_b_base.clone()], &b_base, &com_b)?
             && IPC::verify(&ck_t, &t_base, &com_t)?)
     }
 }

@@ -32,6 +32,8 @@ use inner_products::{
     ExtensionFieldElement,
 };
 
+pub mod transparent;
+
 type PolynomialEvaluationSecondTierIPA<P, D> = TIPAWithSSM<
     MultiexponentiationInnerProduct<<P as PairingEngine>::G1Projective>,
     AFGHOCommitmentG1<P>,
