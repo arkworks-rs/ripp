@@ -14,7 +14,7 @@ use rand::Rng;
 
 use crate::{
     tipa::{
-        structured_scalar_message::{structured_scalar_power, TIPAWithSSMProof, TIPAWithSSM},
+        structured_scalar_message::{structured_scalar_power, TIPAWithSSM, TIPAWithSSMProof},
         TIPAProof, VerifierSRS, SRS, TIPA,
     },
     Error,

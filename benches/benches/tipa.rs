@@ -149,11 +149,7 @@ fn bench_tipa_ssm<IP, LMC, IPC, P, D, R: Rng>(rng: &mut R, len: usize)
 where
     D: Digest,
     P: PairingEngine,
-    IP: InnerProduct<
-        LeftMessage = LMC::Message,
-        RightMessage = LMC::Scalar,
-        Output = IPC::Message,
-    >,
+    IP: InnerProduct<LeftMessage = LMC::Message, RightMessage = LMC::Scalar, Output = IPC::Message>,
     LMC: DoublyHomomorphicCommitment<Scalar = P::Fr, Key = P::G2Projective> + TIPACompatibleSetup,
     IPC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar>,
     LMC::Message: MulAssign<P::Fr>,
