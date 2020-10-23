@@ -1,9 +1,9 @@
 use algebra::{fields::Field, to_bytes};
+use bench_utils::{end_timer, start_timer};
 use digest::Digest;
 use num_traits::identities::One;
 use rand::Rng;
-use std::{marker::PhantomData, ops::MulAssign, convert::TryInto};
-use bench_utils::{start_timer, end_timer};
+use std::{convert::TryInto, marker::PhantomData, ops::MulAssign};
 
 use crate::{mul_helper, Error, InnerProductArgumentError};
 use dh_commitments::DoublyHomomorphicCommitment;
@@ -140,13 +140,10 @@ where
         // Calculate base commitment and transcript
         let (base_com, transcript) = Self::_compute_recursive_challenges(
             (com.0.clone(), com.1.clone(), com.2.clone()),
-            proof ,
+            proof,
         )?;
         // Calculate base commitment keys
-        let (ck_a_base, ck_b_base) = Self::_compute_final_commitment_keys(
-            ck,
-            &transcript,
-        )?;
+        let (ck_a_base, ck_b_base) = Self::_compute_final_commitment_keys(ck, &transcript)?;
         // Verify base commitment
         Self::_verify_base_commitment(
             (&ck_a_base, &ck_b_base, &vec![ck.2.clone()]),
@@ -238,7 +235,10 @@ where
                     hash_input.extend_from_slice(&to_bytes![
                         transcript, com_1.0, com_1.1, com_1.2, com_2.0, com_2.1, com_2.2
                     ]?);
-                    let c: LMC::Scalar = u128::from_be_bytes(D::digest(&hash_input).as_slice()[0..16].try_into().unwrap()).into();
+                    let c: LMC::Scalar = u128::from_be_bytes(
+                        D::digest(&hash_input).as_slice()[0..16].try_into().unwrap(),
+                    )
+                    .into();
                     if let Some(c_inv) = c.inverse() {
                         // Optimization for multiexponentiation to rescale G2 elements with 128-bit challenge
                         // Swap 'c' and 'c_inv' since can't control bit size of c_inv
@@ -330,7 +330,10 @@ where
                 hash_input.extend_from_slice(&to_bytes![
                     transcript, com_1.0, com_1.1, com_1.2, com_2.0, com_2.1, com_2.2
                 ]?);
-                let c: LMC::Scalar = u128::from_be_bytes(D::digest(&hash_input).as_slice()[0..16].try_into().unwrap()).into();
+                let c: LMC::Scalar = u128::from_be_bytes(
+                    D::digest(&hash_input).as_slice()[0..16].try_into().unwrap(),
+                )
+                .into();
                 if let Some(c_inv) = c.inverse() {
                     // Optimization for multiexponentiation to rescale G2 elements with 128-bit challenge
                     // Swap 'c' and 'c_inv' since can't control bit size of c_inv
@@ -382,7 +385,6 @@ where
             .fold(ck_b_base_init, |sum, x| sum + x);
         Ok((ck_a_base, ck_b_base))
     }
-
 
     pub(crate) fn _verify_base_commitment(
         base_ck: (&LMC::Key, &RMC::Key, &Vec<IPC::Key>),
