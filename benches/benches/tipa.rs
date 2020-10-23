@@ -11,7 +11,8 @@ use inner_products::{
     ExtensionFieldElement, InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct,
 };
 use ip_proofs::tipa::{
-    structured_scalar_message::structured_scalar_power, TIPACompatibleSetup, TIPA,
+    structured_scalar_message::{structured_scalar_power, TIPAWithSSM},
+    TIPACompatibleSetup, TIPA,
 };
 
 use blake2::Blake2b;
@@ -144,25 +145,21 @@ where
     println!("\t verification time: {} ms", bench);
 }
 
-fn bench_tipa_ssm<IP, LMC, RMC, IPC, P, D, R: Rng>(rng: &mut R, len: usize)
+fn bench_tipa_ssm<IP, LMC, IPC, P, D, R: Rng>(rng: &mut R, len: usize)
 where
     D: Digest,
     P: PairingEngine,
     IP: InnerProduct<
         LeftMessage = LMC::Message,
-        RightMessage = RMC::Message,
+        RightMessage = LMC::Scalar,
         Output = IPC::Message,
     >,
     LMC: DoublyHomomorphicCommitment<Scalar = P::Fr, Key = P::G2Projective> + TIPACompatibleSetup,
-    RMC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar, Key = P::G1Projective, Message = P::Fr>
-        + TIPACompatibleSetup,
     IPC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar>,
     LMC::Message: MulAssign<P::Fr>,
-    RMC::Message: MulAssign<P::Fr>,
     IPC::Message: MulAssign<P::Fr>,
     IPC::Key: MulAssign<P::Fr>,
     LMC::Output: MulAssign<P::Fr>,
-    RMC::Output: MulAssign<P::Fr>,
     IPC::Output: MulAssign<P::Fr>,
     IPC::Output: MulAssign<LMC::Scalar>,
     IP::LeftMessage: UniformRand,
@@ -175,23 +172,23 @@ where
     let scalar = <P::Fr>::rand(rng);
     let r = structured_scalar_power(len, &scalar);
 
-    let (srs, ck_t) = TIPA::<IP, LMC, RMC, IPC, P, D>::setup(rng, len).unwrap();
-    let (ck_l, ck_r) = srs.get_commitment_keys();
+    let (srs, ck_t) = TIPAWithSSM::<IP, LMC, IPC, P, D>::setup(rng, len).unwrap();
+    let (ck_l, _) = srs.get_commitment_keys();
     let v_srs = srs.get_verifier_key();
     let com_l = LMC::commit(&ck_l, &l).unwrap();
     let t = vec![IP::inner_product(&l, &r).unwrap()];
     let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
     let mut start = Instant::now();
-    let proof = TIPA::<IP, LMC, RMC, IPC, P, D>::prove_with_structured_scalar_message(
+    let proof = TIPAWithSSM::<IP, LMC, IPC, P, D>::prove_with_structured_scalar_message(
         &srs,
         (&l, &r),
-        (&ck_l, &ck_r, &ck_t),
+        (&ck_l, &ck_t),
     )
     .unwrap();
     let mut bench = start.elapsed().as_millis();
     println!("\t proving time: {} ms", bench);
     start = Instant::now();
-    TIPA::<IP, LMC, RMC, IPC, P, D>::verify_with_structured_scalar_message(
+    TIPAWithSSM::<IP, LMC, IPC, P, D>::verify_with_structured_scalar_message(
         &v_srs,
         &ck_t,
         (&com_l, &com_t),
@@ -252,7 +249,6 @@ fn main() {
     bench_tipa_ssm::<
         MultiexponentiationInnerProduct<<Bls12_381 as PairingEngine>::G1Projective>,
         GC1,
-        SC1,
         IdentityCommitment<
             <Bls12_381 as PairingEngine>::G1Projective,
             <Bls12_381 as PairingEngine>::Fr,
