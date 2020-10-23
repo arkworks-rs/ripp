@@ -3,7 +3,7 @@ use algebra::{
 };
 use ff_fft::polynomial::DensePolynomial as Polynomial;
 use ip_proofs::applications::poly_commit::{
-   KZG, UnivariatePolynomialCommitment as IPA,
+   KZG, UnivariatePolynomialCommitment as IPA, transparent::UnivariatePolynomialCommitment as TransparentIPA,
 };
 
 use rand::{rngs::StdRng, SeedableRng};
@@ -66,7 +66,7 @@ fn main() {
                 // Verify
                 std::thread::sleep(Duration::from_millis(5000));
                 start = Instant::now();
-                for i in 0..50 {
+                for _ in 0..50 {
                     let is_valid = KZG::<Bls12_381>::verify(&v_srs, &com, &point, &eval, &proof).unwrap();
                     assert!(is_valid);
                 }
@@ -109,13 +109,55 @@ fn main() {
                 // Verify
                 std::thread::sleep(Duration::from_millis(5000));
                 start = Instant::now();
-                for i in 0..50 {
+                for _ in 0..50 {
                     let is_valid = IPA::<Bls12_381, Blake2b>::verify(&v_srs, degree, &com, &point, &eval, &proof).unwrap();
                     assert!(is_valid);
                 }
                 time = start.elapsed().as_millis() / 50;
                 csv_writer.write_record(&[i.to_string(), "ipa".to_string(), "verify".to_string(), degree.to_string(), time.to_string()]).unwrap();
                 csv_writer.flush().unwrap();
+            }
+
+            // Benchmark transparent IPA
+            {
+                let mut rng = StdRng::seed_from_u64(0u64);
+                start = Instant::now();
+                let ck = TransparentIPA::<Bls12_381, Blake2b>::setup(&mut rng, degree).unwrap();
+                time = start.elapsed().as_millis();
+                csv_writer.write_record(&[1.to_string(), "transparent_ipa".to_string(), "setup".to_string(), degree.to_string(), time.to_string()]).unwrap();
+                csv_writer.flush().unwrap();
+                for i in 1..num_trials + 1 {
+                    let mut polynomial_coeffs = vec![];
+                    for _ in 0..degree + 1 {
+                        polynomial_coeffs.push(<Bls12_381 as PairingEngine>::Fr::rand(&mut rng));
+                    }
+                    let polynomial = Polynomial::from_coefficients_slice(&polynomial_coeffs);
+                    let point = <Bls12_381 as PairingEngine>::Fr::rand(&mut rng);
+                    let eval = polynomial.evaluate(point.clone());
+
+                    // Commit
+                    start = Instant::now();
+                    let (com, prover_aux) = TransparentIPA::<Bls12_381, Blake2b>::commit(&ck, &polynomial).unwrap();
+                    time = start.elapsed().as_millis();
+                    csv_writer.write_record(&[i.to_string(), "transparent_ipa".to_string(), "commit".to_string(), degree.to_string(), time.to_string()]).unwrap();
+
+                    // Open
+                    start = Instant::now();
+                    let proof = TransparentIPA::<Bls12_381, Blake2b>::open(&ck, &polynomial, &prover_aux, &point).unwrap();
+                    time = start.elapsed().as_millis();
+                    csv_writer.write_record(&[i.to_string(), "transparent_ipa".to_string(), "open".to_string(), degree.to_string(), time.to_string()]).unwrap();
+
+                    // Verify
+                    std::thread::sleep(Duration::from_millis(5000));
+                    start = Instant::now();
+                    for _ in 0..50 {
+                        let is_valid = TransparentIPA::<Bls12_381, Blake2b>::verify(&ck, &com, &point, &eval, &proof).unwrap();
+                        assert!(is_valid);
+                    }
+                    time = start.elapsed().as_millis() / 50;
+                    csv_writer.write_record(&[i.to_string(), "transparent_ipa".to_string(), "verify".to_string(), degree.to_string(), time.to_string()]).unwrap();
+                    csv_writer.flush().unwrap();
+                }
             }
         }
     }
