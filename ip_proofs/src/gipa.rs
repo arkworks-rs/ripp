@@ -366,7 +366,7 @@ where
             let c_inv = c.inverse().unwrap();
             for j in 0..(2_usize).pow(i as u32) {
                 ck_a_agg_challenge_exponents.push(ck_a_agg_challenge_exponents[j] * &c_inv);
-                ck_b_agg_challenge_exponents.push(ck_b_agg_challenge_exponents[j] * &c);
+                ck_b_agg_challenge_exponents.push(ck_b_agg_challenge_exponents[j] * c);
             }
         }
         assert_eq!(ck_a_agg_challenge_exponents.len(), ck_a.len());
