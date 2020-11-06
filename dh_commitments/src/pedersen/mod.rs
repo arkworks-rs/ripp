@@ -1,10 +1,10 @@
-use algebra::curves::ProjectiveCurve;
+use ark_ec::ProjectiveCurve;
 use rand::Rng;
 use std::marker::PhantomData;
 
 use crate::{random_generators, DoublyHomomorphicCommitment, Error};
 
-use inner_products::{InnerProduct, MultiexponentiationInnerProduct};
+use ark_inner_products::{InnerProduct, MultiexponentiationInnerProduct};
 
 #[derive(Clone)]
 pub struct PedersenCommitment<G: ProjectiveCurve> {
@@ -29,7 +29,8 @@ impl<G: ProjectiveCurve> DoublyHomomorphicCommitment for PedersenCommitment<G> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use algebra::{ed_on_bls12_381::EdwardsProjective as JubJub, UniformRand};
+    use ark_ed_on_bls12_381::EdwardsProjective as JubJub;
+    use ark_ff::UniformRand;
     use rand::{rngs::StdRng, SeedableRng};
 
     type C = PedersenCommitment<JubJub>;

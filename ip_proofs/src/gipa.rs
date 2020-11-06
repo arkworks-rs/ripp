@@ -1,13 +1,12 @@
-use algebra::{fields::Field, to_bytes};
+use ark_ff::{to_bytes, Field, One};
 use bench_utils::{end_timer, start_timer};
 use digest::Digest;
-use num_traits::identities::One;
 use rand::Rng;
 use std::{convert::TryInto, marker::PhantomData, ops::MulAssign};
 
 use crate::{mul_helper, Error, InnerProductArgumentError};
-use dh_commitments::DoublyHomomorphicCommitment;
-use inner_products::InnerProduct;
+use ark_dh_commitments::DoublyHomomorphicCommitment;
+use ark_inner_products::InnerProduct;
 
 pub struct GIPA<IP, LMC, RMC, IPC, D> {
     _inner_product: PhantomData<IP>,
@@ -433,17 +432,19 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use algebra::{bls12_381::Bls12_381, curves::PairingEngine, UniformRand};
+    use ark_bls12_381::Bls12_381;
+    use ark_ec::PairingEngine;
+    use ark_ff::UniformRand;
     use blake2::Blake2b;
     use rand::{rngs::StdRng, SeedableRng};
 
-    use dh_commitments::{
+    use ark_dh_commitments::{
         afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
         identity::IdentityCommitment,
         pedersen::PedersenCommitment,
         random_generators,
     };
-    use inner_products::{
+    use ark_inner_products::{
         ExtensionFieldElement, InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct,
         ScalarInnerProduct,
     };

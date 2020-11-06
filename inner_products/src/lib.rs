@@ -1,9 +1,5 @@
-use algebra::{
-    bytes::ToBytes,
-    curves::{PairingEngine, ProjectiveCurve},
-    fields::{Field, PrimeField},
-    msm::VariableBaseMSM,
-};
+use ark_ec::{msm::VariableBaseMSM, PairingEngine, ProjectiveCurve};
+use ark_ff::{bytes::ToBytes, Field, PrimeField};
 use std::{
     error::Error as ErrorTrait,
     fmt::{Display, Formatter, Result as FmtResult},

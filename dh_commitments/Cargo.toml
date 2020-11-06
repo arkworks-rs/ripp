@@ -1,16 +1,25 @@
 [package]
-name = "dh_commitments"
+name = "ark-dh-commitments"
 version = "0.1.0"
-authors = ["Nirvan Tyagi <nirvan.tyagi@gmail.com>"]
+authors = [
+    "Benedikt Bünz",
+    "Mary Maller",
+    "Pratyush Mishra",
+    "Nirvan Tyagi",
+    "Noah Vesely",
+]
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+homepage = "https://github.com/arkworks-rs/ripp"
+repository = "https://github.com/arkworks-rs/ripp"
+documentation = "https://docs.rs/ark-dh-commitments/"
 
 [dependencies]
-algebra = {git = "https://github.com/scipr-lab/zexe/", package = "algebra" }
+ark-ff = { git = "https://github.com/arkworks-rs/algebra/", features = [ "parallel" ] }
+ark-ec = { git = "https://github.com/arkworks-rs/algebra/", features = [ "parallel" ] }
 rand = { version = "0.7" }
 
-inner_products = { path = "../inner_products" }
+ark-inner-products = { path = "../inner_products" }
 
 [dev-dependencies]
-algebra = {git = "https://github.com/scipr-lab/zexe/", package = "algebra", features = [ "ed_on_bls12_381", "bls12_381" ] }
+ark-bls12-381 = { git = "https://github.com/arkworks-rs/curves", features = [ "curve" ] }
+ark-ed-on-bls12-381 = { git = "https://github.com/arkworks-rs/curves" }

@@ -1,4 +1,4 @@
-use algebra_core::{FromBytes, ToBytes};
+use ark_ff::{FromBytes, ToBytes};
 use digest::{generic_array::GenericArray, Digest};
 use rand_chacha::ChaChaRng;
 use rand_core::{RngCore, SeedableRng};

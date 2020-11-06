@@ -1,9 +1,11 @@
-use algebra::{bls12_381::Bls12_381, curves::PairingEngine, UniformRand};
-use ff_fft::polynomial::DensePolynomial as Polynomial;
-use ip_proofs::applications::poly_commit::{
+use ark_bls12_381::Bls12_381;
+use ark_ec::PairingEngine;
+use ark_ff::UniformRand;
+use ark_ip_proofs::applications::poly_commit::{
     transparent::UnivariatePolynomialCommitment as TransparentIPA,
     UnivariatePolynomialCommitment as IPA, KZG,
 };
+use ark_poly::polynomial::DensePolynomial as Polynomial;
 
 use csv::Writer;
 use rand::{rngs::StdRng, SeedableRng};

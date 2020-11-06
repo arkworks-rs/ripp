@@ -1,15 +1,9 @@
-use algebra::{
-    curves::{PairingEngine, ProjectiveCurve},
-    fields::{Field, PrimeField},
-    groups::Group,
-    msm::FixedBaseMSM,
-    to_bytes, UniformRand,
-};
+use ark_ec::{group::Group, msm::FixedBaseMSM, PairingEngine, ProjectiveCurve};
+use ark_ff::{to_bytes, Field, One, PrimeField, UniformRand, Zero};
+use ark_poly::polynomial::DensePolynomial;
 use bench_utils::{end_timer, start_timer};
 use digest::Digest;
-use ff_fft::polynomial::DensePolynomial;
 use itertools::Itertools;
-use num_traits::identities::{One, Zero};
 use rand::Rng;
 use std::{marker::PhantomData, ops::MulAssign};
 
@@ -17,12 +11,12 @@ use crate::{
     gipa::{GIPAProof, GIPA},
     Error,
 };
-use dh_commitments::{
+use ark_dh_commitments::{
     afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
     pedersen::PedersenCommitment,
     DoublyHomomorphicCommitment,
 };
-use inner_products::{InnerProduct, MultiexponentiationInnerProduct};
+use ark_inner_products::{InnerProduct, MultiexponentiationInnerProduct};
 
 pub mod structured_scalar_message;
 
@@ -436,18 +430,18 @@ fn polynomial_coefficients_from_transcript<F: Field>(transcript: &Vec<F>, r_shif
 #[cfg(test)]
 mod tests {
     use super::*;
-    use algebra::{bls12_381::Bls12_381, curves::PairingEngine, UniformRand};
+    use ark_bls12_381::Bls12_381;
     use blake2::Blake2b;
     use rand::{rngs::StdRng, SeedableRng};
 
     use crate::tipa::structured_scalar_message::structured_scalar_power;
-    use dh_commitments::{
+    use ark_dh_commitments::{
         afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
         identity::IdentityCommitment,
         pedersen::PedersenCommitment,
         random_generators,
     };
-    use inner_products::{
+    use ark_inner_products::{
         ExtensionFieldElement, InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct,
         ScalarInnerProduct,
     };

@@ -1,16 +1,16 @@
-use algebra::{
-    bls12_381::Bls12_381, curves::PairingEngine, fields::Field, groups::Group, UniformRand,
-};
-use dh_commitments::{
+use ark_bls12_381::Bls12_381;
+use ark_dh_commitments::{
     afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
     identity::IdentityCommitment,
     pedersen::PedersenCommitment,
     DoublyHomomorphicCommitment,
 };
-use inner_products::{
+use ark_ec::{group::Group, PairingEngine};
+use ark_ff::{Field, UniformRand};
+use ark_inner_products::{
     ExtensionFieldElement, InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct,
 };
-use ip_proofs::tipa::{
+use ark_ip_proofs::tipa::{
     structured_scalar_message::{structured_scalar_power, TIPAWithSSM},
     TIPACompatibleSetup, TIPA,
 };

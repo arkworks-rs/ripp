@@ -1,35 +1,10 @@
-#![deny(
-    unused_import_braces,
-    unused_qualifications,
-    trivial_casts,
-    trivial_numeric_casts
-)]
-#![deny(unused_qualifications, variant_size_differences, stable_features)]
-#![deny(
-    non_shorthand_field_patterns,
-    unused_attributes,
-    unused_imports,
-    unused_extern_crates
-)]
-#![deny(
-    renamed_and_removed_lints,
-    stable_features,
-    unused_allocation,
-    unused_comparisons
-)]
-#![deny(
-    unused_must_use,
-    unused_mut,
-    unused_unsafe,
-    private_in_public,
-    unsafe_code
-)]
-
 // For benchmarking
-use algebra::{bls12_377::*, ProjectiveCurve, UniformRand};
+use ark_bls12_377::*;
+use ark_ec::ProjectiveCurve;
+use ark_ff::UniformRand;
+use ark_sipp::{rng::FiatShamirRng, SIPP};
 use blake2::Blake2s;
 use rand::seq::SliceRandom;
-use sipp::{rng::FiatShamirRng, SIPP};
 use std::time::Instant;
 
 type ExampleSIPP = SIPP<Bls12_377, Blake2s>;
@@ -95,7 +70,7 @@ fn main() {
             a_s.shuffle(&mut rng);
             b_s.shuffle(&mut rng);
             let start = Instant::now();
-            let z = sipp::product_of_pairings_with_coeffs::<Bls12_377>(a_s, b_s, &r_s);
+            let z = ark_sipp::product_of_pairings_with_coeffs::<Bls12_377>(a_s, b_s, &r_s);
             direct_time += (start.elapsed().as_millis() as f64) / 1_000.0;
 
             let start = Instant::now();

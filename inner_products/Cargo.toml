@@ -1,11 +1,21 @@
 [package]
-name = "inner_products"
+name = "ark-inner-products"
 version = "0.1.0"
-authors = ["Nirvan Tyagi <nirvan.tyagi@gmail.com>"]
+authors = [
+    "Benedikt Bünz",
+    "Mary Maller",
+    "Pratyush Mishra",
+    "Nirvan Tyagi",
+    "Noah Vesely",
+]
 edition = "2018"
+homepage = "https://github.com/arkworks-rs/ripp"
+repository = "https://github.com/arkworks-rs/ripp"
+documentation = "https://docs.rs/ark-inner-products/"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-algebra = {git = "https://github.com/scipr-lab/zexe/", package = "algebra" }
+ark-ff = { git = "https://github.com/arkworks-rs/algebra/", features = [ "parallel" ] }
+ark-ec = { git = "https://github.com/arkworks-rs/algebra/", features = [ "parallel" ] }
 rand = { version = "0.7" }

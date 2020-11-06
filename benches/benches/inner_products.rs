@@ -1,5 +1,7 @@
-use algebra::{bls12_381::Bls12_381, curves::PairingEngine, UniformRand};
-use inner_products::{InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct};
+use ark_bls12_381::Bls12_381;
+use ark_ec::PairingEngine;
+use ark_ff::UniformRand;
+use ark_inner_products::{InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct};
 
 use rand::{rngs::StdRng, Rng, SeedableRng};
 

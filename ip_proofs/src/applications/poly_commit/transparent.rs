@@ -1,11 +1,11 @@
-use algebra::{curves::PairingEngine, fields::Field};
-use ff_fft::polynomial::DensePolynomial as UnivariatePolynomial;
+use ark_ec::PairingEngine;
+use ark_ff::{Field, Zero};
+use ark_poly::polynomial::DensePolynomial as UnivariatePolynomial;
 
 use bench_utils::{end_timer, start_timer};
 use std::marker::PhantomData;
 
 use digest::Digest;
-use num_traits::identities::Zero;
 use rand::Rng;
 
 use crate::{
@@ -15,13 +15,15 @@ use crate::{
     },
     Error,
 };
-use dh_commitments::{
+use ark_dh_commitments::{
     afgho16::AFGHOCommitmentG1,
     identity::{HomomorphicPlaceholderValue, IdentityCommitment, IdentityOutput},
     pedersen::PedersenCommitment,
     DoublyHomomorphicCommitment,
 };
-use inner_products::{ExtensionFieldElement, MultiexponentiationInnerProduct, ScalarInnerProduct};
+use ark_inner_products::{
+    ExtensionFieldElement, MultiexponentiationInnerProduct, ScalarInnerProduct,
+};
 
 type PolynomialEvaluationSecondTierIPA<P, D> = GIPAWithSSM<
     MultiexponentiationInnerProduct<<P as PairingEngine>::G1Projective>,
@@ -315,7 +317,9 @@ impl<P: PairingEngine, D: Digest> UnivariatePolynomialCommitment<P, D> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use algebra::{bls12_381::Bls12_381, curves::PairingEngine, UniformRand};
+    use ark_bls12_381::Bls12_381;
+    use ark_ec::PairingEngine;
+    use ark_ff::UniformRand;
     use blake2::Blake2b;
     use rand::{rngs::StdRng, SeedableRng};
 

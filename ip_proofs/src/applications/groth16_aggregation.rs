@@ -1,15 +1,10 @@
-use algebra::{
-    curves::{AffineCurve, PairingEngine},
-    fields::Field,
-    groups::Group,
-    to_bytes,
-};
-use groth16::{Proof, VerifyingKey};
+use ark_ec::{group::Group, AffineCurve, PairingEngine};
+use ark_ff::{to_bytes, Field, One};
+use ark_groth16::{Proof, VerifyingKey};
 
 use std::ops::AddAssign;
 
 use digest::Digest;
-use num_traits::identities::One;
 use rand::Rng;
 
 use crate::{
@@ -19,11 +14,11 @@ use crate::{
     },
     Error,
 };
-use dh_commitments::{
+use ark_dh_commitments::{
     afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
     identity::{HomomorphicPlaceholderValue, IdentityCommitment, IdentityOutput},
 };
-use inner_products::{
+use ark_inner_products::{
     ExtensionFieldElement, InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct,
     ScalarInnerProduct,
 };

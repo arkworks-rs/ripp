@@ -1,4 +1,4 @@
-use algebra::{bytes::ToBytes, fields::PrimeField};
+use ark_ff::{bytes::ToBytes, fields::PrimeField};
 use rand::Rng;
 use std::{
     io::{Result as IoResult, Write},

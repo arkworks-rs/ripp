@@ -1,9 +1,5 @@
-use algebra::{
-    bytes::ToBytes,
-    fields::PrimeField,
-    //    serialize::CanonicalSerialize,
-    groups::Group,
-};
+use ark_ec::group::Group;
+use ark_ff::{bytes::ToBytes, fields::PrimeField};
 use rand::Rng;
 use std::{
     cmp::Eq,
