@@ -1,34 +1,27 @@
-use algebra::{
-    biginteger::BigInteger,
-    bls12_377::{Bls12_377, Fr as BLS12Fr, FrParameters as BLS12FrParameters},
-    bw6_761::{Fr as BW6Fr, BW6_761},
-    curves::PairingEngine,
-    fields::{FftParameters, PrimeField},
-    ToConstraintField, UniformRand,
+use ark_bls12_377::{
+    constraints::PairingVar as BLS12PairingVar, Bls12_377, Fr as BLS12Fr,
+    FrParameters as BLS12FrParameters,
 };
-use groth16::{PreparedVerifyingKey, Proof, VerifyingKey};
-use r1cs_core::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
-use r1cs_std::{bls12_377::PairingVar as BLS12PairingVar, prelude::*};
-use zexe_cp::{
-    nizk::{
-        constraints::NIZKVerifierGadget,
-        groth16::{
-            constraints::{Groth16VerifierGadget, ProofVar, VerifyingKeyVar},
-            Groth16,
-        },
-        NIZK,
-    },
+use ark_bw6_761::{Fr as BW6Fr, BW6_761};
+use ark_crypto_primitives::{
     prf::{
         blake2s::{constraints::Blake2sGadget, Blake2s},
         constraints::PRFGadget,
         PRF,
     },
+    snark::*,
 };
+use ark_ec::{AffineCurve, PairingEngine, ProjectiveCurve};
+use ark_ff::{
+    biginteger::BigInteger, FftParameters, One, PrimeField, ToConstraintField, UniformRand,
+};
+use ark_groth16::{constraints::*, Groth16, PreparedVerifyingKey, Proof, VerifyingKey};
+use ark_r1cs_std::prelude::*;
+use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 
-use ip_proofs::applications::groth16_aggregation::{
+use ark_ip_proofs::applications::groth16_aggregation::{
     aggregate_proofs, setup_inner_product, verify_aggregate_proof,
 };
-use ip_proofs::Error;
 
 use blake2::Blake2b;
 use csv::Writer;
@@ -96,7 +89,7 @@ impl ConstraintSynthesizer<BW6Fr> for AggregateBlake2SCircuitVerificationCircuit
             .hash_outputs
             .iter()
             .map(|h| h.to_field_elements())
-            .collect::<Result<Vec<Vec<BLS12Fr>>, Error>>()
+            .collect::<Option<Vec<Vec<BLS12Fr>>>>()
             .unwrap()
             .iter()
             .map(|h_as_bls_fr| {
@@ -148,10 +141,21 @@ impl ConstraintSynthesizer<BW6Fr> for AggregateBlake2SCircuitVerificationCircuit
         assert_eq!(input_gadgets.len(), proof_gadgets.len());
 
         for (input_gadget, proof_gadget) in input_gadgets.iter().zip(&proof_gadgets) {
-            <Groth16VerifierGadget<Bls12_377, BLS12PairingVar> as NIZKVerifierGadget<
-                Groth16<Bls12_377, SingleBlake2SCircuit, [u8; 32]>,
-                BW6Fr,
-            >>::verify(&vk_gadget, input_gadget, proof_gadget)?
+            let input = input_gadget
+                .iter()
+                .map(|bytes| {
+                    bytes
+                        .iter()
+                        .flat_map(|b| b.to_bits_le().unwrap())
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            let input = BooleanInputVar::new(input);
+            <Groth16VerifierGadget<Bls12_377, BLS12PairingVar>>::verify(
+                &vk_gadget,
+                &input,
+                proof_gadget,
+            )?
             .enforce_equal(&Boolean::TRUE)?;
         }
 
@@ -164,14 +168,14 @@ struct AggregateBlake2SCircuitVerificationCircuitInput {
 }
 
 impl ToConstraintField<BW6Fr> for AggregateBlake2SCircuitVerificationCircuitInput {
-    fn to_field_elements(&self) -> Result<Vec<BW6Fr>, Error> {
+    fn to_field_elements(&self) -> Option<Vec<BW6Fr>> {
         let mut fr_elements: Vec<BW6Fr> = vec![];
 
         for h_as_bls_fr_bytes in self
             .hash_outputs
             .iter()
             .map(|h| h.to_field_elements())
-            .collect::<Result<Vec<Vec<BLS12Fr>>, Error>>()?
+            .collect::<Option<Vec<Vec<BLS12Fr>>>>()?
             .iter()
             .map(|h_as_bls_fr| {
                 h_as_bls_fr
@@ -195,7 +199,7 @@ impl ToConstraintField<BW6Fr> for AggregateBlake2SCircuitVerificationCircuitInpu
             fr_elements.extend_from_slice(&h_as_bls_fr_bytes.to_field_elements()?);
         }
 
-        Ok(fr_elements)
+        Some(fr_elements)
     }
 }
 
@@ -258,11 +262,8 @@ fn main() {
     {
         // Prove individual proofs
         start = Instant::now();
-        let hash_circuit_parameters = Groth16::<Bls12_377, SingleBlake2SCircuit, [u8; 32]>::setup(
-            SingleBlake2SCircuit::default(),
-            &mut rng,
-        )
-        .unwrap();
+        let hash_circuit_parameters =
+            Groth16::<Bls12_377>::setup(SingleBlake2SCircuit::default(), &mut rng).unwrap();
         time = start.elapsed().as_millis();
         if generate_all_proofs {
             csv_writer
@@ -281,7 +282,7 @@ fn main() {
         let mut proofs = vec![];
         for i in 0..num_proofs {
             proofs.push(
-                Groth16::<Bls12_377, SingleBlake2SCircuit, [u8; 32]>::prove(
+                Groth16::<Bls12_377>::prove(
                     &hash_circuit_parameters.0,
                     SingleBlake2SCircuit {
                         input: hash_inputs[i].clone(),
@@ -317,11 +318,11 @@ fn main() {
         {
             start = Instant::now();
             let result = batch_verify_proof(
-                &groth16::prepare_verifying_key(&hash_circuit_parameters.0.vk),
+                &ark_groth16::prepare_verifying_key(&hash_circuit_parameters.0.vk),
                 &hash_outputs
                     .iter()
                     .map(|h| h.to_field_elements())
-                    .collect::<Result<Vec<Vec<<Bls12_377 as PairingEngine>::Fr>>, Error>>()
+                    .collect::<Option<Vec<Vec<<Bls12_377 as PairingEngine>::Fr>>>>()
                     .unwrap(),
                 &proofs,
             )
@@ -380,7 +381,7 @@ fn main() {
                     &hash_outputs
                         .iter()
                         .map(|h| h.to_field_elements())
-                        .collect::<Result<Vec<Vec<<Bls12_377 as PairingEngine>::Fr>>, Error>>()
+                        .collect::<Option<Vec<Vec<<Bls12_377 as PairingEngine>::Fr>>>>()
                         .unwrap(),
                     &aggregate_proof,
                 )
@@ -412,12 +413,7 @@ fn main() {
             };
             start = Instant::now();
             let agg_verification_circuit_parameters =
-                Groth16::<
-                    BW6_761,
-                    AggregateBlake2SCircuitVerificationCircuit,
-                    AggregateBlake2SCircuitVerificationCircuitInput,
-                >::setup(agg_verification_circuit.clone(), &mut rng)
-                .unwrap();
+                Groth16::<BW6_761>::setup(agg_verification_circuit.clone(), &mut rng).unwrap();
             time = start.elapsed().as_millis();
             csv_writer
                 .write_record(&[
@@ -432,11 +428,7 @@ fn main() {
 
             for i in 1..=num_trials {
                 start = Instant::now();
-                let aggregate_proof = Groth16::<
-                    BW6_761,
-                    AggregateBlake2SCircuitVerificationCircuit,
-                    AggregateBlake2SCircuitVerificationCircuitInput,
-                >::prove(
+                let aggregate_proof = Groth16::<BW6_761>::prove(
                     &agg_verification_circuit_parameters.0,
                     agg_verification_circuit.clone(),
                     &mut rng,
@@ -455,13 +447,9 @@ fn main() {
                 csv_writer.flush().unwrap();
 
                 start = Instant::now();
-                let result = Groth16::<
-                    BW6_761,
-                    AggregateBlake2SCircuitVerificationCircuit,
-                    AggregateBlake2SCircuitVerificationCircuitInput,
-                >::verify(
+                let result = Groth16::<BW6_761>::verify(
                     &agg_verification_circuit_parameters.1,
-                    &agg_verifier_input,
+                    &agg_verifier_input.to_field_elements().unwrap(),
                     &aggregate_proof,
                 )
                 .unwrap();
@@ -488,9 +476,7 @@ fn main() {
             output: hash_outputs.clone(),
         };
         start = Instant::now();
-        let circuit_parameters =
-            Groth16::<Bls12_377, ManyBlake2SCircuit, [u8; 32]>::setup(circuit.clone(), &mut rng)
-                .unwrap();
+        let circuit_parameters = Groth16::<Bls12_377>::setup(circuit.clone(), &mut rng).unwrap();
         time = start.elapsed().as_millis();
         csv_writer
             .write_record(&[
@@ -504,12 +490,7 @@ fn main() {
         csv_writer.flush().unwrap();
 
         start = Instant::now();
-        let proof = Groth16::<Bls12_377, ManyBlake2SCircuit, [BLS12Fr]>::prove(
-            &circuit_parameters.0,
-            circuit,
-            &mut rng,
-        )
-        .unwrap();
+        let proof = Groth16::<Bls12_377>::prove(&circuit_parameters.0, circuit, &mut rng).unwrap();
         time = start.elapsed().as_millis();
         csv_writer
             .write_record(&[
@@ -523,7 +504,7 @@ fn main() {
         csv_writer.flush().unwrap();
 
         start = Instant::now();
-        let result = Groth16::<Bls12_377, ManyBlake2SCircuit, [BLS12Fr]>::verify(
+        let result = Groth16::<Bls12_377>::verify(
             &circuit_parameters.1,
             &hash_outputs
                 .iter()
@@ -552,8 +533,6 @@ pub fn batch_verify_proof<E: PairingEngine>(
     public_inputs: &[Vec<E::Fr>],
     proofs: &[Proof<E>],
 ) -> Result<bool, SynthesisError> {
-    use algebra::{AffineCurve, One, ProjectiveCurve};
-
     let mut rng = StdRng::seed_from_u64(0u64);
     let mut r_powers = Vec::with_capacity(proofs.len());
     for _ in 0..proofs.len() {
@@ -565,8 +544,8 @@ pub fn batch_verify_proof<E: PairingEngine>(
         .iter()
         .zip(&r_powers)
         .map(|(input, r)| {
-            let mut g_ic = pvk.gamma_abc_g1[0].into_projective();
-            for (i, b) in input.iter().zip(pvk.gamma_abc_g1.iter().skip(1)) {
+            let mut g_ic = pvk.vk.gamma_abc_g1[0].into_projective();
+            for (i, b) in input.iter().zip(pvk.vk.gamma_abc_g1.iter().skip(1)) {
                 g_ic += &b.mul(i.into_repr());
             }
             g_ic.mul(*r)

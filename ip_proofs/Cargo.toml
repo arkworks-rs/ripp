@@ -1,29 +1,40 @@
 [package]
-name = "ip_proofs"
+name = "ark-ip-proofs"
 version = "0.1.0"
-authors = ["Nirvan Tyagi <nirvan.tyagi@gmail.com>"]
+authors = [
+    "Benedikt Bünz",
+    "Mary Maller",
+    "Pratyush Mishra",
+    "Nirvan Tyagi",
+    "Noah Vesely",
+]
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+homepage = "https://github.com/arkworks-rs/ripp"
+repository = "https://github.com/arkworks-rs/ripp"
+documentation = "https://docs.rs/ark-ip-proofs/"
 
 [dependencies]
-algebra = {git = "https://github.com/scipr-lab/zexe/", package = "algebra" }
-ff_fft = {git = "https://github.com/scipr-lab/zexe/", package = "ff-fft" }
-groth16 = {git = "https://github.com/scipr-lab/zexe/", package = "groth16" }
-bench_utils = { git = "https://github.com/scipr-lab/zexe", package = "bench-utils" }
+ark-ec = { git = "https://github.com/arkworks-rs/algebra", features = [ "parallel" ] }
+ark-ff = { git = "https://github.com/arkworks-rs/algebra", features = [ "parallel" ] }
+ark-poly = { git = "https://github.com/arkworks-rs/algebra", features = [ "parallel" ] }
+ark-std = { git = "https://github.com/arkworks-rs/utils", features = [ "parallel" ] }
+ark-groth16 = {git = "https://github.com/arkworks-rs/groth16/", features = [ "parallel" ] }
+bench-utils = { git = "https://github.com/arkworks-rs/utils" }
 rand = { version = "0.7" }
 digest = { version = "0.9" }
 num-traits = { version = "0.2" }
 itertools = { version = "0.9" }
 
-inner_products = { path = "../inner_products" }
-dh_commitments = { path = "../dh_commitments" }
+ark-inner-products = { path = "../inner_products" }
+ark-dh-commitments = { path = "../dh_commitments" }
 
 [dev-dependencies]
-algebra = {git = "https://github.com/scipr-lab/zexe/", package = "algebra", features = [ "ed_on_bls12_381", "bls12_381" ] }
-r1cs_core = {git = "https://github.com/scipr-lab/zexe/", package = "r1cs-core" }
-r1cs_std = {git = "https://github.com/scipr-lab/zexe/", package = "r1cs-std" }
+ark-bls12-381 = { git = "https://github.com/arkworks-rs/curves", features = [ "curve" ] }
+ark-ed-on-bls12-381 = { git = "https://github.com/arkworks-rs/curves" }
+
+ark-relations = { git = "https://github.com/arkworks-rs/snark" }
+ark-r1cs-std = { git = "https://github.com/arkworks-rs/r1cs-std" }
 blake2 = { version = "0.9" }
 
 [features]
-print-trace = [ "bench_utils/print-trace" ]
+print-trace = [ "bench-utils/print-trace" ]

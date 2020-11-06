@@ -1,16 +1,17 @@
 [package]
-name = "sipp"
+name = "ark-sipp"
 version = "0.1.0"
 authors = [
     "Benedikt Bünz",
     "Mary Maller",
     "Pratyush Mishra",
+    "Nirvan Tyagi",
     "Noah Vesely",
 ]
 description = "A library for proofs about inner pairing products"
-homepage = "https://github.com/scipr/ripp"
-repository = "https://github.com/scipr/ripp"
-documentation = "https://docs.rs/ripp/"
+homepage = "https://github.com/arkworks-rs/ripp"
+repository = "https://github.com/arkworks-rs/ripp"
+documentation = "https://docs.rs/ark-sipp/"
 keywords = ["cryptography", "finite fields", "elliptic curves", "pairing", "bulletproofs"]
 categories = ["cryptography"]
 include = ["Cargo.toml", "src", "README.md", "LICENSE-APACHE", "LICENSE-MIT"]
@@ -20,7 +21,9 @@ edition = "2018"
 ################################# Dependencies ################################
 
 [dependencies]
-algebra-core = { git = "https://github.com/scipr-lab/zexe", features = [ "parallel" ] }
+ark-ec = { git = "https://github.com/arkworks-rs/algebra", features = [ "parallel" ] }
+ark-ff = { git = "https://github.com/arkworks-rs/algebra", features = [ "parallel" ] }
+ark-std = { git = "https://github.com/arkworks-rs/utils", features = [ "parallel" ] }
 rayon = { version = "1.0" }
 rand_core = { version = "0.5" }
 rand_chacha = { version = "0.2.1" }
@@ -31,4 +34,4 @@ blake2 = "0.8.1"
 rand = "0.7"
 csv = { version = "1" }
 serde = { version = "1", features = [ "derive" ] }
-algebra = { git = "https://github.com/scipr-lab/zexe", features = [ "bls12_377" ] }
+ark-bls12-377 = { git = "https://github.com/arkworks-rs/curves", features = [ "curve" ] }

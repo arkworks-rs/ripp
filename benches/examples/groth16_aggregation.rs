@@ -1,16 +1,15 @@
-use ip_proofs::applications::groth16_aggregation::{
+use ark_ip_proofs::applications::groth16_aggregation::{
     aggregate_proofs, setup_inner_product, verify_aggregate_proof,
 };
 
 use std::time::Instant;
 
-use algebra::{
-    bls12_381::{Bls12_381, Fr},
-    UniformRand,
-};
-use r1cs_core::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
-use r1cs_std::{fields::fp::FpVar, prelude::*};
-use zexe_cp::nizk::{groth16::Groth16, NIZK};
+use ark_bls12_381::{Bls12_381, Fr};
+use ark_crypto_primitives::snark::*;
+use ark_ff::UniformRand;
+use ark_groth16::Groth16;
+use ark_r1cs_std::{fields::fp::FpVar, prelude::*};
+use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 
 use blake2::Blake2b;
 use rand::{rngs::StdRng, SeedableRng};
@@ -51,8 +50,7 @@ fn main() {
         public_sum: Default::default(),
         witness_input: Default::default(),
     };
-    let parameters =
-        Groth16::<Bls12_381, TestCircuit, [Fr]>::setup(test_circuit, &mut rng).unwrap();
+    let parameters = Groth16::<Bls12_381>::setup(test_circuit, &mut rng).unwrap();
 
     // Generate parameters for inner product aggregation
     let srs = setup_inner_product::<_, Blake2b, _>(&mut rng, NUM_PROOFS_TO_AGGREGATE).unwrap();
@@ -79,12 +77,7 @@ fn main() {
             witness_input: w,
         };
 
-        let proof = Groth16::<Bls12_381, TestCircuit, [Fr]>::prove(
-            &parameters.0,
-            circuit.clone(),
-            &mut rng,
-        )
-        .unwrap();
+        let proof = Groth16::<Bls12_381>::prove(&parameters.0, circuit.clone(), &mut rng).unwrap();
         proofs.push(proof);
         statements.push(statement);
 

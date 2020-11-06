@@ -1,14 +1,16 @@
-use algebra::{bls12_381::Bls12_381, curves::PairingEngine, UniformRand};
-use dh_commitments::{
+use ark_bls12_381::Bls12_381;
+use ark_dh_commitments::{
     afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
     identity::IdentityCommitment,
     pedersen::PedersenCommitment,
     DoublyHomomorphicCommitment,
 };
-use inner_products::{
+use ark_ec::PairingEngine;
+use ark_ff::UniformRand;
+use ark_inner_products::{
     ExtensionFieldElement, InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct,
 };
-use ip_proofs::gipa::GIPA;
+use ark_ip_proofs::gipa::GIPA;
 
 use blake2::Blake2b;
 use digest::Digest;

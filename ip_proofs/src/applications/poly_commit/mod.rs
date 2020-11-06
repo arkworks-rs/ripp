@@ -1,17 +1,11 @@
-use algebra::{
-    curves::{PairingEngine, ProjectiveCurve},
-    fields::{Field, PrimeField},
-    groups::Group,
-    msm::VariableBaseMSM,
-    UniformRand,
-};
-use ff_fft::polynomial::DensePolynomial as UnivariatePolynomial;
+use ark_ec::{group::Group, msm::VariableBaseMSM, PairingEngine, ProjectiveCurve};
+use ark_ff::{Field, One, PrimeField, UniformRand, Zero};
+use ark_poly::polynomial::DensePolynomial as UnivariatePolynomial;
 
 use bench_utils::{end_timer, start_timer};
 use std::marker::PhantomData;
 
 use digest::Digest;
-use num_traits::identities::{One, Zero};
 use rand::Rng;
 
 use crate::{
@@ -22,12 +16,12 @@ use crate::{
     },
     Error,
 };
-use dh_commitments::{
+use ark_dh_commitments::{
     afgho16::AFGHOCommitmentG1,
     identity::{HomomorphicPlaceholderValue, IdentityCommitment, IdentityOutput},
     DoublyHomomorphicCommitment,
 };
-use inner_products::{ExtensionFieldElement, MultiexponentiationInnerProduct};
+use ark_inner_products::{ExtensionFieldElement, MultiexponentiationInnerProduct};
 
 pub mod transparent;
 
@@ -390,7 +384,7 @@ impl<P: PairingEngine, D: Digest> UnivariatePolynomialCommitment<P, D> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use algebra::{bls12_381::Bls12_381, curves::PairingEngine, UniformRand};
+    use ark_bls12_381::Bls12_381;
     use blake2::Blake2b;
     use rand::{rngs::StdRng, SeedableRng};
 

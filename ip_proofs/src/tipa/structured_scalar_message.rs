@@ -1,12 +1,7 @@
-use algebra::{
-    curves::{PairingEngine, ProjectiveCurve},
-    fields::{Field, PrimeField},
-    groups::Group,
-    to_bytes, UniformRand,
-};
+use ark_ec::{group::Group, PairingEngine, ProjectiveCurve};
+use ark_ff::{to_bytes, Field, One, PrimeField, UniformRand, Zero};
 use bench_utils::{end_timer, start_timer};
 use digest::Digest;
-use num_traits::identities::{One, Zero};
 use rand::Rng;
 use std::{marker::PhantomData, ops::MulAssign};
 
@@ -18,8 +13,8 @@ use crate::{
     },
     Error,
 };
-use dh_commitments::{identity::HomomorphicPlaceholderValue, DoublyHomomorphicCommitment};
-use inner_products::InnerProduct;
+use ark_dh_commitments::{identity::HomomorphicPlaceholderValue, DoublyHomomorphicCommitment};
+use ark_inner_products::InnerProduct;
 
 //TODO: Properly generalize the non-committed message approach of SIPP and MIPP to GIPA
 //TODO: Structured message is a special case of the non-committed message and does not rely on TIPA
@@ -332,15 +327,15 @@ pub fn structured_scalar_power<F: Field>(num: usize, s: &F) -> Vec<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use algebra::{bls12_381::Bls12_381, curves::PairingEngine, UniformRand};
+    use ark_bls12_381::Bls12_381;
     use blake2::Blake2b;
     use rand::{rngs::StdRng, SeedableRng};
 
-    use dh_commitments::{
+    use ark_dh_commitments::{
         afgho16::AFGHOCommitmentG1, identity::IdentityCommitment, pedersen::PedersenCommitment,
         random_generators,
     };
-    use inner_products::{InnerProduct, MultiexponentiationInnerProduct, ScalarInnerProduct};
+    use ark_inner_products::{InnerProduct, MultiexponentiationInnerProduct, ScalarInnerProduct};
 
     type GC1 = AFGHOCommitmentG1<Bls12_381>;
     type SC1 = PedersenCommitment<<Bls12_381 as PairingEngine>::G1Projective>;

@@ -1,16 +1,9 @@
 //! A crate for inner pairing product arguments/proofs.
-#![deny(unused_import_braces, unused_qualifications, trivial_casts)]
-#![deny(trivial_numeric_casts, private_in_public, variant_size_differences)]
-#![deny(stable_features, unreachable_pub, non_shorthand_field_patterns)]
-#![deny(unused_attributes, unused_imports, unused_mut, missing_docs)]
-#![deny(renamed_and_removed_lints, stable_features, unused_allocation)]
-#![deny(unused_comparisons, bare_trait_objects, unused_must_use, const_err)]
+#![deny(warnings, unused, missing_docs)]
 #![forbid(unsafe_code)]
 
-use algebra_core::{
-    msm::VariableBaseMSM, to_bytes, AffineCurve, Field, One, PairingEngine, PrimeField,
-    ProjectiveCurve, UniformRand,
-};
+use ark_ec::{msm::VariableBaseMSM, AffineCurve, PairingEngine, ProjectiveCurve};
+use ark_ff::{to_bytes, Field, One, PrimeField, UniformRand};
 use digest::Digest;
 use rayon::prelude::*;
 use std::marker::PhantomData;
@@ -132,7 +125,7 @@ impl<E: PairingEngine, D: Digest> SIPP<E, D> {
             .collect::<Vec<_>>();
 
         let mut x_invs = x_s.clone();
-        algebra_core::batch_inversion(&mut x_invs);
+        ark_ff::batch_inversion(&mut x_invs);
 
         let z_prime = claimed_value
             * &proof
@@ -216,7 +209,7 @@ pub fn product_of_pairings<E: PairingEngine>(a: &[E::G1Affine], b: &[E::G2Affine
 #[cfg(test)]
 mod tests {
     use super::*;
-    use algebra::bls12_377::{Bls12_377, Fr, G1Projective, G2Projective};
+    use ark_bls12_377::{Bls12_377, Fr, G1Projective, G2Projective};
     use blake2::Blake2s;
 
     #[test]
