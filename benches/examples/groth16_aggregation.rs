@@ -42,7 +42,7 @@ impl ConstraintSynthesizer<Fr> for TestCircuit {
 
 fn main() {
     const NUM_PUBLIC_INPUTS: usize = 4;
-    const NUM_PROOFS_TO_AGGREGATE: usize = 16;
+    const NUM_PROOFS_TO_AGGREGATE: usize = 1024;
     let mut rng = StdRng::seed_from_u64(0u64);
 
     // Generate parameters for Groth16
