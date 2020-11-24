@@ -86,6 +86,13 @@ fn main() {
     }
     let generation_time = start.elapsed().as_millis();
 
+    let mut start = Instant::now();
+    for (proof, statement) in proofs.iter().zip(statements.iter()) {
+        let result = Groth16::<Bls12_381>::verify(&parameters.1, statement, proof).unwrap();
+        assert!(result);
+    }
+    let individual_verification_time = start.elapsed().as_millis();
+
     // Aggregate proofs using inner product proofs
     start = Instant::now();
     println!("Aggregating {} Groth16 proofs...", NUM_PROOFS_TO_AGGREGATE);
@@ -106,5 +113,9 @@ fn main() {
 
     println!("Proof generation time: {} ms", generation_time);
     println!("Proof aggregation time: {} ms", prover_time);
-    println!("Proof verification time: {} ms", verifier_time);
+    println!("Proof aggregation verification time: {} ms", verifier_time);
+    println!(
+        "Proof individual verification time: {} ms",
+        individual_verification_time
+    );
 }
