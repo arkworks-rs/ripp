@@ -396,7 +396,7 @@ mod tests {
         let eval_proof =
             TestUnivariatePolyCommitment::open(&ck, &polynomial, &y_polynomial_comms, &point)
                 .unwrap();
-        let eval = polynomial.evaluate(point.clone());
+        let eval = polynomial.evaluate(&point);
 
         // Verify proof
         assert!(
