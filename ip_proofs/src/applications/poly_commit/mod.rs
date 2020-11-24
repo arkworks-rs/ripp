@@ -1,6 +1,8 @@
 use ark_ec::{group::Group, msm::VariableBaseMSM, PairingEngine, ProjectiveCurve};
 use ark_ff::{Field, One, PrimeField, UniformRand, Zero};
-use ark_poly::polynomial::DensePolynomial as UnivariatePolynomial;
+use ark_poly::polynomial::{
+    univariate::DensePolynomial as UnivariatePolynomial, Polynomial, UVPolynomial,
+};
 
 use bench_utils::{end_timer, start_timer};
 use std::marker::PhantomData;
@@ -135,7 +137,7 @@ impl<F: Field> BivariatePolynomial<F> {
         point_x_powers
             .iter()
             .zip(&self.y_polynomials)
-            .map(|(x_power, y_polynomial)| x_power.clone() * y_polynomial.evaluate(y.clone()))
+            .map(|(x_power, y_polynomial)| x_power.clone() * y_polynomial.evaluate(&y))
             .sum()
     }
 }
@@ -461,7 +463,7 @@ mod tests {
         let eval_proof =
             TestUnivariatePolyCommitment::open(&srs, &polynomial, &y_polynomial_comms, &point)
                 .unwrap();
-        let eval = polynomial.evaluate(point.clone());
+        let eval = polynomial.evaluate(&point);
 
         // Verify proof
         assert!(TestUnivariatePolyCommitment::verify(
