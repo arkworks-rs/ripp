@@ -137,7 +137,7 @@ impl<F: Field> BivariatePolynomial<F> {
         point_x_powers
             .iter()
             .zip(&self.y_polynomials)
-            .map(|(x_power, y_polynomial)| x_power.clone() * y_polynomial.evaluate(&y.clone()))
+            .map(|(x_power, y_polynomial)| x_power.clone() * y_polynomial.evaluate(&y))
             .sum()
     }
 }

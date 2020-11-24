@@ -66,7 +66,7 @@ fn main() {
                 .unwrap();
             csv_writer.flush().unwrap();
             for i in 1..num_trials + 1 {
-                let polynomial = UnivariatePolynomial::rand(degree);
+                let polynomial = UnivariatePolynomial::rand(degree, &mut rng);
                 let point = <Bls12_381 as PairingEngine>::Fr::rand(&mut rng);
                 let eval = polynomial.evaluate(&point);
 
@@ -138,13 +138,9 @@ fn main() {
                 .unwrap();
             csv_writer.flush().unwrap();
             for i in 1..num_trials + 1 {
-                let mut polynomial_coeffs = vec![];
-                for _ in 0..degree + 1 {
-                    polynomial_coeffs.push(<Bls12_381 as PairingEngine>::Fr::rand(&mut rng));
-                }
-                let polynomial = Polynomial::from_coefficients_slice(&polynomial_coeffs);
+                let polynomial = UnivariatePolynomial::rand(degree, &mut rng);
                 let point = <Bls12_381 as PairingEngine>::Fr::rand(&mut rng);
-                let eval = polynomial.evaluate(point.clone());
+                let eval = polynomial.evaluate(&point);
 
                 // Commit
                 start = Instant::now();
@@ -216,13 +212,9 @@ fn main() {
                     .unwrap();
                 csv_writer.flush().unwrap();
                 for i in 1..num_trials + 1 {
-                    let mut polynomial_coeffs = vec![];
-                    for _ in 0..degree + 1 {
-                        polynomial_coeffs.push(<Bls12_381 as PairingEngine>::Fr::rand(&mut rng));
-                    }
-                    let polynomial = Polynomial::from_coefficients_slice(&polynomial_coeffs);
+                    let polynomial = UnivariatePolynomial::rand(degree, &mut rng);
                     let point = <Bls12_381 as PairingEngine>::Fr::rand(&mut rng);
-                    let eval = polynomial.evaluate(point.clone());
+                    let eval = polynomial.evaluate(&point);
 
                     // Commit
                     start = Instant::now();

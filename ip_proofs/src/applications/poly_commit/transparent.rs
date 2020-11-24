@@ -1,7 +1,7 @@
 use ark_ec::PairingEngine;
 use ark_ff::{Field, Zero};
-use ark_poly::{
-    polynomial::univariate::DensePolynomial as UnivariatePolynomial, Polynomial, UVPolynomial,
+use ark_poly::polynomial::{
+    univariate::DensePolynomial as UnivariatePolynomial, Polynomial, UVPolynomial,
 };
 
 use bench_utils::{end_timer, start_timer};
@@ -73,7 +73,7 @@ impl<F: Field> BivariatePolynomial<F> {
         point_x_powers
             .iter()
             .zip(&self.y_polynomials)
-            .map(|(x_power, y_polynomial)| x_power.clone() * y_polynomial.evaluate(&y.clone()))
+            .map(|(x_power, y_polynomial)| x_power.clone() * y_polynomial.evaluate(&y))
             .sum()
     }
 }
