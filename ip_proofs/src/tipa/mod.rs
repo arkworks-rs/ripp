@@ -1,4 +1,4 @@
-use ark_ec::{group::Group, msm::FixedBaseMSM, PairingEngine, ProjectiveCurve};
+use ark_ec::{msm::FixedBaseMSM, PairingEngine, ProjectiveCurve};
 use ark_ff::{to_bytes, Field, One, PrimeField, UniformRand, Zero};
 use ark_poly::polynomial::{univariate::DensePolynomial, UVPolynomial};
 use bench_utils::{end_timer, start_timer};
@@ -155,8 +155,8 @@ where
             SRS {
                 g_alpha_powers: structured_generators_scalar_power(2 * size - 1, &g, &alpha),
                 h_beta_powers: structured_generators_scalar_power(2 * size - 1, &h, &beta),
-                g_beta: <P::G1Projective as Group>::mul(&g, &beta),
-                h_alpha: <P::G2Projective as Group>::mul(&h, &alpha),
+                g_beta: g.mul(beta.into_repr()),
+                h_alpha: h.mul(alpha.into_repr()),
             },
             IPC::setup(rng, 1)?.pop().unwrap(),
         ))
@@ -347,11 +347,11 @@ pub fn verify_commitment_key_g2_kzg_opening<P: PairingEngine>(
     let ck_polynomial_c_eval =
         polynomial_evaluation_product_form_from_transcript(transcript, kzg_challenge, r_shift);
     Ok(P::pairing(
-        v_srs.g.clone(),
-        ck_final.clone() - &v_srs.h.mul(ck_polynomial_c_eval),
+        v_srs.g,
+        *ck_final - &v_srs.h.mul(ck_polynomial_c_eval.into_repr()),
     ) == P::pairing(
-        v_srs.g_beta.clone() - &v_srs.g.mul(kzg_challenge.clone()),
-        ck_opening.clone(),
+        v_srs.g_beta - &v_srs.g.mul(kzg_challenge.into_repr()),
+        *ck_opening,
     ))
 }
 
@@ -366,11 +366,11 @@ pub fn verify_commitment_key_g1_kzg_opening<P: PairingEngine>(
     let ck_polynomial_c_eval =
         polynomial_evaluation_product_form_from_transcript(transcript, kzg_challenge, r_shift);
     Ok(P::pairing(
-        ck_final.clone() - &v_srs.g.mul(ck_polynomial_c_eval),
-        v_srs.h.clone(),
+        *ck_final - &v_srs.g.mul(ck_polynomial_c_eval.into_repr()),
+        v_srs.h,
     ) == P::pairing(
-        ck_opening.clone(),
-        v_srs.h_alpha.clone() - &v_srs.h.mul(kzg_challenge.clone()),
+        *ck_opening,
+        v_srs.h_alpha - &v_srs.h.mul(kzg_challenge.into_repr()),
     ))
 }
 
@@ -553,12 +553,12 @@ mod tests {
         let m_a_r = m_a
             .iter()
             .zip(&r_vec)
-            .map(|(a, r)| a.mul(r))
+            .map(|(a, r)| a.mul(r.into_repr()))
             .collect::<Vec<<Bls12_381 as PairingEngine>::G1Projective>>();
         let ck_a_r = ck_a
             .iter()
             .zip(&r_vec)
-            .map(|(ck, r)| ck.mul(&r.inverse().unwrap()))
+            .map(|(ck, r)| ck.mul(&r.inverse().unwrap().into_repr()))
             .collect::<Vec<<Bls12_381 as PairingEngine>::G2Projective>>();
 
         let t = vec![IP::inner_product(&m_a_r, &m_b).unwrap()];

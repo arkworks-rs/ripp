@@ -548,7 +548,7 @@ pub fn batch_verify_proof<E: PairingEngine>(
             for (i, b) in input.iter().zip(pvk.vk.gamma_abc_g1.iter().skip(1)) {
                 g_ic += &b.mul(i.into_repr());
             }
-            g_ic.mul(*r)
+            g_ic.mul(r.into_repr())
         })
         .sum::<E::G1Projective>()
         .into_affine();
