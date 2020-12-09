@@ -1,4 +1,4 @@
-use ark_ec::{group::Group, msm::VariableBaseMSM, PairingEngine, ProjectiveCurve};
+use ark_ec::{msm::VariableBaseMSM, PairingEngine, ProjectiveCurve};
 use ark_ff::{Field, One, PrimeField, UniformRand, Zero};
 use ark_poly::polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, Polynomial, UVPolynomial,
@@ -63,8 +63,8 @@ impl<P: PairingEngine> KZG<P> {
             VerifierSRS {
                 g: g.clone(),
                 h: h.clone(),
-                g_beta: <P::G1Projective as Group>::mul(&g, &beta),
-                h_alpha: <P::G2Projective as Group>::mul(&h, &alpha),
+                g_beta: g.mul(beta.into_repr()),
+                h_alpha: h.mul(alpha.into_repr()),
             },
         ))
     }
@@ -112,11 +112,11 @@ impl<P: PairingEngine> KZG<P> {
         proof: &P::G1Projective,
     ) -> Result<bool, Error> {
         Ok(P::pairing(
-            com.clone() - &<P::G1Projective as Group>::mul(&v_srs.g, eval),
+            com.clone() - &v_srs.g.mul(eval.into_repr()),
             v_srs.h.clone(),
         ) == P::pairing(
             proof.clone(),
-            v_srs.h_alpha.clone() - &<P::G2Projective as Group>::mul(&v_srs.h, point),
+            v_srs.h_alpha.clone() - &v_srs.h.mul(point.into_repr()),
         ))
     }
 }
@@ -169,8 +169,8 @@ impl<P: PairingEngine, D: Digest> BivariatePolynomialCommitment<P, D> {
         let srs = SRS {
             g_alpha_powers: vec![g.clone()],
             h_beta_powers: structured_generators_scalar_power(2 * x_degree + 1, &h, &beta),
-            g_beta: <P::G1Projective as Group>::mul(&g, &beta),
-            h_alpha: <P::G2Projective as Group>::mul(&h, &alpha),
+            g_beta: g.mul(beta.into_repr()),
+            h_alpha: h.mul(alpha.into_repr()),
         };
         Ok((srs, kzg_srs))
     }
