@@ -16,7 +16,7 @@ documentation = "https://docs.rs/ark-dh-commitments/"
 [dependencies]
 ark-ff = { git = "https://github.com/arkworks-rs/algebra/", features = [ "parallel" ] }
 ark-ec = { git = "https://github.com/arkworks-rs/algebra/", features = [ "parallel" ] }
-rand = { version = "0.7" }
+rand = { version = "0.8" }
 
 ark-inner-products = { path = "../inner_products" }
 

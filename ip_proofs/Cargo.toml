@@ -20,7 +20,7 @@ ark-poly = { git = "https://github.com/arkworks-rs/algebra", features = [ "paral
 ark-std = { git = "https://github.com/arkworks-rs/utils", features = [ "parallel" ] }
 ark-groth16 = {git = "https://github.com/arkworks-rs/groth16/", features = [ "parallel" ] }
 bench-utils = { git = "https://github.com/arkworks-rs/utils" }
-rand = { version = "0.7" }
+rand = { version = "0.8" }
 digest = { version = "0.9" }
 num-traits = { version = "0.2" }
 itertools = { version = "0.9" }

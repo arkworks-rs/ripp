@@ -31,7 +31,7 @@ digest = { version = "0.8" }
 
 [dev-dependencies]
 blake2 = "0.8.1"
-rand = "0.7"
+rand = "0.8"
 csv = { version = "1" }
 serde = { version = "1", features = [ "derive" ] }
 ark-bls12-377 = { git = "https://github.com/arkworks-rs/curves", features = [ "curve" ] }

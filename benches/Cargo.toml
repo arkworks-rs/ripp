@@ -21,7 +21,7 @@ ark-bw6-761 = { git = "https://github.com/arkworks-rs/curves" }
 ark-relations = { git = "https://github.com/arkworks-rs/snark" }
 ark-r1cs-std = { git = "https://github.com/arkworks-rs/r1cs-std/" }
 
-rand = { version = "0.7" }
+rand = { version = "0.8" }
 digest = { version = "0.9" }
 blake2 = { version = "0.9" }
 csv = { version = "1.1.3" }
