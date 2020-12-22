@@ -18,4 +18,6 @@ documentation = "https://docs.rs/ark-inner-products/"
 [dependencies]
 ark-ff = { git = "https://github.com/arkworks-rs/algebra/", features = [ "parallel" ] }
 ark-ec = { git = "https://github.com/arkworks-rs/algebra/", features = [ "parallel" ] }
+ark-std = { git = "https://github.com/arkworks-rs/utils/", features = [ "parallel" ] }
 rand = { version = "0.7" }
+rayon = { version = "1" }

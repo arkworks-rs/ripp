@@ -1,5 +1,6 @@
 use ark_ec::{msm::VariableBaseMSM, PairingEngine, ProjectiveCurve};
 use ark_ff::{bytes::ToBytes, Field, PrimeField};
+use ark_std::cfg_into_iter;
 use std::{
     error::Error as ErrorTrait,
     fmt::{Display, Formatter, Result as FmtResult},
@@ -7,6 +8,9 @@ use std::{
     marker::PhantomData,
     ops::{Add, Mul, MulAssign},
 };
+
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 pub type Error = Box<dyn ErrorTrait>;
 
@@ -63,13 +67,13 @@ impl<P: PairingEngine> InnerProduct for PairingInnerProduct<P> {
                 right.len(),
             )));
         };
-        Ok(ExtensionFieldElement(P::product_of_pairings(
-            &P::G1Projective::batch_normalization_into_affine(left)
-                .iter()
-                .zip(P::G2Projective::batch_normalization_into_affine(&right))
-                .map(|(a, b)| (P::G1Prepared::from(*a), P::G2Prepared::from(b)))
-                .collect::<Vec<_>>(),
-        )))
+        let aff_left = P::G1Projective::batch_normalization_into_affine(left);
+        let aff_right = P::G2Projective::batch_normalization_into_affine(right);
+        let aff_pairs = cfg_into_iter!(aff_left)
+            .zip(aff_right)
+            .map(|(a, b)| (P::G1Prepared::from(a), P::G2Prepared::from(b)))
+            .collect::<Vec<_>>();
+        Ok(ExtensionFieldElement(P::product_of_pairings(&aff_pairs)))
     }
 }
 
@@ -93,9 +97,10 @@ impl<G: ProjectiveCurve> InnerProduct for MultiexponentiationInnerProduct<G> {
                 right.len(),
             )));
         };
+        let right_bigints = cfg_iter!(right).map(|b| b.into_repr()).collect::<Vec<_>>();
         Ok(VariableBaseMSM::multi_scalar_mul(
             &G::batch_normalization_into_affine(left),
-            &right.iter().map(|b| b.into_repr()).collect::<Vec<_>>(),
+            &right_bigints,
         ))
     }
 }
@@ -120,7 +125,7 @@ impl<F: Field> InnerProduct for ScalarInnerProduct<F> {
                 right.len(),
             )));
         };
-        Ok(left.iter().zip(right).map(|(x, y)| *x * y).sum())
+        Ok(cfg_iter!(left).zip(right).map(|(x, y)| *x * y).sum())
     }
 }
 
