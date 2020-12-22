@@ -1,6 +1,6 @@
 use ark_ec::{msm::VariableBaseMSM, PairingEngine, ProjectiveCurve};
 use ark_ff::{bytes::ToBytes, Field, PrimeField};
-use ark_std::cfg_into_iter;
+use ark_std::{cfg_into_iter, cfg_iter};
 use std::{
     error::Error as ErrorTrait,
     fmt::{Display, Formatter, Result as FmtResult},
