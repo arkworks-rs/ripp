@@ -7,6 +7,9 @@ use std::{convert::TryInto, marker::PhantomData, ops::MulAssign};
 use crate::{mul_helper, Error, InnerProductArgumentError};
 use ark_dh_commitments::DoublyHomomorphicCommitment;
 use ark_inner_products::InnerProduct;
+use ark_std::cfg_iter;
+
+use rayon::prelude::*;
 
 pub struct GIPA<IP, LMC, RMC, IPC, D> {
     _inner_product: PhantomData<IP>,
@@ -248,38 +251,34 @@ where
 
                 // Set up values for next step of recursion
                 let rescale_m1 = start_timer!(|| "Rescale M1");
-                m_a = m_a_1
-                    .iter()
+                m_a = cfg_iter!(m_a_1)
                     .map(|a| mul_helper(a, &c))
                     .zip(m_a_2)
-                    .map(|(a_1, a_2)| a_1.clone() + a_2.clone())
+                    .map(|(a_1, a_2)| a_1 + a_2.clone())
                     .collect::<Vec<LMC::Message>>();
                 end_timer!(rescale_m1);
 
                 let rescale_m2 = start_timer!(|| "Rescale M2");
-                m_b = m_b_2
-                    .iter()
+                m_b = cfg_iter!(m_b_2)
                     .map(|b| mul_helper(b, &c_inv))
                     .zip(m_b_1)
-                    .map(|(b_1, b_2)| b_1.clone() + b_2.clone())
+                    .map(|(b_1, b_2)| b_1 + b_2.clone())
                     .collect::<Vec<RMC::Message>>();
                 end_timer!(rescale_m2);
 
                 let rescale_ck1 = start_timer!(|| "Rescale CK1");
-                ck_a = ck_a_2
-                    .iter()
+                ck_a = cfg_iter!(ck_a_2)
                     .map(|a| mul_helper(a, &c_inv))
                     .zip(ck_a_1)
-                    .map(|(a_1, a_2)| a_1.clone() + a_2.clone())
+                    .map(|(a_1, a_2)| a_1 + a_2.clone())
                     .collect::<Vec<LMC::Key>>();
                 end_timer!(rescale_ck1);
 
                 let rescale_ck2 = start_timer!(|| "Rescale CK2");
-                ck_b = ck_b_1
-                    .iter()
+                ck_b = cfg_iter!(ck_b_1)
                     .map(|b| mul_helper(b, &c))
                     .zip(ck_b_2)
-                    .map(|(b_1, b_2)| b_1.clone() + b_2.clone())
+                    .map(|(b_1, b_2)| b_1 + b_2.clone())
                     .collect::<Vec<RMC::Key>>();
                 end_timer!(rescale_ck2);
 
@@ -371,17 +370,15 @@ where
         assert_eq!(ck_a_agg_challenge_exponents.len(), ck_a.len());
         //TODO: Optimization: Use VariableMSM multiexponentiation
         let ck_a_base_init = mul_helper(&ck_a[0], &ck_a_agg_challenge_exponents[0]);
-        let ck_a_base = ck_a[1..]
-            .iter()
+        let ck_a_base = cfg_iter!(ck_a[1..])
             .zip(&ck_a_agg_challenge_exponents[1..])
             .map(|(g, x)| mul_helper(g, &x))
-            .fold(ck_a_base_init, |sum, x| sum + x);
+            .reduce(|| ck_a_base_init.clone(), |sum, x| sum + x);
         let ck_b_base_init = mul_helper(&ck_b[0], &ck_b_agg_challenge_exponents[0]);
-        let ck_b_base = ck_b[1..]
-            .iter()
+        let ck_b_base = cfg_iter!(ck_b[1..])
             .zip(&ck_b_agg_challenge_exponents[1..])
             .map(|(g, x)| mul_helper(g, &x))
-            .fold(ck_b_base_init, |sum, x| sum + x);
+            .reduce(|| ck_b_base_init.clone(), |sum, x| sum + x);
         Ok((ck_a_base, ck_b_base))
     }
 
