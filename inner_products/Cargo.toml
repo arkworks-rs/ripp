@@ -21,3 +21,7 @@ ark-ec = { git = "https://github.com/arkworks-rs/algebra/", features = [ "parall
 ark-std = { git = "https://github.com/arkworks-rs/utils/", features = [ "parallel" ] }
 rand = { version = "0.7" }
 rayon = { version = "1" }
+
+[features]
+default = [ "parallel" ]
+parallel = []

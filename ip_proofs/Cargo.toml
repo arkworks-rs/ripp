@@ -38,4 +38,6 @@ ark-r1cs-std = { git = "https://github.com/arkworks-rs/r1cs-std" }
 blake2 = { version = "0.9" }
 
 [features]
+default = [ "parallel" ]
+parallel = []
 print-trace = [ "bench-utils/print-trace" ]
