@@ -9,6 +9,7 @@ use ark_dh_commitments::DoublyHomomorphicCommitment;
 use ark_inner_products::InnerProduct;
 use ark_std::cfg_iter;
 
+#[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
 pub struct GIPA<IP, LMC, RMC, IPC, D> {
@@ -370,15 +371,19 @@ where
         assert_eq!(ck_a_agg_challenge_exponents.len(), ck_a.len());
         //TODO: Optimization: Use VariableMSM multiexponentiation
         let ck_a_base_init = mul_helper(&ck_a[0], &ck_a_agg_challenge_exponents[0]);
-        let ck_a_base = cfg_iter!(ck_a[1..])
+        let ck_a_base = ck_a[1..]
+            .iter()
             .zip(&ck_a_agg_challenge_exponents[1..])
             .map(|(g, x)| mul_helper(g, &x))
-            .reduce(|| ck_a_base_init.clone(), |sum, x| sum + x);
+            .fold(ck_a_base_init, |sum, x| sum + x);
+        //.reduce(|| ck_a_base_init.clone(), |sum, x| sum + x);
         let ck_b_base_init = mul_helper(&ck_b[0], &ck_b_agg_challenge_exponents[0]);
-        let ck_b_base = cfg_iter!(ck_b[1..])
+        let ck_b_base = ck_b[1..]
+            .iter()
             .zip(&ck_b_agg_challenge_exponents[1..])
             .map(|(g, x)| mul_helper(g, &x))
-            .reduce(|| ck_b_base_init.clone(), |sum, x| sum + x);
+            .fold(ck_b_base_init, |sum, x| sum + x);
+        //.reduce(|| ck_b_base_init.clone(), |sum, x| sum + x);
         Ok((ck_a_base, ck_b_base))
     }
 

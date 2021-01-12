@@ -4,8 +4,10 @@ use ark_std::cfg_iter;
 use bench_utils::{end_timer, start_timer};
 use digest::Digest;
 use rand::Rng;
-use rayon::prelude::*;
 use std::{marker::PhantomData, ops::MulAssign};
+
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 use crate::{
     gipa::{GIPAProof, GIPA},
