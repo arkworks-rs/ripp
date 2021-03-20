@@ -19,7 +19,6 @@ ark-ff = { git = "https://github.com/arkworks-rs/algebra", features = [ "paralle
 ark-poly = { git = "https://github.com/arkworks-rs/algebra", features = [ "parallel" ] }
 ark-std = { git = "https://github.com/arkworks-rs/utils", features = [ "parallel" ] }
 ark-groth16 = {git = "https://github.com/arkworks-rs/groth16/", features = [ "parallel" ] }
-bench-utils = { git = "https://github.com/arkworks-rs/utils" }
 rand = { version = "0.7" }
 digest = { version = "0.9" }
 num-traits = { version = "0.2" }
@@ -37,4 +36,4 @@ ark-r1cs-std = { git = "https://github.com/arkworks-rs/r1cs-std" }
 blake2 = { version = "0.9" }
 
 [features]
-print-trace = [ "bench-utils/print-trace" ]
+print-trace = [ "ark_std/print-trace" ]

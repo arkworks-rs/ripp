@@ -1,7 +1,7 @@
 use ark_ec::{msm::FixedBaseMSM, PairingEngine, ProjectiveCurve};
 use ark_ff::{to_bytes, Field, One, PrimeField, UniformRand, Zero};
 use ark_poly::polynomial::{univariate::DensePolynomial, UVPolynomial};
-use bench_utils::{end_timer, start_timer};
+use ark_std::{end_timer, start_timer};
 use digest::Digest;
 use itertools::Itertools;
 use rand::Rng;

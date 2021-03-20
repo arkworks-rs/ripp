@@ -1,5 +1,5 @@
 use ark_ff::{to_bytes, Field, One};
-use bench_utils::{end_timer, start_timer};
+use ark_std::{end_timer, start_timer};
 use digest::Digest;
 use rand::Rng;
 use std::{convert::TryInto, marker::PhantomData, ops::MulAssign};

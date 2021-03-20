@@ -1,6 +1,6 @@
 use ark_ec::{group::Group, PairingEngine, ProjectiveCurve};
 use ark_ff::{to_bytes, Field, One, PrimeField, UniformRand, Zero};
-use bench_utils::{end_timer, start_timer};
+use ark_std::{end_timer, start_timer};
 use digest::Digest;
 use rand::Rng;
 use std::{marker::PhantomData, ops::MulAssign};

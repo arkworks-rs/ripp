@@ -4,7 +4,7 @@ use ark_poly::polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, Polynomial, UVPolynomial,
 };
 
-use bench_utils::{end_timer, start_timer};
+use ark_std::{end_timer, start_timer};
 use std::marker::PhantomData;
 
 use digest::Digest;
