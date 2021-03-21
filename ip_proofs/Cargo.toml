@@ -36,4 +36,4 @@ ark-r1cs-std = { git = "https://github.com/arkworks-rs/r1cs-std" }
 blake2 = { version = "0.9" }
 
 [features]
-print-trace = [ "ark_std/print-trace" ]
+print-trace = [ "ark-std/print-trace" ]
