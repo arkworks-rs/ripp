@@ -9,8 +9,8 @@ use ark_poly::polynomial::{
     univariate::DensePolynomial as UnivariatePolynomial, Polynomial, UVPolynomial,
 };
 
+use ark_std::rand::{rngs::StdRng, SeedableRng};
 use csv::Writer;
-use rand::{rngs::StdRng, SeedableRng};
 
 use blake2::Blake2b;
 use std::{

@@ -12,9 +12,9 @@ use ark_inner_products::{
 };
 use ark_ip_proofs::gipa::GIPA;
 
+use ark_std::rand::{rngs::StdRng, Rng, SeedableRng};
 use blake2::Blake2b;
 use digest::Digest;
-use rand::{rngs::StdRng, Rng, SeedableRng};
 
 use std::{ops::MulAssign, time::Instant};
 

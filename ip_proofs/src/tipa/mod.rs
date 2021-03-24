@@ -1,10 +1,10 @@
 use ark_ec::{msm::FixedBaseMSM, PairingEngine, ProjectiveCurve};
 use ark_ff::{to_bytes, Field, One, PrimeField, UniformRand, Zero};
 use ark_poly::polynomial::{univariate::DensePolynomial, UVPolynomial};
+use ark_std::rand::Rng;
 use ark_std::{end_timer, start_timer};
 use digest::Digest;
 use itertools::Itertools;
-use rand::Rng;
 use std::{marker::PhantomData, ops::MulAssign};
 
 use crate::{
@@ -431,8 +431,8 @@ fn polynomial_coefficients_from_transcript<F: Field>(transcript: &Vec<F>, r_shif
 mod tests {
     use super::*;
     use ark_bls12_381::Bls12_381;
+    use ark_std::rand::{rngs::StdRng, SeedableRng};
     use blake2::Blake2b;
-    use rand::{rngs::StdRng, SeedableRng};
 
     use crate::tipa::structured_scalar_message::structured_scalar_power;
     use ark_dh_commitments::{

@@ -1,5 +1,5 @@
 use ark_ec::PairingEngine;
-use rand::Rng;
+use ark_std::rand::Rng;
 use std::marker::PhantomData;
 
 use crate::{random_generators, DoublyHomomorphicCommitment, Error};
@@ -52,7 +52,7 @@ mod tests {
     use super::*;
     use ark_bls12_381::Bls12_381;
     use ark_ff::UniformRand;
-    use rand::{rngs::StdRng, SeedableRng};
+    use ark_std::rand::{rngs::StdRng, SeedableRng};
 
     type C1 = AFGHOCommitmentG1<Bls12_381>;
     type C2 = AFGHOCommitmentG2<Bls12_381>;

@@ -4,8 +4,8 @@ use ark_groth16::{Proof, VerifyingKey};
 
 use std::ops::AddAssign;
 
+use ark_std::rand::Rng;
 use digest::Digest;
-use rand::Rng;
 
 use crate::{
     tipa::{
