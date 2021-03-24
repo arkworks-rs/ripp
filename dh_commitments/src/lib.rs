@@ -1,6 +1,6 @@
 use ark_ec::group::Group;
 use ark_ff::{bytes::ToBytes, fields::PrimeField};
-use rand::Rng;
+use ark_std::rand::Rng;
 use std::{
     cmp::Eq,
     error::Error as ErrorTrait,

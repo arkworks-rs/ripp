@@ -3,8 +3,8 @@ use ark_bls12_377::*;
 use ark_ec::ProjectiveCurve;
 use ark_ff::UniformRand;
 use ark_sipp::{rng::FiatShamirRng, SIPP};
+use ark_std::rand::seq::SliceRandom;
 use blake2::Blake2s;
-use rand::seq::SliceRandom;
 use std::time::Instant;
 
 type ExampleSIPP = SIPP<Bls12_377, Blake2s>;

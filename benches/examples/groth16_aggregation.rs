@@ -11,8 +11,8 @@ use ark_groth16::Groth16;
 use ark_r1cs_std::{fields::fp::FpVar, prelude::*};
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
 
+use ark_std::rand::{rngs::StdRng, SeedableRng};
 use blake2::Blake2b;
-use rand::{rngs::StdRng, SeedableRng};
 
 #[derive(Clone)]
 struct TestCircuit {

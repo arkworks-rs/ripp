@@ -1,7 +1,7 @@
 use ark_ff::{to_bytes, Field, One};
+use ark_std::rand::Rng;
 use ark_std::{end_timer, start_timer};
 use digest::Digest;
-use rand::Rng;
 use std::{convert::TryInto, marker::PhantomData, ops::MulAssign};
 
 use crate::{mul_helper, Error, InnerProductArgumentError};
@@ -435,8 +435,8 @@ mod tests {
     use ark_bls12_381::Bls12_381;
     use ark_ec::PairingEngine;
     use ark_ff::UniformRand;
+    use ark_std::rand::{rngs::StdRng, SeedableRng};
     use blake2::Blake2b;
-    use rand::{rngs::StdRng, SeedableRng};
 
     use ark_dh_commitments::{
         afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},

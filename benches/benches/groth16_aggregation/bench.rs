@@ -23,9 +23,9 @@ use ark_ip_proofs::applications::groth16_aggregation::{
     aggregate_proofs, setup_inner_product, verify_aggregate_proof,
 };
 
+use ark_std::rand::{rngs::StdRng, SeedableRng};
 use blake2::Blake2b;
 use csv::Writer;
-use rand::{rngs::StdRng, SeedableRng};
 
 use std::{io::stdout, time::Instant};
 

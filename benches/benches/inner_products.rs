@@ -3,7 +3,7 @@ use ark_ec::PairingEngine;
 use ark_ff::UniformRand;
 use ark_inner_products::{InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct};
 
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use ark_std::rand::{rngs::StdRng, Rng, SeedableRng};
 
 use std::time::Instant;
 

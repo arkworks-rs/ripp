@@ -15,9 +15,9 @@ use ark_ip_proofs::tipa::{
     TIPACompatibleSetup, TIPA,
 };
 
+use ark_std::rand::{rngs::StdRng, Rng, SeedableRng};
 use blake2::Blake2b;
 use digest::Digest;
-use rand::{rngs::StdRng, Rng, SeedableRng};
 
 use std::{ops::MulAssign, time::Instant};
 

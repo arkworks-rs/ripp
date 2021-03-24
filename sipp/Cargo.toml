@@ -25,13 +25,11 @@ ark-ec = { git = "https://github.com/arkworks-rs/algebra", features = [ "paralle
 ark-ff = { git = "https://github.com/arkworks-rs/algebra", features = [ "parallel" ] }
 ark-std = { git = "https://github.com/arkworks-rs/utils", features = [ "parallel" ] }
 rayon = { version = "1.0" }
-rand_core = { version = "0.5" }
 rand_chacha = { version = "0.2.1" }
 digest = { version = "0.8" }
 
 [dev-dependencies]
 blake2 = "0.8.1"
-rand = "0.7"
 csv = { version = "1" }
 serde = { version = "1", features = [ "derive" ] }
 ark-bls12-377 = { git = "https://github.com/arkworks-rs/curves", features = [ "curve" ] }

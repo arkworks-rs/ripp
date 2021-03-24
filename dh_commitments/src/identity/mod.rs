@@ -1,5 +1,5 @@
 use ark_ff::{bytes::ToBytes, fields::PrimeField};
-use rand::Rng;
+use ark_std::rand::Rng;
 use std::{
     io::{Result as IoResult, Write},
     marker::PhantomData,
