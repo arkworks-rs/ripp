@@ -9,6 +9,7 @@ use std::{
     ops::{Add, Mul, MulAssign},
 };
 
+#[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
 pub type Error = Box<dyn ErrorTrait>;

@@ -14,28 +14,28 @@ repository = "https://github.com/arkworks-rs/ripp"
 documentation = "https://docs.rs/ark-ip-proofs/"
 
 [dependencies]
-ark-ec = { git = "https://github.com/arkworks-rs/algebra", features = [ "parallel" ] }
-ark-ff = { git = "https://github.com/arkworks-rs/algebra", features = [ "parallel" ] }
-ark-poly = { git = "https://github.com/arkworks-rs/algebra", features = [ "parallel" ] }
-ark-std = { git = "https://github.com/arkworks-rs/utils", features = [ "parallel" ] }
-ark-groth16 = {git = "https://github.com/arkworks-rs/groth16/", features = [ "parallel" ] }
-digest = { version = "0.9" }
-num-traits = { version = "0.2" }
-itertools = { version = "0.10" }
-rayon = { version = "1" }
+ark-ec = "0.2"
+ark-ff = "0.2"
+ark-poly = "0.2"
+ark-std = "0.2"
+ark-groth16 = "0.2"
+digest = "0.9"
+num-traits = "0.2"
+itertools = "0.10"
+rayon = { version = "1", optional = true }
 
 ark-inner-products = { path = "../inner_products" }
 ark-dh-commitments = { path = "../dh_commitments" }
 
 [dev-dependencies]
-ark-bls12-381 = { git = "https://github.com/arkworks-rs/curves", features = [ "curve" ] }
-ark-ed-on-bls12-381 = { git = "https://github.com/arkworks-rs/curves" }
+ark-bls12-381 = { version = "0.2", features = [ "curve" ] }
+ark-ed-on-bls12-381 = "0.2"
 
-ark-relations = { git = "https://github.com/arkworks-rs/snark" }
-ark-r1cs-std = { git = "https://github.com/arkworks-rs/r1cs-std" }
-blake2 = { version = "0.9" }
+ark-relations = "0.2"
+ark-r1cs-std = "0.2"
+blake2 = "0.9"
 
 [features]
 default = [ "parallel" ]
-parallel = []
+parallel = [ "rayon", "ark-ec/parallel", "ark-ff/parallel", "ark-poly/parallel", "ark-std/parallel", "ark-groth16/parallel" ]
 print-trace = [ "ark-std/print-trace" ]
