@@ -22,12 +22,16 @@ pub trait DoublyHomomorphicCommitment: Clone {
         + Clone
         + Default
         + Eq
+        + Send
+        + Sync
         + Add<Self::Message, Output = Self::Message>
         + MulAssign<Self::Scalar>;
     type Key: ToBytes
         + Clone
         + Default
         + Eq
+        + Send
+        + Sync
         + Add<Self::Key, Output = Self::Key>
         + MulAssign<Self::Scalar>;
     type Output: ToBytes

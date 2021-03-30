@@ -7,23 +7,23 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dev-dependencies]
-ark-ec = { git = "https://github.com/arkworks-rs/algebra", features = [ "parallel" ] }
-ark-ff = { git = "https://github.com/arkworks-rs/algebra", features = [ "parallel" ] }
-ark-poly = { git = "https://github.com/arkworks-rs/algebra", features = [ "parallel" ] }
-ark-std = { git = "https://github.com/arkworks-rs/utils", features = [ "parallel" ] }
-ark-groth16 = { git = "https://github.com/arkworks-rs/groth16/", features = [ "parallel", "r1cs" ] }
-ark-crypto-primitives = { git = "https://github.com/arkworks-rs/crypto-primitives/", features = [ "parallel", "r1cs" ], branch = "main" }
-ark-bls12-381 = { git = "https://github.com/arkworks-rs/curves", features = [ "curve" ] }
-ark-ed-on-bls12-381 = { git = "https://github.com/arkworks-rs/curves" }
-ark-bls12-377 = { git = "https://github.com/arkworks-rs/curves", features = [ "curve", "r1cs" ] }
-ark-bw6-761 = { git = "https://github.com/arkworks-rs/curves" }
+ark-ec = { version = "0.2", features = [ "parallel" ] }
+ark-ff = { version = "0.2", features = [ "parallel" ] }
+ark-poly = { version = "0.2", features = [ "parallel" ] }
+ark-std = { version = "0.2", features = [ "parallel" ] }
+ark-groth16 = { version = "0.2", features = [ "parallel", "r1cs" ] }
+ark-crypto-primitives = { version = "0.2", features = [ "parallel", "r1cs" ] }
+ark-bls12-381 = { version = "0.2", features = [ "curve" ] }
+ark-ed-on-bls12-381 = "0.2"
+ark-bls12-377 = { version = "0.2", features = [ "curve", "r1cs" ] }
+ark-bw6-761 = "0.2"
 
-ark-relations = { git = "https://github.com/arkworks-rs/snark" }
-ark-r1cs-std = { git = "https://github.com/arkworks-rs/r1cs-std/" }
+ark-relations = "0.2"
+ark-r1cs-std = "0.2"
 
-digest = { version = "0.9" }
-blake2 = { version = "0.9" }
-csv = { version = "1.1.3" }
+digest = "0.9"
+blake2 = "0.9"
+csv = "1.1.3"
 
 ark-inner-products = { path = "../inner_products" }
 ark-ip-proofs = { path = "../ip_proofs" }

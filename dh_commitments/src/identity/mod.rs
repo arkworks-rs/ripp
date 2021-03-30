@@ -66,7 +66,7 @@ impl<T: MulAssign<F> + Clone + Default + Eq, F: Clone> MulAssign<F> for Identity
 
 impl<T, F> DoublyHomomorphicCommitment for IdentityCommitment<T, F>
 where
-    T: ToBytes + Clone + Default + Eq + Add<T, Output = T> + MulAssign<F>,
+    T: ToBytes + Clone + Default + Eq + Add<T, Output = T> + MulAssign<F> + Send + Sync,
     F: PrimeField,
 {
     type Scalar = F;
