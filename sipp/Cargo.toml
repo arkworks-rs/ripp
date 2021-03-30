@@ -30,7 +30,7 @@ rand_chacha = "0.2.1"
 digest = "0.8"
 
 [dev-dependencies]
-blake2 = "0.8.1"
+blake2 = "0.9.1"
 csv = "1"
 serde = { version = "1", features = [ "derive" ] }
 ark-bls12-377 = { version = "0.2", features = [ "curve" ] }
