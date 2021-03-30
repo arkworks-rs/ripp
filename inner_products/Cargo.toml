@@ -20,3 +20,7 @@ ark-ff = { git = "https://github.com/arkworks-rs/algebra/", features = [ "parall
 ark-ec = { git = "https://github.com/arkworks-rs/algebra/", features = [ "parallel" ] }
 ark-std = { git = "https://github.com/arkworks-rs/utils/", features = [ "parallel" ] }
 rayon = { version = "1" }
+
+[features]
+default = [ "parallel" ]
+parallel = []

@@ -23,3 +23,7 @@ ark-inner-products = { path = "../inner_products" }
 [dev-dependencies]
 ark-bls12-381 = { git = "https://github.com/arkworks-rs/curves", features = [ "curve" ] }
 ark-ed-on-bls12-381 = { git = "https://github.com/arkworks-rs/curves" }
+
+[features]
+default = [ "parallel" ]
+parallel = []

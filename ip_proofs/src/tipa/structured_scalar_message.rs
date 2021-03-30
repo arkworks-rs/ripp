@@ -1,9 +1,12 @@
 use ark_ec::{group::Group, PairingEngine, ProjectiveCurve};
 use ark_ff::{to_bytes, Field, One, PrimeField, UniformRand, Zero};
-use ark_std::rand::Rng;
+use ark_std::{cfg_iter, rand::Rng};
 use ark_std::{end_timer, start_timer};
 use digest::Digest;
 use std::{marker::PhantomData, ops::MulAssign};
+
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 use crate::{
     gipa::{GIPAProof, GIPA},
@@ -110,7 +113,7 @@ where
             product_form.push(<LMC::Scalar>::one() + &(x.inverse().unwrap() * &power_2_b));
             power_2_b *= &power_2_b.clone();
         }
-        let b_base = product_form.iter().product::<LMC::Scalar>();
+        let b_base = cfg_iter!(product_form).product::<LMC::Scalar>();
 
         // Verify base inner product commitment
         let (com_a, _, com_t) = base_com;
@@ -225,7 +228,9 @@ where
         let ck_kzg = start_timer!(|| "Prove commitment key");
         let (ck_a_final, _) = aux.ck_base;
         let transcript = aux.r_transcript;
-        let transcript_inverse = transcript.iter().map(|x| x.inverse().unwrap()).collect();
+        let transcript_inverse = cfg_iter!(transcript)
+            .map(|x| x.inverse().unwrap())
+            .collect();
 
         // KZG challenge point
         let mut counter_nonce: usize = 0;
@@ -268,7 +273,9 @@ where
             (com.0, scalar_b, com.1),
             &proof.gipa_proof,
         )?;
-        let transcript_inverse = transcript.iter().map(|x| x.inverse().unwrap()).collect();
+        let transcript_inverse = cfg_iter!(transcript)
+            .map(|x| x.inverse().unwrap())
+            .collect();
 
         let ck_a_final = &proof.final_ck;
         let ck_a_proof = &proof.final_ck_proof;
@@ -303,7 +310,7 @@ where
             product_form.push(<P::Fr>::one() + &(x.inverse().unwrap() * &power_2_b));
             power_2_b *= &power_2_b.clone();
         }
-        let b_base = product_form.iter().product::<P::Fr>();
+        let b_base = cfg_iter!(product_form).product::<P::Fr>();
 
         // Verify base inner product commitment
         let (com_a, _, com_t) = base_com;
