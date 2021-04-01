@@ -1,4 +1,5 @@
 use ark_ff::{to_bytes, Field, One};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write};
 use ark_std::rand::Rng;
 use ark_std::{end_timer, start_timer};
 use digest::Digest;
@@ -20,6 +21,7 @@ pub struct GIPA<IP, LMC, RMC, IPC, D> {
     _digest: PhantomData<D>,
 }
 
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct GIPAProof<IP, LMC, RMC, IPC, D>
 where
     D: Digest,
