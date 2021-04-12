@@ -1,5 +1,6 @@
 use ark_ec::{msm::VariableBaseMSM, PairingEngine, ProjectiveCurve};
 use ark_ff::{bytes::ToBytes, Field, PrimeField};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError};
 use ark_std::{cfg_into_iter, cfg_iter};
 use std::{
     error::Error as ErrorTrait,
@@ -132,7 +133,7 @@ impl<F: Field> InnerProduct for ScalarInnerProduct<F> {
 // Helper wrapper type around target group commitment output in order to implement MulAssign (needed for dh_commitments)
 //TODO: PairingEngine provides target group GT implementing Group for prime order P::Fr
 
-#[derive(Clone, Debug)]
+#[derive(CanonicalSerialize, CanonicalDeserialize, Clone, Debug)]
 pub struct ExtensionFieldElement<P: PairingEngine>(pub P::Fqk);
 
 impl<P: PairingEngine> Default for ExtensionFieldElement<P> {

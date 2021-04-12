@@ -1,7 +1,8 @@
 use ark_ff::{bytes::ToBytes, fields::PrimeField};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
 use ark_std::rand::Rng;
 use std::{
-    io::{Result as IoResult, Write},
+    io::{Read, Result as IoResult, Write},
     marker::PhantomData,
     ops::{Add, MulAssign},
 };
@@ -14,7 +15,7 @@ pub struct IdentityCommitment<T, F: PrimeField> {
     _field: PhantomData<F>,
 }
 
-#[derive(Clone, Default, Eq, PartialEq)]
+#[derive(CanonicalSerialize, CanonicalDeserialize, Clone, Default, Eq, PartialEq)]
 pub struct HomomorphicPlaceholderValue;
 
 impl ToBytes for HomomorphicPlaceholderValue {
@@ -35,16 +36,24 @@ impl<T> MulAssign<T> for HomomorphicPlaceholderValue {
     fn mul_assign(&mut self, _rhs: T) {}
 }
 
-#[derive(Clone, Default, Eq, PartialEq)]
-pub struct IdentityOutput<T: Clone + Default + Eq>(pub Vec<T>);
+#[derive(CanonicalSerialize, CanonicalDeserialize, Clone, Default, Eq, PartialEq)]
+pub struct IdentityOutput<T>(pub Vec<T>)
+where
+    T: CanonicalSerialize + CanonicalDeserialize + Clone + Default + Eq;
 
-impl<T: ToBytes + Clone + Default + Eq> ToBytes for IdentityOutput<T> {
+impl<T> ToBytes for IdentityOutput<T>
+where
+    T: ToBytes + CanonicalSerialize + CanonicalDeserialize + Clone + Default + Eq,
+{
     fn write<W: Write>(&self, mut writer: W) -> IoResult<()> {
         self.0.write(&mut writer)
     }
 }
 
-impl<T: Add<T, Output = T> + Clone + Default + Eq> Add for IdentityOutput<T> {
+impl<T> Add for IdentityOutput<T>
+where
+    T: Add<T, Output = T> + CanonicalSerialize + CanonicalDeserialize + Clone + Default + Eq,
+{
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -58,7 +67,11 @@ impl<T: Add<T, Output = T> + Clone + Default + Eq> Add for IdentityOutput<T> {
     }
 }
 
-impl<T: MulAssign<F> + Clone + Default + Eq, F: Clone> MulAssign<F> for IdentityOutput<T> {
+impl<T, F> MulAssign<F> for IdentityOutput<T>
+where
+    T: MulAssign<F> + CanonicalSerialize + CanonicalDeserialize + Clone + Default + Eq,
+    F: Clone,
+{
     fn mul_assign(&mut self, rhs: F) {
         self.0.iter_mut().for_each(|a| a.mul_assign(rhs.clone()))
     }
@@ -66,7 +79,16 @@ impl<T: MulAssign<F> + Clone + Default + Eq, F: Clone> MulAssign<F> for Identity
 
 impl<T, F> DoublyHomomorphicCommitment for IdentityCommitment<T, F>
 where
-    T: ToBytes + Clone + Default + Eq + Add<T, Output = T> + MulAssign<F> + Send + Sync,
+    T: ToBytes
+        + CanonicalSerialize
+        + CanonicalDeserialize
+        + Clone
+        + Default
+        + Eq
+        + Add<T, Output = T>
+        + MulAssign<F>
+        + Send
+        + Sync,
     F: PrimeField,
 {
     type Scalar = F;

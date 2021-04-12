@@ -16,13 +16,14 @@ documentation = "https://docs.rs/ark-dh-commitments/"
 [dependencies]
 ark-ff = "0.2"
 ark-ec = "0.2"
+ark-serialize = { version = "0.2", features = [ "derive" ] }
 ark-std = "0.2"
 
 ark-inner-products = { path = "../inner_products" }
 
 [dev-dependencies]
-ark-bls12-381 = { git = "https://github.com/arkworks-rs/curves", features = [ "curve" ] }
-ark-ed-on-bls12-381 = { git = "https://github.com/arkworks-rs/curves" }
+ark-bls12-381 = { version = "0.2", features = [ "curve" ] }
+ark-ed-on-bls12-381 = "0.2"
 
 [features]
 default = [ "parallel" ]
