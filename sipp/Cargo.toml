@@ -6,7 +6,7 @@ authors = [
     "Mary Maller",
     "Pratyush Mishra",
     "Nirvan Tyagi",
-    "Noah Vesely",
+    "Psi Vesely",
 ]
 description = "A library for proofs about inner pairing products"
 homepage = "https://github.com/arkworks-rs/ripp"
