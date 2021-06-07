@@ -32,7 +32,7 @@ ark-dh-commitments = { path = "../dh_commitments" }
 ark-bls12-381 = { version = "0.2", features = [ "curve" ] }
 ark-ed-on-bls12-381 = "0.2"
 
-ark-relations = "0.2"
+ark-relations = "0.3"
 ark-r1cs-std = "0.2"
 blake2 = "0.9"
 
