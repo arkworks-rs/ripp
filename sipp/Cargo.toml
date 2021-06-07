@@ -22,7 +22,7 @@ edition = "2018"
 
 [dependencies]
 ark-ec = "0.2"
-ark-ff = "0.2"
+ark-ff = "0.3"
 ark-std = "0.2"
 rayon = "1"
 rand_core = "0.5"

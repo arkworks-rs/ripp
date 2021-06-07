@@ -8,7 +8,7 @@ edition = "2018"
 
 [dev-dependencies]
 ark-ec = { version = "0.2", features = [ "parallel" ] }
-ark-ff = { version = "0.2", features = [ "parallel" ] }
+ark-ff = { version = "0.3", features = [ "parallel" ] }
 ark-poly = { version = "0.2", features = [ "parallel" ] }
 ark-std = { version = "0.2", features = [ "parallel" ] }
 ark-groth16 = { version = "0.2", features = [ "parallel", "r1cs" ] }
