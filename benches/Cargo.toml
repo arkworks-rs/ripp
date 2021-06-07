@@ -15,7 +15,7 @@ ark-groth16 = { version = "0.2", features = [ "parallel", "r1cs" ] }
 ark-crypto-primitives = { version = "0.2", features = [ "parallel", "r1cs" ] }
 ark-bls12-381 = { version = "0.2", features = [ "curve" ] }
 ark-ed-on-bls12-381 = "0.2"
-ark-bls12-377 = { version = "0.2", features = [ "curve", "r1cs" ] }
+ark-bls12-377 = { version = "0.3", features = [ "curve", "r1cs" ] }
 ark-bw6-761 = "0.2"
 
 ark-relations = "0.2"

@@ -33,7 +33,7 @@ digest = "0.8"
 blake2 = "0.8.1"
 csv = "1"
 serde = { version = "1", features = [ "derive" ] }
-ark-bls12-377 = { version = "0.2", features = [ "curve" ] }
+ark-bls12-377 = { version = "0.3", features = [ "curve" ] }
 
 [features]
 default = [ "parallel" ]
