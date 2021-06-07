@@ -29,7 +29,7 @@ ark-inner-products = { path = "../inner_products" }
 ark-dh-commitments = { path = "../dh_commitments" }
 
 [dev-dependencies]
-ark-bls12-381 = { version = "0.2", features = [ "curve" ] }
+ark-bls12-381 = { version = "0.3", features = [ "curve" ] }
 ark-ed-on-bls12-381 = "0.2"
 
 ark-relations = "0.2"

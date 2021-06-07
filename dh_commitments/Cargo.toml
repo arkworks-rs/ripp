@@ -22,7 +22,7 @@ ark-std = "0.2"
 ark-inner-products = { path = "../inner_products" }
 
 [dev-dependencies]
-ark-bls12-381 = { version = "0.2", features = [ "curve" ] }
+ark-bls12-381 = { version = "0.3", features = [ "curve" ] }
 ark-ed-on-bls12-381 = "0.2"
 
 [features]
