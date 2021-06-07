@@ -18,7 +18,7 @@ documentation = "https://docs.rs/ark-inner-products/"
 [dependencies]
 ark-ff = "0.2"
 ark-ec = "0.2"
-ark-std = "0.2"
+ark-std = "0.3"
 ark-serialize = "0.2"
 rayon = { version = "1", optional = true }
 
