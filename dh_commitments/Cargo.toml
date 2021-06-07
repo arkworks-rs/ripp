@@ -15,7 +15,7 @@ documentation = "https://docs.rs/ark-dh-commitments/"
 
 [dependencies]
 ark-ff = "0.2"
-ark-ec = "0.2"
+ark-ec = "0.3"
 ark-serialize = { version = "0.2", features = [ "derive" ] }
 ark-std = "0.2"
 

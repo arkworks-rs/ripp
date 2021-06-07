@@ -14,7 +14,7 @@ repository = "https://github.com/arkworks-rs/ripp"
 documentation = "https://docs.rs/ark-ip-proofs/"
 
 [dependencies]
-ark-ec = "0.2"
+ark-ec = "0.3"
 ark-ff = "0.2"
 ark-poly = "0.2"
 ark-serialize = { version = "0.2", features = [ "derive" ] }
