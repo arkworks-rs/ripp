@@ -1,6 +1,6 @@
 [package]
 name = "ark-sipp"
-version = "0.1.0"
+version = "0.3.0"
 authors = [
     "Benedikt Bünz",
     "Mary Maller",
@@ -21,19 +21,19 @@ edition = "2018"
 ################################# Dependencies ################################
 
 [dependencies]
-ark-ec = "0.2"
-ark-ff = "0.2"
-ark-std = "0.2"
+ark-ec = "0.3"
+ark-ff = "0.3"
+ark-std = "0.3"
 rayon = "1"
-rand_core = "0.5"
-rand_chacha = "0.2.1"
-digest = "0.8"
+rand_core = "0.6"
+rand_chacha = "0.3"
+digest = "0.9"
 
 [dev-dependencies]
-blake2 = "0.8.1"
+blake2 = "0.9"
 csv = "1"
 serde = { version = "1", features = [ "derive" ] }
-ark-bls12-377 = { version = "0.2", features = [ "curve" ] }
+ark-bls12-377 = { version = "0.3", features = [ "curve" ] }
 
 [features]
 default = [ "parallel" ]
