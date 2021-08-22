@@ -1,15 +1,3 @@
-use ark_ec::{msm::VariableBaseMSM, PairingEngine, ProjectiveCurve};
-use ark_ff::{Field, One, PrimeField, UniformRand, Zero};
-use ark_poly::polynomial::{
-    univariate::DensePolynomial as UnivariatePolynomial, Polynomial, UVPolynomial,
-};
-
-use ark_std::{end_timer, start_timer};
-use std::marker::PhantomData;
-
-use ark_std::rand::Rng;
-use digest::Digest;
-
 use crate::{
     tipa::{
         structured_generators_scalar_power,
@@ -25,22 +13,33 @@ use ark_dh_commitments::{
 };
 use ark_inner_products::{ExtensionFieldElement, MultiexponentiationInnerProduct};
 
+use std::marker::PhantomData;
+
+use ark_ec::{msm::VariableBaseMSM, PairingEngine, ProjectiveCurve};
+use ark_ff::{Field, One, PrimeField, UniformRand, Zero};
+use ark_poly::polynomial::{
+    univariate::DensePolynomial as UnivariatePolynomial, Polynomial, UVPolynomial,
+};
+use ark_std::{end_timer, rand::Rng, start_timer};
+use merlin::Transcript;
+
 pub mod transparent;
 
-type PolynomialEvaluationSecondTierIPA<P, D> = TIPAWithSSM<
+const UNIVARIATE_DOMAIN_SEP: &[u8] = b"ip_proofs-Univariate_KZG";
+const BIVARIATE_DOMAIN_SEP: &[u8] = b"ip_proofs-Bivariate_KZG";
+
+type PolynomialEvaluationSecondTierIPA<P> = TIPAWithSSM<
     MultiexponentiationInnerProduct<<P as PairingEngine>::G1Projective>,
     AFGHOCommitmentG1<P>,
     IdentityCommitment<<P as PairingEngine>::G1Projective, <P as PairingEngine>::Fr>,
     P,
-    D,
 >;
 
-type PolynomialEvaluationSecondTierIPAProof<P, D> = TIPAWithSSMProof<
+type PolynomialEvaluationSecondTierIPAProof<P> = TIPAWithSSMProof<
     MultiexponentiationInnerProduct<<P as PairingEngine>::G1Projective>,
     AFGHOCommitmentG1<P>,
     IdentityCommitment<<P as PairingEngine>::G1Projective, <P as PairingEngine>::Fr>,
     P,
-    D,
 >;
 
 pub struct KZG<P: PairingEngine> {
@@ -142,18 +141,17 @@ impl<F: Field> BivariatePolynomial<F> {
     }
 }
 
-pub struct OpeningProof<P: PairingEngine, D: Digest> {
-    ip_proof: PolynomialEvaluationSecondTierIPAProof<P, D>,
+pub struct OpeningProof<P: PairingEngine> {
+    ip_proof: PolynomialEvaluationSecondTierIPAProof<P>,
     y_eval_comm: P::G1Projective,
     kzg_proof: P::G1Projective,
 }
 
-pub struct BivariatePolynomialCommitment<P: PairingEngine, D: Digest> {
+pub struct BivariatePolynomialCommitment<P: PairingEngine> {
     _pairing: PhantomData<P>,
-    _digest: PhantomData<D>,
 }
 
-impl<P: PairingEngine, D: Digest> BivariatePolynomialCommitment<P, D> {
+impl<P: PairingEngine> BivariatePolynomialCommitment<P> {
     pub fn setup<R: Rng>(
         rng: &mut R,
         x_degree: usize,
@@ -200,11 +198,15 @@ impl<P: PairingEngine, D: Digest> BivariatePolynomialCommitment<P, D> {
     }
 
     pub fn open(
+        transcript: &mut Transcript,
         srs: &(SRS<P>, Vec<P::G1Affine>),
         bivariate_polynomial: &BivariatePolynomial<P::Fr>,
         y_polynomial_comms: &Vec<P::G1Projective>,
         point: &(P::Fr, P::Fr),
-    ) -> Result<OpeningProof<P, D>, Error> {
+    ) -> Result<OpeningProof<P>, Error> {
+        // Domain-separate this protocol
+        transcript.append_message(b"dom-sep", BIVARIATE_DOMAIN_SEP);
+
         let (x, y) = point;
         let (ip_srs, kzg_srs) = srs;
         let (ck_1, _) = ip_srs.get_commitment_keys();
@@ -247,7 +249,8 @@ impl<P: PairingEngine, D: Digest> BivariatePolynomialCommitment<P, D> {
 
         let ipa_time = start_timer!(|| "Computing IPA proof");
         let ip_proof =
-            PolynomialEvaluationSecondTierIPA::<P, D>::prove_with_structured_scalar_message(
+            PolynomialEvaluationSecondTierIPA::<P>::prove_with_structured_scalar_message(
+                transcript,
                 &ip_srs,
                 (y_polynomial_comms, &powers_of_x),
                 (&ck_1, &HomomorphicPlaceholderValue),
@@ -269,15 +272,20 @@ impl<P: PairingEngine, D: Digest> BivariatePolynomialCommitment<P, D> {
     }
 
     pub fn verify(
+        transcript: &mut Transcript,
         v_srs: &VerifierSRS<P>,
         com: &ExtensionFieldElement<P>,
         point: &(P::Fr, P::Fr),
         eval: &P::Fr,
-        proof: &OpeningProof<P, D>,
+        proof: &OpeningProof<P>,
     ) -> Result<bool, Error> {
+        // Domain-separate this protocol
+        transcript.append_message(b"dom-sep", BIVARIATE_DOMAIN_SEP);
+
         let (x, y) = point;
         let ip_proof_valid =
-            PolynomialEvaluationSecondTierIPA::<P, D>::verify_with_structured_scalar_message(
+            PolynomialEvaluationSecondTierIPA::<P>::verify_with_structured_scalar_message(
+                transcript,
                 v_srs,
                 &HomomorphicPlaceholderValue,
                 (com, &IdentityOutput(vec![proof.y_eval_comm.clone()])),
@@ -290,12 +298,11 @@ impl<P: PairingEngine, D: Digest> BivariatePolynomialCommitment<P, D> {
     }
 }
 
-pub struct UnivariatePolynomialCommitment<P: PairingEngine, D: Digest> {
+pub struct UnivariatePolynomialCommitment<P: PairingEngine> {
     _pairing: PhantomData<P>,
-    _digest: PhantomData<D>,
 }
 
-impl<P: PairingEngine, D: Digest> UnivariatePolynomialCommitment<P, D> {
+impl<P: PairingEngine> UnivariatePolynomialCommitment<P> {
     fn bivariate_degrees(univariate_degree: usize) -> (usize, usize) {
         //(((univariate_degree + 1) as f64).sqrt().ceil() as usize).next_power_of_two() - 1;
         let sqrt = (((univariate_degree + 1) as f64).sqrt().ceil() as usize).next_power_of_two();
@@ -337,7 +344,7 @@ impl<P: PairingEngine, D: Digest> UnivariatePolynomialCommitment<P, D> {
 
     pub fn setup<R: Rng>(rng: &mut R, degree: usize) -> Result<(SRS<P>, Vec<P::G1Affine>), Error> {
         let (x_degree, y_degree) = Self::bivariate_degrees(degree);
-        BivariatePolynomialCommitment::<P, D>::setup(rng, x_degree, y_degree)
+        BivariatePolynomialCommitment::<P>::setup(rng, x_degree, y_degree)
     }
 
     pub fn commit(
@@ -345,22 +352,27 @@ impl<P: PairingEngine, D: Digest> UnivariatePolynomialCommitment<P, D> {
         polynomial: &UnivariatePolynomial<P::Fr>,
     ) -> Result<(ExtensionFieldElement<P>, Vec<P::G1Projective>), Error> {
         let bivariate_degrees = Self::parse_bivariate_degrees_from_srs(srs);
-        BivariatePolynomialCommitment::<P, D>::commit(
+        BivariatePolynomialCommitment::<P>::commit(
             srs,
             &Self::bivariate_form(bivariate_degrees, polynomial),
         )
     }
 
     pub fn open(
+        transcript: &mut Transcript,
         srs: &(SRS<P>, Vec<P::G1Affine>),
         polynomial: &UnivariatePolynomial<P::Fr>,
         y_polynomial_comms: &Vec<P::G1Projective>,
         point: &P::Fr,
-    ) -> Result<OpeningProof<P, D>, Error> {
+    ) -> Result<OpeningProof<P>, Error> {
+        // Domain-separate this protocol
+        transcript.append_message(b"dom-sep", UNIVARIATE_DOMAIN_SEP);
+
         let (x_degree, y_degree) = Self::parse_bivariate_degrees_from_srs(srs);
         let y = point.clone();
         let x = point.pow(&vec![(y_degree + 1) as u64]);
         BivariatePolynomialCommitment::open(
+            transcript,
             srs,
             &Self::bivariate_form((x_degree, y_degree), polynomial),
             y_polynomial_comms,
@@ -369,17 +381,21 @@ impl<P: PairingEngine, D: Digest> UnivariatePolynomialCommitment<P, D> {
     }
 
     pub fn verify(
+        transcript: &mut Transcript,
         v_srs: &VerifierSRS<P>,
         max_degree: usize,
         com: &ExtensionFieldElement<P>,
         point: &P::Fr,
         eval: &P::Fr,
-        proof: &OpeningProof<P, D>,
+        proof: &OpeningProof<P>,
     ) -> Result<bool, Error> {
+        // Domain-separate this protocol
+        transcript.append_message(b"dom-sep", UNIVARIATE_DOMAIN_SEP);
+
         let (_, y_degree) = Self::bivariate_degrees(max_degree);
         let y = point.clone();
         let x = y.pow(&vec![(y_degree + 1) as u64]);
-        BivariatePolynomialCommitment::verify(v_srs, com, &(x, y), eval, proof)
+        BivariatePolynomialCommitment::verify(transcript, v_srs, com, &(x, y), eval, proof)
     }
 }
 
@@ -387,8 +403,6 @@ impl<P: PairingEngine, D: Digest> UnivariatePolynomialCommitment<P, D> {
 mod tests {
     use super::*;
     use ark_bls12_381::Bls12_381;
-    use ark_std::rand::{rngs::StdRng, SeedableRng};
-    use blake2::Blake2b;
 
     const BIVARIATE_X_DEGREE: usize = 7;
     const BIVARIATE_Y_DEGREE: usize = 7;
@@ -396,12 +410,13 @@ mod tests {
     const UNIVARIATE_DEGREE: usize = 65535;
     //const UNIVARIATE_DEGREE: usize = 1048575;
 
-    type TestBivariatePolyCommitment = BivariatePolynomialCommitment<Bls12_381, Blake2b>;
-    type TestUnivariatePolyCommitment = UnivariatePolynomialCommitment<Bls12_381, Blake2b>;
+    type TestBivariatePolyCommitment = BivariatePolynomialCommitment<Bls12_381>;
+    type TestUnivariatePolyCommitment = UnivariatePolynomialCommitment<Bls12_381>;
 
     #[test]
     fn bivariate_poly_commit_test() {
-        let mut rng = StdRng::seed_from_u64(0u64);
+        let mut rng = ark_std::test_rng();
+
         let srs =
             TestBivariatePolyCommitment::setup(&mut rng, BIVARIATE_X_DEGREE, BIVARIATE_Y_DEGREE)
                 .unwrap();
@@ -425,7 +440,9 @@ mod tests {
 
         // Evaluate at challenge point
         let point = (UniformRand::rand(&mut rng), UniformRand::rand(&mut rng));
+        let mut open_transcript = Transcript::new(b"Bivariate-test");
         let eval_proof = TestBivariatePolyCommitment::open(
+            &mut open_transcript,
             &srs,
             &bivariate_polynomial,
             &y_polynomial_comms,
@@ -435,16 +452,24 @@ mod tests {
         let eval = bivariate_polynomial.evaluate(&point);
 
         // Verify proof
-        assert!(
-            TestBivariatePolyCommitment::verify(&v_srs, &com, &point, &eval, &eval_proof).unwrap()
-        );
+        let mut verif_transcript = Transcript::new(b"Bivariate-test");
+        assert!(TestBivariatePolyCommitment::verify(
+            &mut verif_transcript,
+            &v_srs,
+            &com,
+            &point,
+            &eval,
+            &eval_proof
+        )
+        .unwrap());
     }
 
     // `cargo test univariate_poly_commit_test --release --features print-trace -- --ignored --nocapture`
     #[ignore]
     #[test]
     fn univariate_poly_commit_test() {
-        let mut rng = StdRng::seed_from_u64(0u64);
+        let mut rng = ark_std::test_rng();
+
         let srs = TestUnivariatePolyCommitment::setup(&mut rng, UNIVARIATE_DEGREE).unwrap();
         let v_srs = srs.0.get_verifier_key();
 
@@ -460,13 +485,21 @@ mod tests {
 
         // Evaluate at challenge point
         let point = UniformRand::rand(&mut rng);
-        let eval_proof =
-            TestUnivariatePolyCommitment::open(&srs, &polynomial, &y_polynomial_comms, &point)
-                .unwrap();
+        let mut open_transcript = Transcript::new(b"Univariate-test");
+        let eval_proof = TestUnivariatePolyCommitment::open(
+            &mut open_transcript,
+            &srs,
+            &polynomial,
+            &y_polynomial_comms,
+            &point,
+        )
+        .unwrap();
         let eval = polynomial.evaluate(&point);
 
         // Verify proof
+        let mut verif_transcript = Transcript::new(b"Univariate-test");
         assert!(TestUnivariatePolyCommitment::verify(
+            &mut verif_transcript,
             &v_srs,
             UNIVARIATE_DEGREE,
             &com,

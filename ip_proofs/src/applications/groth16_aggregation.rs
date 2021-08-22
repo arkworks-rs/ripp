@@ -1,17 +1,9 @@
-use ark_ec::{group::Group, AffineCurve, PairingEngine};
-use ark_ff::{to_bytes, Field, One};
-use ark_groth16::{Proof, VerifyingKey};
-
-use std::ops::AddAssign;
-
-use ark_std::rand::Rng;
-use digest::Digest;
-
 use crate::{
     tipa::{
         structured_scalar_message::{structured_scalar_power, TIPAWithSSM, TIPAWithSSMProof},
         TIPAProof, VerifierSRS, SRS, TIPA,
     },
+    util::TranscriptProtocol,
     Error,
 };
 use ark_dh_commitments::{
@@ -22,68 +14,76 @@ use ark_inner_products::{
     ExtensionFieldElement, InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct,
     ScalarInnerProduct,
 };
+use ark_std::rand::Rng;
 
-type PairingInnerProductAB<P, D> = TIPA<
+use std::ops::AddAssign;
+
+use ark_ec::{group::Group, AffineCurve, PairingEngine};
+use ark_ff::{Field, One};
+use ark_groth16::{Proof, VerifyingKey};
+use merlin::Transcript;
+
+const DOMAIN_SEP: &[u8] = b"ip_proofs-Groth16_agg";
+
+type PairingInnerProductAB<P> = TIPA<
     PairingInnerProduct<P>,
     AFGHOCommitmentG1<P>,
     AFGHOCommitmentG2<P>,
     IdentityCommitment<ExtensionFieldElement<P>, <P as PairingEngine>::Fr>,
     P,
-    D,
 >;
 
-type PairingInnerProductABProof<P, D> = TIPAProof<
+type PairingInnerProductABProof<P> = TIPAProof<
     PairingInnerProduct<P>,
     AFGHOCommitmentG1<P>,
     AFGHOCommitmentG2<P>,
     IdentityCommitment<ExtensionFieldElement<P>, <P as PairingEngine>::Fr>,
     P,
-    D,
 >;
 
-type MultiExpInnerProductC<P, D> = TIPAWithSSM<
+type MultiExpInnerProductC<P> = TIPAWithSSM<
     MultiexponentiationInnerProduct<<P as PairingEngine>::G1Projective>,
     AFGHOCommitmentG1<P>,
     IdentityCommitment<<P as PairingEngine>::G1Projective, <P as PairingEngine>::Fr>,
     P,
-    D,
 >;
 
-type MultiExpInnerProductCProof<P, D> = TIPAWithSSMProof<
+type MultiExpInnerProductCProof<P> = TIPAWithSSMProof<
     MultiexponentiationInnerProduct<<P as PairingEngine>::G1Projective>,
     AFGHOCommitmentG1<P>,
     IdentityCommitment<<P as PairingEngine>::G1Projective, <P as PairingEngine>::Fr>,
     P,
-    D,
 >;
 
-pub struct AggregateProof<P: PairingEngine, D: Digest> {
+pub struct AggregateProof<P: PairingEngine> {
     com_a: ExtensionFieldElement<P>,
     com_b: ExtensionFieldElement<P>,
     com_c: ExtensionFieldElement<P>,
     ip_ab: ExtensionFieldElement<P>,
     agg_c: P::G1Projective,
-    tipa_proof_ab: PairingInnerProductABProof<P, D>,
-    tipa_proof_c: MultiExpInnerProductCProof<P, D>,
+    tipa_proof_ab: PairingInnerProductABProof<P>,
+    tipa_proof_c: MultiExpInnerProductCProof<P>,
 }
 
-pub fn setup_inner_product<P, D, R: Rng>(rng: &mut R, size: usize) -> Result<SRS<P>, Error>
+pub fn setup_inner_product<P, R: Rng>(rng: &mut R, size: usize) -> Result<SRS<P>, Error>
 where
     P: PairingEngine,
-    D: Digest,
 {
-    let (srs, _) = PairingInnerProductAB::<P, D>::setup(rng, size)?;
+    let (srs, _) = PairingInnerProductAB::<P>::setup(rng, size)?;
     Ok(srs)
 }
 
-pub fn aggregate_proofs<P, D>(
+pub fn aggregate_proofs<P>(
+    transcript: &mut Transcript,
     ip_srs: &SRS<P>,
     proofs: &[Proof<P>],
-) -> Result<AggregateProof<P, D>, Error>
+) -> Result<AggregateProof<P>, Error>
 where
     P: PairingEngine,
-    D: Digest,
 {
+    // Domain-separate this protocol
+    transcript.append_message(b"dom-sep", DOMAIN_SEP);
+
     let a = proofs
         .iter()
         .map(|proof| proof.a.into_projective())
@@ -103,18 +103,13 @@ where
     let com_b = PairingInnerProduct::<P>::inner_product(&ck_2, &b)?;
     let com_c = PairingInnerProduct::<P>::inner_product(&c, &ck_1)?;
 
+    // Update the transcript
+    transcript.append_serializable(b"com_a", &com_a)?;
+    transcript.append_serializable(b"com_b", &com_b)?;
+    transcript.append_serializable(b"com_c", &com_c)?;
+
     // Random linear combination of proofs
-    let mut counter_nonce: usize = 0;
-    let r = loop {
-        let mut hash_input = Vec::new();
-        hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
-        //TODO: Should use CanonicalSerialize instead of ToBytes
-        hash_input.extend_from_slice(&to_bytes![com_a, com_b, com_c]?);
-        if let Some(r) = <P::Fr>::from_random_bytes(&D::digest(&hash_input)) {
-            break r;
-        };
-        counter_nonce += 1;
-    };
+    let r = transcript.challenge_scalar(b"r");
 
     let r_vec = structured_scalar_power(proofs.len(), &r);
     let a_r = a
@@ -136,14 +131,16 @@ where
         PairingInnerProduct::<P>::inner_product(&a_r, &ck_1_r)?
     );
 
-    let tipa_proof_ab = PairingInnerProductAB::<P, D>::prove_with_srs_shift(
+    let tipa_proof_ab = PairingInnerProductAB::<P>::prove_with_srs_shift(
+        transcript,
         &ip_srs,
         (&a_r, &b),
         (&ck_1_r, &ck_2, &HomomorphicPlaceholderValue),
         &r,
     )?;
 
-    let tipa_proof_c = MultiExpInnerProductC::<P, D>::prove_with_structured_scalar_message(
+    let tipa_proof_c = MultiExpInnerProductC::<P>::prove_with_structured_scalar_message(
+        transcript,
         &ip_srs,
         (&c, &r_vec),
         (&ck_1, &HomomorphicPlaceholderValue),
@@ -160,31 +157,30 @@ where
     })
 }
 
-pub fn verify_aggregate_proof<P, D>(
+pub fn verify_aggregate_proof<P>(
+    transcript: &mut Transcript,
     ip_verifier_srs: &VerifierSRS<P>,
     vk: &VerifyingKey<P>,
     public_inputs: &Vec<Vec<P::Fr>>, //TODO: Should use ToConstraintField instead
-    proof: &AggregateProof<P, D>,
+    proof: &AggregateProof<P>,
 ) -> Result<bool, Error>
 where
     P: PairingEngine,
-    D: Digest,
 {
+    // Domain-separate this protocol
+    transcript.append_message(b"dom-sep", DOMAIN_SEP);
+
+    // Update the transcript
+    transcript.append_serializable(b"com_a", &proof.com_a)?;
+    transcript.append_serializable(b"com_b", &proof.com_b)?;
+    transcript.append_serializable(b"com_c", &proof.com_c)?;
+
     // Random linear combination of proofs
-    let mut counter_nonce: usize = 0;
-    let r = loop {
-        let mut hash_input = Vec::new();
-        hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
-        //TODO: Should use CanonicalSerialize instead of ToBytes
-        hash_input.extend_from_slice(&to_bytes![proof.com_a, proof.com_b, proof.com_c]?);
-        if let Some(r) = <P::Fr>::from_random_bytes(&D::digest(&hash_input)) {
-            break r;
-        };
-        counter_nonce += 1;
-    };
+    let r = transcript.challenge_scalar(b"r");
 
     // Check TIPA proofs
-    let tipa_proof_ab_valid = PairingInnerProductAB::<P, D>::verify_with_srs_shift(
+    let tipa_proof_ab_valid = PairingInnerProductAB::<P>::verify_with_srs_shift(
+        transcript,
         ip_verifier_srs,
         &HomomorphicPlaceholderValue,
         (
@@ -195,7 +191,8 @@ where
         &proof.tipa_proof_ab,
         &r,
     )?;
-    let tipa_proof_c_valid = MultiExpInnerProductC::<P, D>::verify_with_structured_scalar_message(
+    let tipa_proof_c_valid = MultiExpInnerProductC::<P>::verify_with_structured_scalar_message(
+        transcript,
         ip_verifier_srs,
         &HomomorphicPlaceholderValue,
         (&proof.com_c, &IdentityOutput(vec![proof.agg_c.clone()])),
