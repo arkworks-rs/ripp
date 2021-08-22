@@ -2,22 +2,22 @@
 #![deny(warnings, unused, missing_docs)]
 #![forbid(unsafe_code)]
 
-use ark_ec::{msm::VariableBaseMSM, AffineCurve, PairingEngine, ProjectiveCurve};
-use ark_ff::{to_bytes, Field, One, PrimeField, UniformRand};
-use digest::Digest;
-use rayon::prelude::*;
+mod util;
+use util::TranscriptProtocol;
+
 use std::marker::PhantomData;
 
-/// Fiat-Shamir Rng
-pub mod rng;
+use ark_ec::{msm::VariableBaseMSM, AffineCurve, PairingEngine, ProjectiveCurve};
+use ark_ff::{Field, One, PrimeField};
+use merlin::Transcript;
+use rayon::prelude::*;
 
-use rng::FiatShamirRng;
+const SIPP_DOMAIN_SEP: &[u8] = b"sipp-v0.3-SIPP";
 
 /// SIPP is a inner-pairing product proof that allows a verifier to check an
 /// inner-pairing product over `n` elements with only a single pairing.
-pub struct SIPP<E: PairingEngine, D: Digest> {
+pub struct SIPP<E: PairingEngine> {
     _engine: PhantomData<E>,
-    _digest: PhantomData<D>,
 }
 
 /// `Proof` contains the GT elements produced by the prover.
@@ -26,9 +26,10 @@ pub struct Proof<E: PairingEngine> {
     gt_elems: Vec<(E::Fqk, E::Fqk)>,
 }
 
-impl<E: PairingEngine, D: Digest> SIPP<E, D> {
+impl<E: PairingEngine> SIPP<E> {
     /// Produce a proof of the inner pairing product.
     pub fn prove(
+        transcript: &mut Transcript,
         a: &[E::G1Affine],
         b: &[E::G2Affine],
         r: &[E::Fr],
@@ -41,8 +42,16 @@ impl<E: PairingEngine, D: Digest> SIPP<E, D> {
         assert_eq!(length, b.len());
         assert_eq!(length.count_ones(), 1);
         let mut proof_vec = Vec::new();
-        // TODO(psi): should we also input a succinct bilinear group description to the rng?
-        let mut rng = FiatShamirRng::<D>::from_seed(&to_bytes![a, b, r, value].unwrap());
+
+        // TODO(psi): should we also input a succinct bilinear group description to the transcript?
+        transcript.append_message(b"dom-sep", SIPP_DOMAIN_SEP);
+
+        // Update transcript with first values
+        transcript.append_serializable(b"a", a);
+        transcript.append_serializable(b"b", b);
+        transcript.append_serializable(b"r", r);
+        transcript.append_serializable(b"value", &value);
+
         let a = a
             .into_par_iter()
             .zip(r)
@@ -62,26 +71,31 @@ impl<E: PairingEngine, D: Digest> SIPP<E, D> {
             let z_l = product_of_pairings::<E>(a_r, b_l);
             let z_r = product_of_pairings::<E>(a_l, b_r);
             proof_vec.push((z_l, z_r));
-            rng.absorb(&to_bytes![z_l, z_r].unwrap());
-            let x: E::Fr = u128::rand(&mut rng).into();
+
+            // Update transcript
+            transcript.append_serializable(b"z_l", &z_l);
+            transcript.append_serializable(b"z_r", &z_r);
+
+            // Get a challenge
+            let chal: E::Fr = transcript.challenge_scalar(b"x");
 
             let a_proj = a_l
                 .par_iter()
                 .zip(a_r)
                 .map(|(a_l, a_r)| {
-                    let mut temp = a_r.mul(x);
+                    let mut temp = a_r.mul(chal);
                     temp.add_assign_mixed(a_l);
                     temp
                 })
                 .collect::<Vec<_>>();
             a = E::G1Projective::batch_normalization_into_affine(&a_proj);
 
-            let x_inv = x.inverse().unwrap();
+            let chal_inv = chal.inverse().unwrap();
             let b_proj = b_l
                 .par_iter()
                 .zip(b_r)
                 .map(|(b_l, b_r)| {
-                    let mut temp = b_r.mul(x_inv);
+                    let mut temp = b_r.mul(chal_inv);
                     temp.add_assign_mixed(b_l);
                     temp
                 })
@@ -96,6 +110,7 @@ impl<E: PairingEngine, D: Digest> SIPP<E, D> {
 
     /// Verify an inner-pairing-product proof.
     pub fn verify(
+        transcript: &mut Transcript,
         a: &[E::G1Affine],
         b: &[E::G2Affine],
         r: &[E::Fr],
@@ -111,41 +126,48 @@ impl<E: PairingEngine, D: Digest> SIPP<E, D> {
         let proof_len = proof.gt_elems.len();
         assert_eq!(proof_len as f32, f32::log2(length as f32));
 
-        // TODO(psi): should we also input a succinct bilinear group description to the rng?
-        let mut rng = FiatShamirRng::<D>::from_seed(&to_bytes![a, b, r, claimed_value].unwrap());
+        // TODO(psi): should we also input a succinct bilinear group description to the transcript?
+        transcript.append_message(b"dom-sep", SIPP_DOMAIN_SEP);
 
-        let x_s = proof
+        // Update transcript with first values
+        transcript.append_serializable(b"a", a);
+        transcript.append_serializable(b"b", b);
+        transcript.append_serializable(b"r", r);
+        transcript.append_serializable(b"value", &claimed_value);
+
+        // Get all the challenges by running through the transcript
+        let chals = proof
             .gt_elems
             .iter()
             .map(|(z_l, z_r)| {
-                rng.absorb(&to_bytes![z_l, z_r].unwrap());
-                let x: E::Fr = u128::rand(&mut rng).into();
-                x
+                transcript.append_serializable(b"z_l", z_l);
+                transcript.append_serializable(b"z_r", z_r);
+                transcript.challenge_scalar(b"x")
             })
-            .collect::<Vec<_>>();
+            .collect::<Vec<E::Fr>>();
 
-        let mut x_invs = x_s.clone();
-        ark_ff::batch_inversion(&mut x_invs);
+        let mut chal_invs = chals.clone();
+        ark_ff::batch_inversion(&mut chal_invs);
 
         let z_prime = claimed_value
             * &proof
                 .gt_elems
                 .par_iter()
-                .zip(&x_s)
-                .zip(&x_invs)
-                .map(|(((z_l, z_r), x), x_inv)| {
-                    z_l.pow(x.into_repr()) * &z_r.pow(x_inv.into_repr())
+                .zip(&chals)
+                .zip(&chal_invs)
+                .map(|(((z_l, z_r), chal), chal_inv)| {
+                    z_l.pow(chal.into_repr()) * &z_r.pow(chal_inv.into_repr())
                 })
                 .reduce(|| E::Fqk::one(), |a, b| a * &b);
 
         let mut s: Vec<E::Fr> = vec![E::Fr::one(); length];
         let mut s_invs: Vec<E::Fr> = vec![E::Fr::one(); length];
         // TODO(psi): batch verify
-        for (j, (x, x_inv)) in x_s.into_iter().zip(x_invs).enumerate() {
+        for (j, (chal, chal_inv)) in chals.into_iter().zip(chal_invs).enumerate() {
             for i in 0..length {
                 if i & (1 << (proof_len - j - 1)) != 0 {
-                    s[i] *= &x;
-                    s_invs[i] *= &x_inv;
+                    s[i] *= &chal;
+                    s_invs[i] *= &chal_inv;
                 }
             }
         }
@@ -210,11 +232,12 @@ pub fn product_of_pairings<E: PairingEngine>(a: &[E::G1Affine], b: &[E::G2Affine
 mod tests {
     use super::*;
     use ark_bls12_377::{Bls12_377, Fr, G1Projective, G2Projective};
-    use blake2::Blake2s;
+    use ark_std::UniformRand;
 
     #[test]
     fn prove_and_verify_base_case() {
-        let mut rng = FiatShamirRng::<Blake2s>::from_seed(&to_bytes![b"falafel"].unwrap());
+        let mut rng = ark_std::test_rng();
+
         let mut a = Vec::with_capacity(32);
         let mut b = Vec::with_capacity(32);
         let mut r = Vec::with_capacity(32);
@@ -226,11 +249,13 @@ mod tests {
 
         let z = product_of_pairings_with_coeffs::<Bls12_377>(&a, &b, &r);
 
-        let proof = SIPP::<Bls12_377, Blake2s>::prove(&a, &b, &r, z);
+        let mut proof_transcript = Transcript::new(b"SIPP-test");
+        let proof = SIPP::<Bls12_377>::prove(&mut proof_transcript, &a, &b, &r, z);
         assert!(proof.is_ok());
         let proof = proof.unwrap();
 
-        let accept = SIPP::<Bls12_377, Blake2s>::verify(&a, &b, &r, z, &proof);
+        let mut verif_transcript = Transcript::new(b"SIPP-test");
+        let accept = SIPP::<Bls12_377>::verify(&mut verif_transcript, &a, &b, &r, z, &proof);
         assert!(accept.is_ok());
         assert!(accept.unwrap());
     }

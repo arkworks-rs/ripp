@@ -11,8 +11,8 @@ use ark_poly::polynomial::{
 
 use ark_std::rand::{rngs::StdRng, SeedableRng};
 use csv::Writer;
+use merlin::Transcript;
 
-use blake2::Blake2b;
 use std::{
     io::stdout,
     time::{Duration, Instant},
@@ -51,7 +51,8 @@ fn main() {
     for degree in (0..num_data_points).map(|i| 4_usize.pow((i + 1) as u32) - 1) {
         // Benchmark KZG
         {
-            let mut rng = StdRng::seed_from_u64(0u64);
+            let mut rng = ark_std::test_rng();
+
             start = Instant::now();
             let (g_alpha_powers, v_srs) = KZG::<Bls12_381>::setup(&mut rng, degree).unwrap();
             time = start.elapsed().as_millis();
@@ -124,7 +125,7 @@ fn main() {
         {
             let mut rng = StdRng::seed_from_u64(0u64);
             start = Instant::now();
-            let srs = IPA::<Bls12_381, Blake2b>::setup(&mut rng, degree).unwrap();
+            let srs = IPA::<Bls12_381>::setup(&mut rng, degree).unwrap();
             let v_srs = srs.0.get_verifier_key();
             time = start.elapsed().as_millis();
             csv_writer
@@ -144,8 +145,7 @@ fn main() {
 
                 // Commit
                 start = Instant::now();
-                let (com, prover_aux) =
-                    IPA::<Bls12_381, Blake2b>::commit(&srs, &polynomial).unwrap();
+                let (com, prover_aux) = IPA::<Bls12_381>::commit(&srs, &polynomial).unwrap();
                 time = start.elapsed().as_millis();
                 csv_writer
                     .write_record(&[
@@ -158,9 +158,16 @@ fn main() {
                     .unwrap();
 
                 // Open
+                let mut proof_transcript = Transcript::new(b"IPA-bench");
                 start = Instant::now();
-                let proof = IPA::<Bls12_381, Blake2b>::open(&srs, &polynomial, &prover_aux, &point)
-                    .unwrap();
+                let proof = IPA::<Bls12_381>::open(
+                    &mut proof_transcript,
+                    &srs,
+                    &polynomial,
+                    &prover_aux,
+                    &point,
+                )
+                .unwrap();
                 time = start.elapsed().as_millis();
                 csv_writer
                     .write_record(&[
@@ -174,10 +181,17 @@ fn main() {
 
                 // Verify
                 std::thread::sleep(Duration::from_millis(5000));
+                let verif_transcript = Transcript::new(b"IPA-bench");
                 start = Instant::now();
                 for _ in 0..50 {
-                    let is_valid = IPA::<Bls12_381, Blake2b>::verify(
-                        &v_srs, degree, &com, &point, &eval, &proof,
+                    let is_valid = IPA::<Bls12_381>::verify(
+                        &mut verif_transcript.clone(),
+                        &v_srs,
+                        degree,
+                        &com,
+                        &point,
+                        &eval,
+                        &proof,
                     )
                     .unwrap();
                     assert!(is_valid);
@@ -199,7 +213,7 @@ fn main() {
             {
                 let mut rng = StdRng::seed_from_u64(0u64);
                 start = Instant::now();
-                let ck = TransparentIPA::<Bls12_381, Blake2b>::setup(&mut rng, degree).unwrap();
+                let ck = TransparentIPA::<Bls12_381>::setup(&mut rng, degree).unwrap();
                 time = start.elapsed().as_millis();
                 csv_writer
                     .write_record(&[
@@ -219,7 +233,7 @@ fn main() {
                     // Commit
                     start = Instant::now();
                     let (com, prover_aux) =
-                        TransparentIPA::<Bls12_381, Blake2b>::commit(&ck, &polynomial).unwrap();
+                        TransparentIPA::<Bls12_381>::commit(&ck, &polynomial).unwrap();
                     time = start.elapsed().as_millis();
                     csv_writer
                         .write_record(&[
@@ -232,8 +246,10 @@ fn main() {
                         .unwrap();
 
                     // Open
+                    let mut proof_transcript = Transcript::new(b"IPA_transparent-bench");
                     start = Instant::now();
-                    let proof = TransparentIPA::<Bls12_381, Blake2b>::open(
+                    let proof = TransparentIPA::<Bls12_381>::open(
+                        &mut proof_transcript,
                         &ck,
                         &polynomial,
                         &prover_aux,
@@ -252,11 +268,17 @@ fn main() {
                         .unwrap();
 
                     // Verify
+                    let verif_transcript = Transcript::new(b"IPA_transparent-bench");
                     std::thread::sleep(Duration::from_millis(5000));
                     start = Instant::now();
                     for _ in 0..50 {
-                        let is_valid = TransparentIPA::<Bls12_381, Blake2b>::verify(
-                            &ck, &com, &point, &eval, &proof,
+                        let is_valid = TransparentIPA::<Bls12_381>::verify(
+                            &mut verif_transcript.clone(),
+                            &ck,
+                            &com,
+                            &point,
+                            &eval,
+                            &proof,
                         )
                         .unwrap();
                         assert!(is_valid);

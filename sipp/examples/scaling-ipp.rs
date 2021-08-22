@@ -2,12 +2,12 @@
 use ark_bls12_377::*;
 use ark_ec::ProjectiveCurve;
 use ark_ff::UniformRand;
-use ark_sipp::{rng::FiatShamirRng, SIPP};
-use ark_std::rand::seq::SliceRandom;
-use blake2::Blake2s;
+use ark_sipp::SIPP;
+use ark_std::rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 use std::time::Instant;
 
-type ExampleSIPP = SIPP<Bls12_377, Blake2s>;
+type ExampleSIPP = SIPP<Bls12_377>;
+use merlin::Transcript;
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -37,7 +37,8 @@ fn main() {
                 .expect("The environment variable `RAYON_NUM_THREADS` must be an integer")
         });
 
-    let mut rng = FiatShamirRng::<Blake2s>::from_seed(b"falafel");
+    let mut rng = StdRng::from_entropy();
+
     let g = G1Projective::rand(&mut rng);
     let h = G2Projective::rand(&mut rng);
     let mut a_s = Vec::new();
@@ -73,12 +74,18 @@ fn main() {
             let z = ark_sipp::product_of_pairings_with_coeffs::<Bls12_377>(a_s, b_s, &r_s);
             direct_time += (start.elapsed().as_millis() as f64) / 1_000.0;
 
+            let mut proof_transcript = Transcript::new(b"SIPP-bench");
             let start = Instant::now();
-            let proof = ExampleSIPP::prove(a_s, b_s, &r_s, z.clone()).unwrap();
+            let proof =
+                ExampleSIPP::prove(&mut proof_transcript, a_s, b_s, &r_s, z.clone()).unwrap();
             prover_time += (start.elapsed().as_millis() as f64) / 1_000.0;
 
+            let mut verif_transcript = Transcript::new(b"SIPP-bench");
             let start = Instant::now();
-            assert!(ExampleSIPP::verify(a_s, b_s, &r_s, z.clone(), &proof).unwrap());
+            assert!(
+                ExampleSIPP::verify(&mut verif_transcript, a_s, b_s, &r_s, z.clone(), &proof)
+                    .unwrap()
+            );
             verifier_time += (start.elapsed().as_millis() as f64) / 1_000.0;
         }
         let num_iters = num_iters as f64;
@@ -86,9 +93,9 @@ fn main() {
             "=== Benchmarking SIPP over Bls12-377 with {} input(s) and {} thread(s) ====",
             m, num_threads,
         );
-        println!("Direct time: {:?} seconds", direct_time / num_iters);
-        println!("Prover time: {:?} seconds", prover_time / num_iters);
-        println!("Verifier time: {:?} seconds", verifier_time / num_iters);
+        println!("Direct time: {:0.3} seconds", direct_time / num_iters);
+        println!("Prover time: {:0.3} seconds", prover_time / num_iters);
+        println!("Verifier time: {:0.3} seconds", verifier_time / num_iters);
         println!();
         let d = ProfileData {
             size: m,

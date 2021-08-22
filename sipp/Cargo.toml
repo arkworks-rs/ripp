@@ -23,14 +23,13 @@ edition = "2018"
 [dependencies]
 ark-ec = "0.3"
 ark-ff = "0.3"
+ark-serialize = "0.3"
 ark-std = "0.3"
 rayon = "1"
 rand_core = "0.6"
-rand_chacha = "0.3"
-digest = "0.9"
+merlin = "3"
 
 [dev-dependencies]
-blake2 = "0.9"
 csv = "1"
 serde = { version = "1", features = [ "derive" ] }
 ark-bls12-377 = { version = "0.3", features = [ "curve" ] }
