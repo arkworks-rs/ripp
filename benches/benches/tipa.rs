@@ -14,16 +14,14 @@ use ark_ip_proofs::tipa::{
     structured_scalar_message::{structured_scalar_power, TIPAWithSSM},
     TIPACompatibleSetup, TIPA,
 };
+use merlin::Transcript;
 
-use ark_std::rand::{rngs::StdRng, Rng, SeedableRng};
-use blake2::Blake2b;
-use digest::Digest;
+use ark_std::rand::{rngs::StdRng, Rng};
 
 use std::{ops::MulAssign, time::Instant};
 
-fn bench_tipa<IP, LMC, RMC, IPC, P, D, R: Rng>(rng: &mut R, len: usize)
+fn bench_tipa<IP, LMC, RMC, IPC, P, R: Rng>(rng: &mut R, len: usize)
 where
-    D: Digest,
     P: PairingEngine,
     IP: InnerProduct<
         LeftMessage = LMC::Message,
@@ -52,28 +50,42 @@ where
         r.push(<IP::RightMessage>::rand(rng));
     }
 
-    let (srs, ck_t) = TIPA::<IP, LMC, RMC, IPC, P, D>::setup(rng, len).unwrap();
+    let (srs, ck_t) = TIPA::<IP, LMC, RMC, IPC, P>::setup(rng, len).unwrap();
     let (ck_l, ck_r) = srs.get_commitment_keys();
     let v_srs = srs.get_verifier_key();
     let com_l = LMC::commit(&ck_l, &l).unwrap();
     let com_r = RMC::commit(&ck_r, &r).unwrap();
     let t = vec![IP::inner_product(&l, &r).unwrap()];
     let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
+
+    let mut proof_transcript = Transcript::new(b"TIPA-bench");
     let mut start = Instant::now();
-    let proof =
-        TIPA::<IP, LMC, RMC, IPC, P, D>::prove(&srs, (&l, &r), (&ck_l, &ck_r, &ck_t)).unwrap();
+    let proof = TIPA::<IP, LMC, RMC, IPC, P>::prove(
+        &mut proof_transcript,
+        &srs,
+        (&l, &r),
+        (&ck_l, &ck_r, &ck_t),
+    )
+    .unwrap();
     let mut bench = start.elapsed().as_millis();
     println!("\t proving time: {} ms", bench);
+
+    let mut verif_transcript = Transcript::new(b"TIPA-bench");
     start = Instant::now();
-    TIPA::<IP, LMC, RMC, IPC, P, D>::verify(&v_srs, &ck_t, (&com_l, &com_r, &com_t), &proof)
-        .unwrap();
+    TIPA::<IP, LMC, RMC, IPC, P>::verify(
+        &mut verif_transcript,
+        &v_srs,
+        &ck_t,
+        (&com_l, &com_r, &com_t),
+        &proof,
+    )
+    .unwrap();
     bench = start.elapsed().as_millis();
     println!("\t verification time: {} ms", bench);
 }
 
-fn bench_tipa_srs_shift<IP, LMC, RMC, IPC, P, D, R: Rng>(rng: &mut R, len: usize)
+fn bench_tipa_srs_shift<IP, LMC, RMC, IPC, P, R: Rng>(rng: &mut R, len: usize)
 where
-    D: Digest,
     P: PairingEngine,
     IP: InnerProduct<
         LeftMessage = LMC::Message,
@@ -102,7 +114,7 @@ where
         r.push(<IP::RightMessage>::rand(rng));
     }
 
-    let (srs, ck_t) = TIPA::<IP, LMC, RMC, IPC, P, D>::setup(rng, len).unwrap();
+    let (srs, ck_t) = TIPA::<IP, LMC, RMC, IPC, P>::setup(rng, len).unwrap();
     let (ck_l, ck_r) = srs.get_commitment_keys();
     let v_srs = srs.get_verifier_key();
     let com_l = LMC::commit(&ck_l, &l).unwrap();
@@ -122,8 +134,10 @@ where
 
     let t = vec![IP::inner_product(&l_a, &r).unwrap()];
     let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
+    let mut proof_transcript = Transcript::new(b"TIPA_SRS_shift-bench");
     let mut start = Instant::now();
-    let proof = TIPA::<IP, LMC, RMC, IPC, P, D>::prove_with_srs_shift(
+    let proof = TIPA::<IP, LMC, RMC, IPC, P>::prove_with_srs_shift(
+        &mut proof_transcript,
         &srs,
         (&l_a, &r),
         (&ck_l_a, &ck_r, &ck_t),
@@ -132,8 +146,11 @@ where
     .unwrap();
     let mut bench = start.elapsed().as_millis();
     println!("\t proving time: {} ms", bench);
+
+    let mut verif_transcript = Transcript::new(b"TIPA_SRS_shift-bench");
     start = Instant::now();
-    TIPA::<IP, LMC, RMC, IPC, P, D>::verify_with_srs_shift(
+    TIPA::<IP, LMC, RMC, IPC, P>::verify_with_srs_shift(
+        &mut verif_transcript,
         &v_srs,
         &ck_t,
         (&com_l, &com_r, &com_t),
@@ -145,9 +162,8 @@ where
     println!("\t verification time: {} ms", bench);
 }
 
-fn bench_tipa_ssm<IP, LMC, IPC, P, D, R: Rng>(rng: &mut R, len: usize)
+fn bench_tipa_ssm<IP, LMC, IPC, P, R: Rng>(rng: &mut R, len: usize)
 where
-    D: Digest,
     P: PairingEngine,
     IP: InnerProduct<LeftMessage = LMC::Message, RightMessage = LMC::Scalar, Output = IPC::Message>,
     LMC: DoublyHomomorphicCommitment<Scalar = P::Fr, Key = P::G2Projective> + TIPACompatibleSetup,
@@ -168,14 +184,16 @@ where
     let scalar = <P::Fr>::rand(rng);
     let r = structured_scalar_power(len, &scalar);
 
-    let (srs, ck_t) = TIPAWithSSM::<IP, LMC, IPC, P, D>::setup(rng, len).unwrap();
+    let (srs, ck_t) = TIPAWithSSM::<IP, LMC, IPC, P>::setup(rng, len).unwrap();
     let (ck_l, _) = srs.get_commitment_keys();
     let v_srs = srs.get_verifier_key();
     let com_l = LMC::commit(&ck_l, &l).unwrap();
     let t = vec![IP::inner_product(&l, &r).unwrap()];
     let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
+    let mut proof_transcript = Transcript::new(b"TIPA_SSM-bench");
     let mut start = Instant::now();
-    let proof = TIPAWithSSM::<IP, LMC, IPC, P, D>::prove_with_structured_scalar_message(
+    let proof = TIPAWithSSM::<IP, LMC, IPC, P>::prove_with_structured_scalar_message(
+        &mut proof_transcript,
         &srs,
         (&l, &r),
         (&ck_l, &ck_t),
@@ -183,8 +201,11 @@ where
     .unwrap();
     let mut bench = start.elapsed().as_millis();
     println!("\t proving time: {} ms", bench);
+
+    let mut verif_transcript = Transcript::new(b"TIPA_SSM-bench");
     start = Instant::now();
-    TIPAWithSSM::<IP, LMC, IPC, P, D>::verify_with_structured_scalar_message(
+    TIPAWithSSM::<IP, LMC, IPC, P>::verify_with_structured_scalar_message(
+        &mut verif_transcript,
         &v_srs,
         &ck_t,
         (&com_l, &com_t),
@@ -201,7 +222,7 @@ fn main() {
     type GC1 = AFGHOCommitmentG1<Bls12_381>;
     type GC2 = AFGHOCommitmentG2<Bls12_381>;
     type SC1 = PedersenCommitment<<Bls12_381 as PairingEngine>::G1Projective>;
-    let mut rng = StdRng::seed_from_u64(0u64);
+    let mut rng = ark_std::test_rng();
 
     println!("Benchmarking TIPA with vector length: {}", LEN);
 
@@ -212,7 +233,6 @@ fn main() {
         GC2,
         IdentityCommitment<ExtensionFieldElement<Bls12_381>, <Bls12_381 as PairingEngine>::Fr>,
         Bls12_381,
-        Blake2b,
         StdRng,
     >(&mut rng, LEN);
 
@@ -226,7 +246,6 @@ fn main() {
             <Bls12_381 as PairingEngine>::Fr,
         >,
         Bls12_381,
-        Blake2b,
         StdRng,
     >(&mut rng, LEN);
 
@@ -237,7 +256,6 @@ fn main() {
         GC2,
         IdentityCommitment<ExtensionFieldElement<Bls12_381>, <Bls12_381 as PairingEngine>::Fr>,
         Bls12_381,
-        Blake2b,
         StdRng,
     >(&mut rng, LEN);
 
@@ -250,7 +268,6 @@ fn main() {
             <Bls12_381 as PairingEngine>::Fr,
         >,
         Bls12_381,
-        Blake2b,
         StdRng,
     >(&mut rng, LEN);
 }

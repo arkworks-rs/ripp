@@ -23,9 +23,8 @@ use ark_ip_proofs::applications::groth16_aggregation::{
     aggregate_proofs, setup_inner_product, verify_aggregate_proof,
 };
 
-use ark_std::rand::{rngs::StdRng, SeedableRng};
-use blake2::Blake2b;
 use csv::Writer;
+use merlin::Transcript;
 
 use std::{io::stdout, time::Instant};
 
@@ -248,7 +247,7 @@ fn main() {
     csv_writer.flush().unwrap();
     let mut start;
     let mut time;
-    let mut rng = StdRng::seed_from_u64(0u64);
+    let mut rng = ark_std::test_rng();
 
     // Compute hashes
     let mut hash_inputs = vec![];
@@ -344,7 +343,7 @@ fn main() {
         // Benchmark aggregation via IPA
         {
             start = Instant::now();
-            let srs = setup_inner_product::<Bls12_377, Blake2b, _>(&mut rng, num_proofs).unwrap();
+            let srs = setup_inner_product::<Bls12_377, _>(&mut rng, num_proofs).unwrap();
             time = start.elapsed().as_millis();
             csv_writer
                 .write_record(&[
@@ -359,9 +358,10 @@ fn main() {
             let v_srs = srs.get_verifier_key();
 
             for i in 1..=num_trials {
+                let mut proof_transcript = Transcript::new(b"Groth16-agg-bench");
                 start = Instant::now();
                 let aggregate_proof =
-                    aggregate_proofs::<Bls12_377, Blake2b>(&srs, &proofs).unwrap();
+                    aggregate_proofs::<Bls12_377>(&mut proof_transcript, &srs, &proofs).unwrap();
                 time = start.elapsed().as_millis();
                 csv_writer
                     .write_record(&[
@@ -374,8 +374,10 @@ fn main() {
                     .unwrap();
                 csv_writer.flush().unwrap();
 
+                let mut verif_transcript = Transcript::new(b"Groth16-agg-bench");
                 start = Instant::now();
                 let result = verify_aggregate_proof(
+                    &mut verif_transcript,
                     &v_srs,
                     &hash_circuit_parameters.0.vk,
                     &hash_outputs
@@ -533,7 +535,7 @@ pub fn batch_verify_proof<E: PairingEngine>(
     public_inputs: &[Vec<E::Fr>],
     proofs: &[Proof<E>],
 ) -> Result<bool, SynthesisError> {
-    let mut rng = StdRng::seed_from_u64(0u64);
+    let mut rng = ark_std::test_rng();
     let mut r_powers = Vec::with_capacity(proofs.len());
     for _ in 0..proofs.len() {
         let challenge: E::Fr = u128::rand(&mut rng).into();

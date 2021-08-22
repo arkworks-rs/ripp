@@ -13,14 +13,12 @@ use ark_inner_products::{
 use ark_ip_proofs::gipa::GIPA;
 
 use ark_std::rand::{rngs::StdRng, Rng, SeedableRng};
-use blake2::Blake2b;
-use digest::Digest;
 
+use merlin::Transcript;
 use std::{ops::MulAssign, time::Instant};
 
-fn bench_gipa<IP, LMC, RMC, IPC, D, R: Rng>(rng: &mut R, len: usize)
+fn bench_gipa<IP, LMC, RMC, IPC, R: Rng>(rng: &mut R, len: usize)
 where
-    D: Digest,
     IP: InnerProduct<
         LeftMessage = LMC::Message,
         RightMessage = RMC::Message,
@@ -45,13 +43,15 @@ where
         r.push(<IP::RightMessage>::rand(rng));
     }
 
-    let (ck_l, ck_r, ck_t) = GIPA::<IP, LMC, RMC, IPC, D>::setup(rng, len).unwrap();
+    let (ck_l, ck_r, ck_t) = GIPA::<IP, LMC, RMC, IPC>::setup(rng, len).unwrap();
     let com_l = LMC::commit(&ck_l, &l).unwrap();
     let com_r = RMC::commit(&ck_r, &r).unwrap();
     let t = vec![IP::inner_product(&l, &r).unwrap()];
     let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
+    let mut proof_transcript = Transcript::new(b"GIPA-bench");
     let mut start = Instant::now();
-    let proof = GIPA::<IP, LMC, RMC, IPC, D>::prove(
+    let proof = GIPA::<IP, LMC, RMC, IPC>::prove(
+        &mut proof_transcript,
         (&l, &r, &t[0]),
         (&ck_l, &ck_r, &ck_t),
         (&com_l, &com_r, &com_t),
@@ -59,9 +59,16 @@ where
     .unwrap();
     let mut bench = start.elapsed().as_millis();
     println!("\t proving time: {} ms", bench);
+
+    let mut verif_transcript = Transcript::new(b"GIPA-bench");
     start = Instant::now();
-    GIPA::<IP, LMC, RMC, IPC, D>::verify((&ck_l, &ck_r, &ck_t), (&com_l, &com_r, &com_t), &proof)
-        .unwrap();
+    GIPA::<IP, LMC, RMC, IPC>::verify(
+        &mut verif_transcript,
+        (&ck_l, &ck_r, &ck_t),
+        (&com_l, &com_r, &com_t),
+        &proof,
+    )
+    .unwrap();
     bench = start.elapsed().as_millis();
     println!("\t verification time: {} ms", bench);
 }
@@ -81,7 +88,6 @@ fn main() {
         GC1,
         GC2,
         IdentityCommitment<ExtensionFieldElement<Bls12_381>, <Bls12_381 as PairingEngine>::Fr>,
-        Blake2b,
         StdRng,
     >(&mut rng, LEN);
 
@@ -94,7 +100,6 @@ fn main() {
             <Bls12_381 as PairingEngine>::G1Projective,
             <Bls12_381 as PairingEngine>::Fr,
         >,
-        Blake2b,
         StdRng,
     >(&mut rng, LEN);
 }

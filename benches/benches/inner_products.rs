@@ -3,7 +3,7 @@ use ark_ec::PairingEngine;
 use ark_ff::UniformRand;
 use ark_inner_products::{InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct};
 
-use ark_std::rand::{rngs::StdRng, Rng, SeedableRng};
+use ark_std::rand::{rngs::StdRng, Rng};
 
 use std::time::Instant;
 
@@ -26,7 +26,8 @@ where
 
 fn main() {
     const LEN: usize = 16;
-    let mut rng = StdRng::seed_from_u64(0u64);
+    let mut rng = ark_std::test_rng();
+
     println!("Benchmarking inner products with vector length: {}", LEN);
 
     println!("1) Pairing inner product...");

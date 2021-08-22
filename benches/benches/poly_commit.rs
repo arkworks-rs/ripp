@@ -11,8 +11,8 @@ use ark_poly::polynomial::{
 
 use ark_std::rand::{rngs::StdRng, SeedableRng};
 use csv::Writer;
+use merline::Transcript;
 
-use blake2::Blake2b;
 use std::{
     io::stdout,
     time::{Duration, Instant},
@@ -51,7 +51,8 @@ fn main() {
     for degree in (0..num_data_points).map(|i| 4_usize.pow((i + 1) as u32) - 1) {
         // Benchmark KZG
         {
-            let mut rng = StdRng::seed_from_u64(0u64);
+            let mut rng = ark_std::test_rng();
+
             start = Instant::now();
             let (g_alpha_powers, v_srs) = KZG::<Bls12_381>::setup(&mut rng, degree).unwrap();
             time = start.elapsed().as_millis();
@@ -124,7 +125,7 @@ fn main() {
         {
             let mut rng = StdRng::seed_from_u64(0u64);
             start = Instant::now();
-            let srs = IPA::<Bls12_381, Blake2b>::setup(&mut rng, degree).unwrap();
+            let srs = IPA::<Bls12_381>::setup(&mut rng, degree).unwrap();
             let v_srs = srs.0.get_verifier_key();
             time = start.elapsed().as_millis();
             csv_writer
@@ -144,8 +145,7 @@ fn main() {
 
                 // Commit
                 start = Instant::now();
-                let (com, prover_aux) =
-                    IPA::<Bls12_381, Blake2b>::commit(&srs, &polynomial).unwrap();
+                let (com, prover_aux) = IPA::<Bls12_381>::commit(&srs, &polynomial).unwrap();
                 time = start.elapsed().as_millis();
                 csv_writer
                     .write_record(&[
