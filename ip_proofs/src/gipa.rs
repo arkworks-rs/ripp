@@ -1,30 +1,31 @@
-use ark_ff::{to_bytes, Field, One};
+use crate::{mul_helper, util::TranscriptProtocol, Error, InnerProductArgumentError};
+
+use std::{marker::PhantomData, ops::MulAssign};
+
+use ark_dh_commitments::DoublyHomomorphicCommitment;
+use ark_ff::{Field, One};
+use ark_inner_products::InnerProduct;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write};
+use ark_std::cfg_iter;
 use ark_std::rand::Rng;
 use ark_std::{end_timer, start_timer};
-use digest::Digest;
-use std::{convert::TryInto, marker::PhantomData, ops::MulAssign};
-
-use crate::{mul_helper, Error, InnerProductArgumentError};
-use ark_dh_commitments::DoublyHomomorphicCommitment;
-use ark_inner_products::InnerProduct;
-use ark_std::cfg_iter;
+use merlin::Transcript;
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-pub struct GIPA<IP, LMC, RMC, IPC, D> {
+const GIPA_DOMAIN_SEP: &[u8] = b"ip_proofs-v0.3-GIPA";
+
+pub struct GIPA<IP, LMC, RMC, IPC> {
     _inner_product: PhantomData<IP>,
     _left_commitment: PhantomData<LMC>,
     _right_commitment: PhantomData<RMC>,
     _inner_product_commitment: PhantomData<IPC>,
-    _digest: PhantomData<D>,
 }
 
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct GIPAProof<IP, LMC, RMC, IPC, D>
+pub struct GIPAProof<IP, LMC, RMC, IPC>
 where
-    D: Digest,
     IP: InnerProduct<
         LeftMessage = LMC::Message,
         RightMessage = RMC::Message,
@@ -45,13 +46,12 @@ where
         (LMC::Output, RMC::Output, IPC::Output),
     )>,
     pub(crate) r_base: (LMC::Message, RMC::Message),
-    _gipa: PhantomData<GIPA<IP, LMC, RMC, IPC, D>>,
+    _gipa: PhantomData<GIPA<IP, LMC, RMC, IPC>>,
 }
 
 #[derive(Clone)]
-pub struct GIPAAux<IP, LMC, RMC, IPC, D>
+pub struct GIPAAux<IP, LMC, RMC, IPC>
 where
-    D: Digest,
     IP: InnerProduct<
         LeftMessage = LMC::Message,
         RightMessage = RMC::Message,
@@ -67,16 +67,15 @@ where
     RMC::Output: MulAssign<LMC::Scalar>,
     IPC::Output: MulAssign<LMC::Scalar>,
 {
-    pub(crate) r_transcript: Vec<LMC::Scalar>,
+    pub(crate) r_challenges: Vec<LMC::Scalar>,
     pub(crate) ck_base: (LMC::Key, RMC::Key),
-    _gipa: PhantomData<GIPA<IP, LMC, RMC, IPC, D>>,
+    _gipa: PhantomData<GIPA<IP, LMC, RMC, IPC>>,
 }
 
 //TODO: Can extend GIPA to support "identity commitments" in addition to "compact commitments", i.e. for SIPP
 
-impl<IP, LMC, RMC, IPC, D> GIPA<IP, LMC, RMC, IPC, D>
+impl<IP, LMC, RMC, IPC> GIPA<IP, LMC, RMC, IPC>
 where
-    D: Digest,
     IP: InnerProduct<
         LeftMessage = LMC::Message,
         RightMessage = RMC::Message,
@@ -104,10 +103,11 @@ where
     }
 
     pub fn prove(
+        transcript: &mut Transcript,
         values: (&[IP::LeftMessage], &[IP::RightMessage], &IP::Output),
         ck: (&[LMC::Key], &[RMC::Key], &IPC::Key),
         com: (&LMC::Output, &RMC::Output, &IPC::Output),
-    ) -> Result<GIPAProof<IP, LMC, RMC, IPC, D>, Error> {
+    ) -> Result<GIPAProof<IP, LMC, RMC, IPC>, Error> {
         if IP::inner_product(values.0, values.1)? != values.2.clone() {
             return Err(Box::new(InnerProductArgumentError::InnerProductInvalid));
         }
@@ -125,15 +125,19 @@ where
             return Err(Box::new(InnerProductArgumentError::InnerProductInvalid));
         }
 
-        let (proof, _) =
-            Self::prove_with_aux((values.0, values.1), (ck.0, ck.1, &vec![ck.2.clone()]))?;
+        let (proof, _) = Self::prove_with_aux(
+            transcript,
+            (values.0, values.1),
+            (ck.0, ck.1, &vec![ck.2.clone()]),
+        )?;
         Ok(proof)
     }
 
     pub fn verify(
+        transcript: &mut Transcript,
         ck: (&[LMC::Key], &[RMC::Key], &IPC::Key),
         com: (&LMC::Output, &RMC::Output, &IPC::Output),
-        proof: &GIPAProof<IP, LMC, RMC, IPC, D>,
+        proof: &GIPAProof<IP, LMC, RMC, IPC>,
     ) -> Result<bool, Error> {
         if ck.0.len().count_ones() != 1 || ck.0.len() != ck.1.len() {
             // Power of 2 length
@@ -142,13 +146,14 @@ where
                 ck.1.len(),
             )));
         }
-        // Calculate base commitment and transcript
-        let (base_com, transcript) = Self::_compute_recursive_challenges(
+        // Calculate base commitment and round challenges
+        let (base_com, r_challenges) = Self::_compute_recursive_challenges(
+            transcript,
             (com.0.clone(), com.1.clone(), com.2.clone()),
             proof,
         )?;
         // Calculate base commitment keys
-        let (ck_a_base, ck_b_base) = Self::_compute_final_commitment_keys(ck, &transcript)?;
+        let (ck_a_base, ck_b_base) = Self::_compute_final_commitment_keys(ck, &r_challenges)?;
         // Verify base commitment
         Self::_verify_base_commitment(
             (&ck_a_base, &ck_b_base, &vec![ck.2.clone()]),
@@ -158,18 +163,14 @@ where
     }
 
     pub fn prove_with_aux(
+        transcript: &mut Transcript,
         values: (&[IP::LeftMessage], &[IP::RightMessage]),
         ck: (&[LMC::Key], &[RMC::Key], &[IPC::Key]),
-    ) -> Result<
-        (
-            GIPAProof<IP, LMC, RMC, IPC, D>,
-            GIPAAux<IP, LMC, RMC, IPC, D>,
-        ),
-        Error,
-    > {
+    ) -> Result<(GIPAProof<IP, LMC, RMC, IPC>, GIPAAux<IP, LMC, RMC, IPC>), Error> {
         let (m_a, m_b) = values;
         let (ck_a, ck_b, ck_t) = ck;
         Self::_prove(
+            transcript,
             (m_a.to_vec(), m_b.to_vec()),
             (ck_a.to_vec(), ck_b.to_vec(), ck_t.to_vec()),
         )
@@ -177,20 +178,22 @@ where
 
     // Returns vector of recursive commitments and transcripts in reverse order
     fn _prove(
+        transcript: &mut Transcript,
         values: (Vec<IP::LeftMessage>, Vec<IP::RightMessage>),
         ck: (Vec<LMC::Key>, Vec<RMC::Key>, Vec<IPC::Key>),
-    ) -> Result<
-        (
-            GIPAProof<IP, LMC, RMC, IPC, D>,
-            GIPAAux<IP, LMC, RMC, IPC, D>,
-        ),
-        Error,
-    > {
+    ) -> Result<(GIPAProof<IP, LMC, RMC, IPC>, GIPAAux<IP, LMC, RMC, IPC>), Error> {
         let (mut m_a, mut m_b) = values;
         let (mut ck_a, mut ck_b, ck_t) = ck;
-        let mut r_commitment_steps = Vec::new();
-        let mut r_transcript = Vec::new();
         assert!(m_a.len().is_power_of_two());
+
+        // For the proof, we collect commitments at every recurisve step. For the auxiliary output,
+        // we collect the Fiat-Shamir challenges.
+        let mut r_commitment_steps = Vec::new();
+        let mut r_challenges = Vec::new();
+
+        // Domain-separate this protocol
+        transcript.append_message(b"dom-sep", GIPA_DOMAIN_SEP);
+
         let (m_base, ck_base) = 'recurse: loop {
             let recurse = start_timer!(|| format!("Recurse round size {}", m_a.len()));
             if m_a.len() == 1 {
@@ -229,33 +232,23 @@ where
                 );
                 end_timer!(cr);
 
+                // Update the transcript
+                transcript.append_serializable(b"com_1.0", &com_1.0)?;
+                transcript.append_serializable(b"com_1.1", &com_1.1)?;
+                transcript.append_serializable(b"com_1.2", &com_1.2)?;
+                transcript.append_serializable(b"com_2.0", &com_2.0)?;
+                transcript.append_serializable(b"com_2.1", &com_2.1)?;
+                transcript.append_serializable(b"com_2.2", &com_2.2)?;
+
                 // Fiat-Shamir challenge
-                let mut counter_nonce: usize = 0;
-                let default_transcript = Default::default();
-                let transcript = r_transcript.last().unwrap_or(&default_transcript);
-                let (c, c_inv) = 'challenge: loop {
-                    let mut hash_input = Vec::new();
-                    hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
-                    //TODO: Should use CanonicalSerialize instead of ToBytes
-                    hash_input.extend_from_slice(&to_bytes![
-                        transcript, com_1.0, com_1.1, com_1.2, com_2.0, com_2.1, com_2.2
-                    ]?);
-                    let c: LMC::Scalar = u128::from_be_bytes(
-                        D::digest(&hash_input).as_slice()[0..16].try_into().unwrap(),
-                    )
-                    .into();
-                    if let Some(c_inv) = c.inverse() {
-                        // Optimization for multiexponentiation to rescale G2 elements with 128-bit challenge
-                        // Swap 'c' and 'c_inv' since can't control bit size of c_inv
-                        break 'challenge (c_inv, c);
-                    }
-                    counter_nonce += 1;
-                };
+                let chal: LMC::Scalar = transcript.challenge_scalar(b"c");
+                // Don't worry about accidentally sampling 0. The probability is negligible.
+                let chal_inv = chal.inverse().unwrap();
 
                 // Set up values for next step of recursion
                 let rescale_m1 = start_timer!(|| "Rescale M1");
                 m_a = cfg_iter!(m_a_1)
-                    .map(|a| mul_helper(a, &c))
+                    .map(|a| mul_helper(a, &chal))
                     .zip(m_a_2)
                     .map(|(a_1, a_2)| a_1 + a_2.clone())
                     .collect::<Vec<LMC::Message>>();
@@ -263,7 +256,7 @@ where
 
                 let rescale_m2 = start_timer!(|| "Rescale M2");
                 m_b = cfg_iter!(m_b_2)
-                    .map(|b| mul_helper(b, &c_inv))
+                    .map(|b| mul_helper(b, &chal_inv))
                     .zip(m_b_1)
                     .map(|(b_1, b_2)| b_1 + b_2.clone())
                     .collect::<Vec<RMC::Message>>();
@@ -271,7 +264,7 @@ where
 
                 let rescale_ck1 = start_timer!(|| "Rescale CK1");
                 ck_a = cfg_iter!(ck_a_2)
-                    .map(|a| mul_helper(a, &c_inv))
+                    .map(|a| mul_helper(a, &chal_inv))
                     .zip(ck_a_1)
                     .map(|(a_1, a_2)| a_1 + a_2.clone())
                     .collect::<Vec<LMC::Key>>();
@@ -279,19 +272,21 @@ where
 
                 let rescale_ck2 = start_timer!(|| "Rescale CK2");
                 ck_b = cfg_iter!(ck_b_1)
-                    .map(|b| mul_helper(b, &c))
+                    .map(|b| mul_helper(b, &chal))
                     .zip(ck_b_2)
                     .map(|(b_1, b_2)| b_1 + b_2.clone())
                     .collect::<Vec<RMC::Key>>();
                 end_timer!(rescale_ck2);
 
                 r_commitment_steps.push((com_1, com_2));
-                r_transcript.push(c);
+                r_challenges.push(chal);
                 end_timer!(recurse);
             }
         };
-        r_transcript.reverse();
+
         r_commitment_steps.reverse();
+        r_challenges.reverse();
+
         Ok((
             GIPAProof {
                 r_commitment_steps,
@@ -299,7 +294,7 @@ where
                 _gipa: PhantomData,
             },
             GIPAAux {
-                r_transcript,
+                r_challenges,
                 ck_base,
                 _gipa: PhantomData,
             },
@@ -308,54 +303,56 @@ where
 
     // Helper function used to calculate recursive challenges from proof execution (transcript in reverse)
     pub fn verify_recursive_challenge_transcript(
+        transcript: &mut Transcript,
         com: (&LMC::Output, &RMC::Output, &IPC::Output),
-        proof: &GIPAProof<IP, LMC, RMC, IPC, D>,
+        proof: &GIPAProof<IP, LMC, RMC, IPC>,
     ) -> Result<((LMC::Output, RMC::Output, IPC::Output), Vec<LMC::Scalar>), Error> {
-        Self::_compute_recursive_challenges((com.0.clone(), com.1.clone(), com.2.clone()), proof)
+        Self::_compute_recursive_challenges(
+            transcript,
+            (com.0.clone(), com.1.clone(), com.2.clone()),
+            proof,
+        )
     }
 
     fn _compute_recursive_challenges(
+        transcript: &mut Transcript,
         com: (LMC::Output, RMC::Output, IPC::Output),
-        proof: &GIPAProof<IP, LMC, RMC, IPC, D>,
+        proof: &GIPAProof<IP, LMC, RMC, IPC>,
     ) -> Result<((LMC::Output, RMC::Output, IPC::Output), Vec<LMC::Scalar>), Error> {
+        // Domain-separate this protocol
+        transcript.append_message(b"dom-sep", GIPA_DOMAIN_SEP);
+
+        // Keep track of the challenges from each round
+        let mut r_challenges = Vec::new();
+
         let (mut com_a, mut com_b, mut com_t) = com;
-        let mut r_transcript = Vec::new();
         for (com_1, com_2) in proof.r_commitment_steps.iter().rev() {
+            // Update the transcript
+            transcript.append_serializable(b"com_1.0", &com_1.0)?;
+            transcript.append_serializable(b"com_1.1", &com_1.1)?;
+            transcript.append_serializable(b"com_1.2", &com_1.2)?;
+            transcript.append_serializable(b"com_2.0", &com_2.0)?;
+            transcript.append_serializable(b"com_2.1", &com_2.1)?;
+            transcript.append_serializable(b"com_2.2", &com_2.2)?;
+
             // Fiat-Shamir challenge
-            let mut counter_nonce: usize = 0;
-            let default_transcript = Default::default();
-            let transcript = r_transcript.last().unwrap_or(&default_transcript);
-            let (c, c_inv) = 'challenge: loop {
-                let mut hash_input = Vec::new();
-                hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
-                hash_input.extend_from_slice(&to_bytes![
-                    transcript, com_1.0, com_1.1, com_1.2, com_2.0, com_2.1, com_2.2
-                ]?);
-                let c: LMC::Scalar = u128::from_be_bytes(
-                    D::digest(&hash_input).as_slice()[0..16].try_into().unwrap(),
-                )
-                .into();
-                if let Some(c_inv) = c.inverse() {
-                    // Optimization for multiexponentiation to rescale G2 elements with 128-bit challenge
-                    // Swap 'c' and 'c_inv' since can't control bit size of c_inv
-                    break 'challenge (c_inv, c);
-                }
-                counter_nonce += 1;
-            };
+            let chal: LMC::Scalar = transcript.challenge_scalar(b"c");
+            // Don't worry about accidentally sampling 0. The probability is negligible.
+            let chal_inv = chal.inverse().unwrap();
 
-            com_a = mul_helper(&com_1.0, &c) + com_a.clone() + mul_helper(&com_2.0, &c_inv);
-            com_b = mul_helper(&com_1.1, &c) + com_b.clone() + mul_helper(&com_2.1, &c_inv);
-            com_t = mul_helper(&com_1.2, &c) + com_t.clone() + mul_helper(&com_2.2, &c_inv);
+            com_a = mul_helper(&com_1.0, &chal) + com_a.clone() + mul_helper(&com_2.0, &chal_inv);
+            com_b = mul_helper(&com_1.1, &chal) + com_b.clone() + mul_helper(&com_2.1, &chal_inv);
+            com_t = mul_helper(&com_1.2, &chal) + com_t.clone() + mul_helper(&com_2.2, &chal_inv);
 
-            r_transcript.push(c);
+            r_challenges.push(chal);
         }
-        r_transcript.reverse();
-        Ok(((com_a, com_b, com_t), r_transcript))
+        r_challenges.reverse();
+        Ok(((com_a, com_b, com_t), r_challenges))
     }
 
     pub(crate) fn _compute_final_commitment_keys(
         ck: (&[LMC::Key], &[RMC::Key], &IPC::Key),
-        transcript: &Vec<LMC::Scalar>,
+        r_challenges: &Vec<LMC::Scalar>,
     ) -> Result<(LMC::Key, RMC::Key), Error> {
         // Calculate base commitment keys
         let (ck_a, ck_b, _) = ck;
@@ -363,11 +360,11 @@ where
 
         let mut ck_a_agg_challenge_exponents = vec![LMC::Scalar::one()];
         let mut ck_b_agg_challenge_exponents = vec![LMC::Scalar::one()];
-        for (i, c) in transcript.iter().enumerate() {
-            let c_inv = c.inverse().unwrap();
+        for (i, chal) in r_challenges.iter().enumerate() {
+            let chal_inv = chal.inverse().unwrap();
             for j in 0..(2_usize).pow(i as u32) {
-                ck_a_agg_challenge_exponents.push(ck_a_agg_challenge_exponents[j] * &c_inv);
-                ck_b_agg_challenge_exponents.push(ck_b_agg_challenge_exponents[j] * c);
+                ck_a_agg_challenge_exponents.push(ck_a_agg_challenge_exponents[j] * &chal_inv);
+                ck_b_agg_challenge_exponents.push(ck_b_agg_challenge_exponents[j] * chal);
             }
         }
         assert_eq!(ck_a_agg_challenge_exponents.len(), ck_a.len());
@@ -392,7 +389,7 @@ where
     pub(crate) fn _verify_base_commitment(
         base_ck: (&LMC::Key, &RMC::Key, &Vec<IPC::Key>),
         base_com: (LMC::Output, RMC::Output, IPC::Output),
-        proof: &GIPAProof<IP, LMC, RMC, IPC, D>,
+        proof: &GIPAProof<IP, LMC, RMC, IPC>,
     ) -> Result<bool, Error> {
         let (com_a, com_b, com_t) = base_com;
         let (ck_a_base, ck_b_base, ck_t) = base_ck;
@@ -406,9 +403,8 @@ where
     }
 }
 
-impl<IP, LMC, RMC, IPC, D> Clone for GIPAProof<IP, LMC, RMC, IPC, D>
+impl<IP, LMC, RMC, IPC> Clone for GIPAProof<IP, LMC, RMC, IPC>
 where
-    D: Digest,
     IP: InnerProduct<
         LeftMessage = LMC::Message,
         RightMessage = RMC::Message,
@@ -439,8 +435,6 @@ mod tests {
     use ark_bls12_381::Bls12_381;
     use ark_ec::PairingEngine;
     use ark_ff::UniformRand;
-    use ark_std::rand::{rngs::StdRng, SeedableRng};
-    use blake2::Blake2b;
 
     use ark_dh_commitments::{
         afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
@@ -464,9 +458,9 @@ mod tests {
         type IP = PairingInnerProduct<Bls12_381>;
         type IPC =
             IdentityCommitment<ExtensionFieldElement<Bls12_381>, <Bls12_381 as PairingEngine>::Fr>;
-        type PairingGIPA = GIPA<IP, GC1, GC2, IPC, Blake2b>;
+        type PairingGIPA = GIPA<IP, GC1, GC2, IPC>;
 
-        let mut rng = StdRng::seed_from_u64(0u64);
+        let mut rng = ark_std::test_rng();
         let (ck_a, ck_b, ck_t) = PairingGIPA::setup(&mut rng, TEST_SIZE).unwrap();
         let m_a = random_generators(&mut rng, TEST_SIZE);
         let m_b = random_generators(&mut rng, TEST_SIZE);
@@ -475,16 +469,23 @@ mod tests {
         let t = vec![IP::inner_product(&m_a, &m_b).unwrap()];
         let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
 
+        let mut proof_transcript = Transcript::new(b"GIPA-test");
         let proof = PairingGIPA::prove(
+            &mut proof_transcript,
             (&m_a, &m_b, &t[0]),
             (&ck_a, &ck_b, &ck_t),
             (&com_a, &com_b, &com_t),
         )
         .unwrap();
 
-        assert!(
-            PairingGIPA::verify((&ck_a, &ck_b, &ck_t), (&com_a, &com_b, &com_t), &proof,).unwrap()
-        );
+        let mut verif_transcript = Transcript::new(b"GIPA-test");
+        assert!(PairingGIPA::verify(
+            &mut verif_transcript,
+            (&ck_a, &ck_b, &ck_t),
+            (&com_a, &com_b, &com_t),
+            &proof,
+        )
+        .unwrap());
     }
 
     #[test]
@@ -494,9 +495,9 @@ mod tests {
             <Bls12_381 as PairingEngine>::G1Projective,
             <Bls12_381 as PairingEngine>::Fr,
         >;
-        type MultiExpGIPA = GIPA<IP, GC1, SC1, IPC, Blake2b>;
+        type MultiExpGIPA = GIPA<IP, GC1, SC1, IPC>;
 
-        let mut rng = StdRng::seed_from_u64(0u64);
+        let mut rng = ark_std::test_rng();
         let (ck_a, ck_b, ck_t) = MultiExpGIPA::setup(&mut rng, TEST_SIZE).unwrap();
         let m_a = random_generators(&mut rng, TEST_SIZE);
         let mut m_b = Vec::new();
@@ -508,16 +509,23 @@ mod tests {
         let t = vec![IP::inner_product(&m_a, &m_b).unwrap()];
         let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
 
+        let mut proof_transcript = Transcript::new(b"GIPA-test");
         let proof = MultiExpGIPA::prove(
+            &mut proof_transcript,
             (&m_a, &m_b, &t[0]),
             (&ck_a, &ck_b, &ck_t),
             (&com_a, &com_b, &com_t),
         )
         .unwrap();
 
-        assert!(
-            MultiExpGIPA::verify((&ck_a, &ck_b, &ck_t), (&com_a, &com_b, &com_t), &proof,).unwrap()
-        );
+        let mut verif_transcript = Transcript::new(b"GIPA-test");
+        assert!(MultiExpGIPA::verify(
+            &mut verif_transcript,
+            (&ck_a, &ck_b, &ck_t),
+            (&com_a, &com_b, &com_t),
+            &proof,
+        )
+        .unwrap());
     }
 
     #[test]
@@ -525,9 +533,9 @@ mod tests {
         type IP = ScalarInnerProduct<<Bls12_381 as PairingEngine>::Fr>;
         type IPC =
             IdentityCommitment<<Bls12_381 as PairingEngine>::Fr, <Bls12_381 as PairingEngine>::Fr>;
-        type ScalarGIPA = GIPA<IP, SC2, SC2, IPC, Blake2b>;
+        type ScalarGIPA = GIPA<IP, SC2, SC2, IPC>;
 
-        let mut rng = StdRng::seed_from_u64(0u64);
+        let mut rng = ark_std::test_rng();
         let (ck_a, ck_b, ck_t) = ScalarGIPA::setup(&mut rng, TEST_SIZE).unwrap();
         let mut m_a = Vec::new();
         let mut m_b = Vec::new();
@@ -540,15 +548,22 @@ mod tests {
         let t = vec![IP::inner_product(&m_a, &m_b).unwrap()];
         let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
 
+        let mut proof_transcript = Transcript::new(b"GIPA-test");
         let proof = ScalarGIPA::prove(
+            &mut proof_transcript,
             (&m_a, &m_b, &t[0]),
             (&ck_a, &ck_b, &ck_t),
             (&com_a, &com_b, &com_t),
         )
         .unwrap();
 
-        assert!(
-            ScalarGIPA::verify((&ck_a, &ck_b, &ck_t), (&com_a, &com_b, &com_t), &proof,).unwrap()
-        );
+        let mut verif_transcript = Transcript::new(b"GIPA-test");
+        assert!(ScalarGIPA::verify(
+            &mut verif_transcript,
+            (&ck_a, &ck_b, &ck_t),
+            (&com_a, &com_b, &com_t),
+            &proof,
+        )
+        .unwrap());
     }
 }

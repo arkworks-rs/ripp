@@ -20,10 +20,10 @@ ark-poly = "0.3"
 ark-serialize = { version = "0.3", features = [ "derive" ] }
 ark-std = "0.3"
 ark-groth16 = "0.3"
-digest = "0.9"
 num-traits = "0.2"
 itertools = "0.10"
 rayon = { version = "1", optional = true }
+merlin = "3.0"
 
 ark-inner-products = { path = "../inner_products" }
 ark-dh-commitments = { path = "../dh_commitments" }
@@ -31,10 +31,8 @@ ark-dh-commitments = { path = "../dh_commitments" }
 [dev-dependencies]
 ark-bls12-381 = { version = "0.3", features = [ "curve" ] }
 ark-ed-on-bls12-381 = "0.3"
-
 ark-relations = "0.3"
 ark-r1cs-std = "0.3"
-blake2 = "0.9"
 
 [features]
 default = [ "parallel" ]
