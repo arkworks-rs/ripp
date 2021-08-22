@@ -23,7 +23,7 @@ ark-groth16 = "0.3"
 num-traits = "0.2"
 itertools = "0.10"
 rayon = { version = "1", optional = true }
-merlin = "3.0"
+merlin = "3"
 
 ark-inner-products = { path = "../inner_products" }
 ark-dh-commitments = { path = "../dh_commitments" }

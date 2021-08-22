@@ -233,12 +233,8 @@ where
                 end_timer!(cr);
 
                 // Update the transcript
-                transcript.append_serializable(b"com_1.0", &com_1.0)?;
-                transcript.append_serializable(b"com_1.1", &com_1.1)?;
-                transcript.append_serializable(b"com_1.2", &com_1.2)?;
-                transcript.append_serializable(b"com_2.0", &com_2.0)?;
-                transcript.append_serializable(b"com_2.1", &com_2.1)?;
-                transcript.append_serializable(b"com_2.2", &com_2.2)?;
+                transcript.append_serializable(b"com_1", &com_1)?;
+                transcript.append_serializable(b"com_2", &com_2)?;
 
                 // Fiat-Shamir challenge
                 let chal: LMC::Scalar = transcript.challenge_scalar(b"c");
@@ -328,12 +324,8 @@ where
         let (mut com_a, mut com_b, mut com_t) = com;
         for (com_1, com_2) in proof.r_commitment_steps.iter().rev() {
             // Update the transcript
-            transcript.append_serializable(b"com_1.0", &com_1.0)?;
-            transcript.append_serializable(b"com_1.1", &com_1.1)?;
-            transcript.append_serializable(b"com_1.2", &com_1.2)?;
-            transcript.append_serializable(b"com_2.0", &com_2.0)?;
-            transcript.append_serializable(b"com_2.1", &com_2.1)?;
-            transcript.append_serializable(b"com_2.2", &com_2.2)?;
+            transcript.append_serializable(b"com_1", com_1)?;
+            transcript.append_serializable(b"com_2", com_2)?;
 
             // Fiat-Shamir challenge
             let chal: LMC::Scalar = transcript.challenge_scalar(b"c");
