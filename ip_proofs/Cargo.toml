@@ -20,7 +20,7 @@ ark-poly = "0.3"
 ark-serialize = { version = "0.3", features = [ "derive" ] }
 ark-std = "0.3"
 ark-groth16 = "0.3"
-digest = "0.9"
+digest = "0.10"
 num-traits = "0.2"
 itertools = "0.10"
 rayon = { version = "1", optional = true }

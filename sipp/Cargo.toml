@@ -27,7 +27,7 @@ ark-std = "0.3"
 rayon = "1"
 rand_core = "0.6"
 rand_chacha = "0.3"
-digest = "0.9"
+digest = "0.10"
 
 [dev-dependencies]
 blake2 = "0.9"

@@ -21,7 +21,7 @@ ark-bw6-761 = "0.3"
 ark-relations = "0.3"
 ark-r1cs-std = "0.3"
 
-digest = "0.9"
+digest = "0.10"
 blake2 = "0.9"
 csv = "1"
 
