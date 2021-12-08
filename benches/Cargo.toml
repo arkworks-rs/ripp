@@ -22,7 +22,7 @@ ark-relations = "0.3"
 ark-r1cs-std = "0.3"
 
 digest = "0.9"
-blake2 = "0.9"
+blake2 = "0.10"
 csv = "1"
 
 ark-inner-products = { path = "../inner_products" }
