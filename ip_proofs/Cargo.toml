@@ -16,7 +16,7 @@ documentation = "https://docs.rs/ark-ip-proofs/"
 [dependencies]
 ark-ec = "0.3"
 ark-ff = "0.3"
-ark-poly = "0.3"
+ark-poly = "0.4"
 ark-serialize = { version = "0.3", features = [ "derive" ] }
 ark-std = "0.3"
 ark-groth16 = "0.3"
