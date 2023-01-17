@@ -33,7 +33,7 @@ ark-bls12-381 = { version = "0.3", features = [ "curve" ] }
 ark-ed-on-bls12-381 = "0.3"
 
 ark-relations = "0.3"
-ark-r1cs-std = "0.3"
+ark-r1cs-std = "0.4"
 blake2 = "0.9"
 
 [features]

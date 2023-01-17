@@ -19,7 +19,7 @@ ark-bls12-377 = { version = "0.3", features = [ "curve", "r1cs" ] }
 ark-bw6-761 = "0.3"
 
 ark-relations = "0.3"
-ark-r1cs-std = "0.3"
+ark-r1cs-std = "0.4"
 
 digest = "0.9"
 blake2 = "0.9"
