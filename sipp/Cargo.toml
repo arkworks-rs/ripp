@@ -21,7 +21,7 @@ edition = "2018"
 ################################# Dependencies ################################
 
 [dependencies]
-ark-ec = "0.3"
+ark-ec = "0.4"
 ark-ff = "0.3"
 ark-std = "0.3"
 rayon = "1"
