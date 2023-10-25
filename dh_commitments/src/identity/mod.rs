@@ -1,8 +1,7 @@
-use ark_ff::{bytes::ToBytes, fields::PrimeField};
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, SerializationError};
+use ark_ff::fields::PrimeField;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::rand::Rng;
 use std::{
-    io::{Read, Result as IoResult, Write},
     marker::PhantomData,
     ops::{Add, MulAssign},
 };
@@ -17,12 +16,6 @@ pub struct IdentityCommitment<T, F: PrimeField> {
 
 #[derive(CanonicalSerialize, CanonicalDeserialize, Clone, Default, Eq, PartialEq)]
 pub struct HomomorphicPlaceholderValue;
-
-impl ToBytes for HomomorphicPlaceholderValue {
-    fn write<W: Write>(&self, _writer: W) -> IoResult<()> {
-        Ok(())
-    }
-}
 
 impl Add for HomomorphicPlaceholderValue {
     type Output = Self;
@@ -40,15 +33,6 @@ impl<T> MulAssign<T> for HomomorphicPlaceholderValue {
 pub struct IdentityOutput<T>(pub Vec<T>)
 where
     T: CanonicalSerialize + CanonicalDeserialize + Clone + Default + Eq;
-
-impl<T> ToBytes for IdentityOutput<T>
-where
-    T: ToBytes + CanonicalSerialize + CanonicalDeserialize + Clone + Default + Eq,
-{
-    fn write<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        self.0.write(&mut writer)
-    }
-}
 
 impl<T> Add for IdentityOutput<T>
 where
@@ -79,8 +63,7 @@ where
 
 impl<T, F> DoublyHomomorphicCommitment for IdentityCommitment<T, F>
 where
-    T: ToBytes
-        + CanonicalSerialize
+    T: CanonicalSerialize
         + CanonicalDeserialize
         + Clone
         + Default

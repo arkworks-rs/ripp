@@ -1,27 +1,27 @@
-use ark_ec::PairingEngine;
+use ark_ec::pairing::{Pairing, PairingOutput};
 use ark_std::rand::Rng;
 use std::marker::PhantomData;
 
 use crate::{random_generators, DoublyHomomorphicCommitment, Error};
 
-use ark_inner_products::{ExtensionFieldElement, InnerProduct, PairingInnerProduct};
+use ark_inner_products::{InnerProduct, PairingInnerProduct};
 
 #[derive(Clone)]
-pub struct AFGHOCommitment<P: PairingEngine> {
+pub struct AFGHOCommitment<P: Pairing> {
     _pair: PhantomData<P>,
 }
 
 #[derive(Clone)]
-pub struct AFGHOCommitmentG1<P: PairingEngine>(AFGHOCommitment<P>);
+pub struct AFGHOCommitmentG1<P: Pairing>(AFGHOCommitment<P>);
 
 #[derive(Clone)]
-pub struct AFGHOCommitmentG2<P: PairingEngine>(AFGHOCommitment<P>);
+pub struct AFGHOCommitmentG2<P: Pairing>(AFGHOCommitment<P>);
 
-impl<P: PairingEngine> DoublyHomomorphicCommitment for AFGHOCommitmentG1<P> {
-    type Scalar = P::Fr;
-    type Message = P::G1Projective;
-    type Key = P::G2Projective;
-    type Output = ExtensionFieldElement<P>;
+impl<P: Pairing> DoublyHomomorphicCommitment for AFGHOCommitmentG1<P> {
+    type Scalar = P::ScalarField;
+    type Message = P::G1;
+    type Key = P::G2;
+    type Output = PairingOutput<P>;
 
     fn setup<R: Rng>(rng: &mut R, size: usize) -> Result<Vec<Self::Key>, Error> {
         Ok(random_generators(rng, size))
@@ -32,11 +32,11 @@ impl<P: PairingEngine> DoublyHomomorphicCommitment for AFGHOCommitmentG1<P> {
     }
 }
 
-impl<P: PairingEngine> DoublyHomomorphicCommitment for AFGHOCommitmentG2<P> {
-    type Scalar = P::Fr;
-    type Message = P::G2Projective;
-    type Key = P::G1Projective;
-    type Output = ExtensionFieldElement<P>;
+impl<P: Pairing> DoublyHomomorphicCommitment for AFGHOCommitmentG2<P> {
+    type Scalar = P::ScalarField;
+    type Message = P::G2;
+    type Key = P::G1;
+    type Output = PairingOutput<P>;
 
     fn setup<R: Rng>(rng: &mut R, size: usize) -> Result<Vec<Self::Key>, Error> {
         Ok(random_generators(rng, size))
@@ -65,13 +65,13 @@ mod tests {
         let mut message = Vec::new();
         let mut wrong_message = Vec::new();
         for _ in 0..TEST_SIZE {
-            message.push(<Bls12_381 as PairingEngine>::G1Projective::rand(&mut rng));
-            wrong_message.push(<Bls12_381 as PairingEngine>::G1Projective::rand(&mut rng));
+            message.push(<Bls12_381 as Pairing>::G1::rand(&mut rng));
+            wrong_message.push(<Bls12_381 as Pairing>::G1::rand(&mut rng));
         }
         let com = C1::commit(&commit_keys, &message).unwrap();
         assert!(C1::verify(&commit_keys, &message, &com).unwrap());
         assert!(!C1::verify(&commit_keys, &wrong_message, &com).unwrap());
-        message.push(<Bls12_381 as PairingEngine>::G1Projective::rand(&mut rng));
+        message.push(<Bls12_381 as Pairing>::G1::rand(&mut rng));
         assert!(C1::verify(&commit_keys, &message, &com).is_err());
     }
 
@@ -82,13 +82,13 @@ mod tests {
         let mut message = Vec::new();
         let mut wrong_message = Vec::new();
         for _ in 0..TEST_SIZE {
-            message.push(<Bls12_381 as PairingEngine>::G2Projective::rand(&mut rng));
-            wrong_message.push(<Bls12_381 as PairingEngine>::G2Projective::rand(&mut rng));
+            message.push(<Bls12_381 as Pairing>::G2::rand(&mut rng));
+            wrong_message.push(<Bls12_381 as Pairing>::G2::rand(&mut rng));
         }
         let com = C2::commit(&commit_keys, &message).unwrap();
         assert!(C2::verify(&commit_keys, &message, &com).unwrap());
         assert!(!C2::verify(&commit_keys, &wrong_message, &com).unwrap());
-        message.push(<Bls12_381 as PairingEngine>::G2Projective::rand(&mut rng));
+        message.push(<Bls12_381 as Pairing>::G2::rand(&mut rng));
         assert!(C2::verify(&commit_keys, &message, &com).is_err());
     }
 }

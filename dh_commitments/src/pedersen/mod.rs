@@ -1,4 +1,4 @@
-use ark_ec::ProjectiveCurve;
+use ark_ec::CurveGroup;
 use ark_std::rand::Rng;
 use std::marker::PhantomData;
 
@@ -7,11 +7,11 @@ use crate::{random_generators, DoublyHomomorphicCommitment, Error};
 use ark_inner_products::{InnerProduct, MultiexponentiationInnerProduct};
 
 #[derive(Clone)]
-pub struct PedersenCommitment<G: ProjectiveCurve> {
+pub struct PedersenCommitment<G: CurveGroup> {
     _group: PhantomData<G>,
 }
 
-impl<G: ProjectiveCurve> DoublyHomomorphicCommitment for PedersenCommitment<G> {
+impl<G: CurveGroup> DoublyHomomorphicCommitment for PedersenCommitment<G> {
     type Scalar = G::ScalarField;
     type Message = G::ScalarField;
     type Key = G;
@@ -29,7 +29,7 @@ impl<G: ProjectiveCurve> DoublyHomomorphicCommitment for PedersenCommitment<G> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_ed_on_bls12_381::EdwardsProjective as JubJub;
+    use ark_ed_on_bls12_381::{EdwardsProjective as JubJub, Fr};
     use ark_ff::UniformRand;
     use ark_std::rand::{rngs::StdRng, SeedableRng};
 
@@ -43,13 +43,13 @@ mod tests {
         let mut message = Vec::new();
         let mut wrong_message = Vec::new();
         for _ in 0..TEST_SIZE {
-            message.push(<JubJub as ProjectiveCurve>::ScalarField::rand(&mut rng));
-            wrong_message.push(<JubJub as ProjectiveCurve>::ScalarField::rand(&mut rng));
+            message.push(Fr::rand(&mut rng));
+            wrong_message.push(Fr::rand(&mut rng));
         }
         let com = C::commit(&commit_keys, &message).unwrap();
         assert!(C::verify(&commit_keys, &message, &com).unwrap());
         assert!(!C::verify(&commit_keys, &wrong_message, &com).unwrap());
-        message.push(<JubJub as ProjectiveCurve>::ScalarField::rand(&mut rng));
+        message.push(Fr::rand(&mut rng));
         assert!(C::verify(&commit_keys, &message, &com).is_err());
     }
 }
