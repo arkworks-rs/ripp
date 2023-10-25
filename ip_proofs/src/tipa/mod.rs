@@ -1,7 +1,7 @@
-use ark_ec::{msm::FixedBaseMSM, PairingEngine, ProjectiveCurve};
-use ark_ff::{to_bytes, Field, One, PrimeField, UniformRand, Zero};
-use ark_poly::polynomial::{univariate::DensePolynomial, UVPolynomial};
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write};
+use ark_ec::{pairing::Pairing, scalar_mul::fixed_base::FixedBase, CurveGroup, Group};
+use ark_ff::{Field, One, PrimeField, UniformRand, Zero};
+use ark_poly::polynomial::{univariate::DensePolynomial, DenseUVPolynomial};
+use ark_serialize::CanonicalSerialize;
 use ark_std::rand::Rng;
 use ark_std::{end_timer, start_timer};
 use digest::Digest;
@@ -24,9 +24,9 @@ pub mod structured_scalar_message;
 //TODO: Could generalize: Don't need TIPA over G1 and G2, would work with G1 and G1 or over different pairing engines
 pub trait TIPACompatibleSetup {}
 
-impl<G: ProjectiveCurve> TIPACompatibleSetup for PedersenCommitment<G> {}
-impl<P: PairingEngine> TIPACompatibleSetup for AFGHOCommitmentG1<P> {}
-impl<P: PairingEngine> TIPACompatibleSetup for AFGHOCommitmentG2<P> {}
+impl<G: CurveGroup> TIPACompatibleSetup for PedersenCommitment<G> {}
+impl<P: Pairing> TIPACompatibleSetup for AFGHOCommitmentG1<P> {}
+impl<P: Pairing> TIPACompatibleSetup for AFGHOCommitmentG2<P> {}
 
 //TODO: May need to add "reverse" MultiexponentiationInnerProduct to allow for MIP with G2 messages (because TIP hard-coded G1 left and G2 right)
 pub struct TIPA<IP, LMC, RMC, IPC, P, D> {
@@ -38,11 +38,11 @@ pub struct TIPA<IP, LMC, RMC, IPC, P, D> {
     _digest: PhantomData<D>,
 }
 
-#[derive(CanonicalSerialize, CanonicalDeserialize)]
+#[derive(CanonicalSerialize)]
 pub struct TIPAProof<IP, LMC, RMC, IPC, P, D>
 where
     D: Digest,
-    P: PairingEngine,
+    P: Pairing,
     IP: InnerProduct<
         LeftMessage = LMC::Message,
         RightMessage = RMC::Message,
@@ -60,14 +60,14 @@ where
 {
     gipa_proof: GIPAProof<IP, LMC, RMC, IPC, D>,
     final_ck: (LMC::Key, RMC::Key),
-    final_ck_proof: (P::G2Projective, P::G1Projective),
+    final_ck_proof: (P::G2, P::G1),
     _pair: PhantomData<P>,
 }
 
 impl<IP, LMC, RMC, IPC, P, D> Clone for TIPAProof<IP, LMC, RMC, IPC, P, D>
 where
     D: Digest,
-    P: PairingEngine,
+    P: Pairing,
     IP: InnerProduct<
         LeftMessage = LMC::Message,
         RightMessage = RMC::Message,
@@ -94,24 +94,24 @@ where
 }
 
 #[derive(Clone)]
-pub struct SRS<P: PairingEngine> {
-    pub g_alpha_powers: Vec<P::G1Projective>,
-    pub h_beta_powers: Vec<P::G2Projective>,
-    pub g_beta: P::G1Projective,
-    pub h_alpha: P::G2Projective,
+pub struct SRS<P: Pairing> {
+    pub g_alpha_powers: Vec<P::G1>,
+    pub h_beta_powers: Vec<P::G2>,
+    pub g_beta: P::G1,
+    pub h_alpha: P::G2,
 }
 
 #[derive(Clone)]
-pub struct VerifierSRS<P: PairingEngine> {
-    pub g: P::G1Projective,
-    pub h: P::G2Projective,
-    pub g_beta: P::G1Projective,
-    pub h_alpha: P::G2Projective,
+pub struct VerifierSRS<P: Pairing> {
+    pub g: P::G1,
+    pub h: P::G2,
+    pub g_beta: P::G1,
+    pub h_alpha: P::G2,
 }
 
 //TODO: Change SRS to return reference iterator - requires changes to TIPA and GIPA signatures
-impl<P: PairingEngine> SRS<P> {
-    pub fn get_commitment_keys(&self) -> (Vec<P::G2Projective>, Vec<P::G1Projective>) {
+impl<P: Pairing> SRS<P> {
+    pub fn get_commitment_keys(&self) -> (Vec<P::G2>, Vec<P::G1>) {
         let ck_1 = self.h_beta_powers.iter().step_by(2).cloned().collect();
         let ck_2 = self.g_alpha_powers.iter().step_by(2).cloned().collect();
         (ck_1, ck_2)
@@ -130,35 +130,34 @@ impl<P: PairingEngine> SRS<P> {
 impl<IP, LMC, RMC, IPC, P, D> TIPA<IP, LMC, RMC, IPC, P, D>
 where
     D: Digest,
-    P: PairingEngine,
+    P: Pairing,
     IP: InnerProduct<
         LeftMessage = LMC::Message,
         RightMessage = RMC::Message,
         Output = IPC::Message,
     >,
-    LMC: DoublyHomomorphicCommitment<Scalar = P::Fr, Key = P::G2Projective> + TIPACompatibleSetup,
-    RMC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar, Key = P::G1Projective>
-        + TIPACompatibleSetup,
+    LMC: DoublyHomomorphicCommitment<Scalar = P::ScalarField, Key = P::G2> + TIPACompatibleSetup,
+    RMC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar, Key = P::G1> + TIPACompatibleSetup,
     IPC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar>,
-    LMC::Message: MulAssign<P::Fr>,
-    RMC::Message: MulAssign<P::Fr>,
-    IPC::Message: MulAssign<P::Fr>,
-    IPC::Key: MulAssign<P::Fr>,
-    LMC::Output: MulAssign<P::Fr>,
-    RMC::Output: MulAssign<P::Fr>,
-    IPC::Output: MulAssign<P::Fr>,
+    LMC::Message: MulAssign<P::ScalarField>,
+    RMC::Message: MulAssign<P::ScalarField>,
+    IPC::Message: MulAssign<P::ScalarField>,
+    IPC::Key: MulAssign<P::ScalarField>,
+    LMC::Output: MulAssign<P::ScalarField>,
+    RMC::Output: MulAssign<P::ScalarField>,
+    IPC::Output: MulAssign<P::ScalarField>,
 {
     pub fn setup<R: Rng>(rng: &mut R, size: usize) -> Result<(SRS<P>, IPC::Key), Error> {
-        let alpha = <P::Fr>::rand(rng);
-        let beta = <P::Fr>::rand(rng);
-        let g = <P::G1Projective>::prime_subgroup_generator();
-        let h = <P::G2Projective>::prime_subgroup_generator();
+        let alpha = <P::ScalarField>::rand(rng);
+        let beta = <P::ScalarField>::rand(rng);
+        let g = <P::G1>::generator();
+        let h = <P::G2>::generator();
         Ok((
             SRS {
                 g_alpha_powers: structured_generators_scalar_power(2 * size - 1, &g, &alpha),
                 h_beta_powers: structured_generators_scalar_power(2 * size - 1, &h, &beta),
-                g_beta: g.mul(beta.into_repr()),
-                h_alpha: h.mul(alpha.into_repr()),
+                g_beta: g * beta,
+                h_alpha: h * alpha,
             },
             IPC::setup(rng, 1)?.pop().unwrap(),
         ))
@@ -169,7 +168,7 @@ where
         values: (&[IP::LeftMessage], &[IP::RightMessage]),
         ck: (&[LMC::Key], &[RMC::Key], &IPC::Key),
     ) -> Result<TIPAProof<IP, LMC, RMC, IPC, P, D>, Error> {
-        Self::prove_with_srs_shift(srs, values, ck, &<P::Fr>::one())
+        Self::prove_with_srs_shift(srs, values, ck, &<P::ScalarField>::one())
     }
 
     // Shifts KZG proof for left message by scalar r (used for efficient composition with aggregation protocols)
@@ -178,7 +177,7 @@ where
         srs: &SRS<P>,
         values: (&[IP::LeftMessage], &[IP::RightMessage]),
         ck: (&[LMC::Key], &[RMC::Key], &IPC::Key),
-        r_shift: &P::Fr,
+        r_shift: &P::ScalarField,
     ) -> Result<TIPAProof<IP, LMC, RMC, IPC, P, D>, Error> {
         // Run GIPA
         let (proof, aux) = <GIPA<IP, LMC, RMC, IPC, D>>::prove_with_aux(
@@ -197,12 +196,12 @@ where
         let c = loop {
             let mut hash_input = Vec::new();
             hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
-            //TODO: Should use CanonicalSerialize instead of ToBytes
-            hash_input.extend_from_slice(&to_bytes![
-                transcript.first().unwrap(),
-                ck_a_final,
-                ck_b_final
-            ]?);
+            transcript
+                .first()
+                .unwrap()
+                .serialize_uncompressed(&mut hash_input)?;
+            ck_a_final.serialize_uncompressed(&mut hash_input)?;
+            ck_b_final.serialize_uncompressed(&mut hash_input)?;
             if let Some(c) = LMC::Scalar::from_random_bytes(&D::digest(&hash_input)) {
                 break c;
             };
@@ -219,7 +218,7 @@ where
         let ck_b_kzg_opening = prove_commitment_key_kzg_opening(
             &srs.g_alpha_powers,
             &transcript,
-            &<P::Fr>::one(),
+            &<P::ScalarField>::one(),
             &c,
         )?;
 
@@ -237,7 +236,7 @@ where
         com: (&LMC::Output, &RMC::Output, &IPC::Output),
         proof: &TIPAProof<IP, LMC, RMC, IPC, P, D>,
     ) -> Result<bool, Error> {
-        Self::verify_with_srs_shift(v_srs, ck_t, com, proof, &<P::Fr>::one())
+        Self::verify_with_srs_shift(v_srs, ck_t, com, proof, &<P::ScalarField>::one())
     }
 
     pub fn verify_with_srs_shift(
@@ -245,7 +244,7 @@ where
         ck_t: &IPC::Key,
         com: (&LMC::Output, &RMC::Output, &IPC::Output),
         proof: &TIPAProof<IP, LMC, RMC, IPC, P, D>,
-        r_shift: &P::Fr,
+        r_shift: &P::ScalarField,
     ) -> Result<bool, Error> {
         let (base_com, transcript) =
             GIPA::verify_recursive_challenge_transcript(com, &proof.gipa_proof)?;
@@ -260,12 +259,12 @@ where
         let c = loop {
             let mut hash_input = Vec::new();
             hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
-            //TODO: Should use CanonicalSerialize instead of ToBytes
-            hash_input.extend_from_slice(&to_bytes![
-                transcript.first().unwrap(),
-                ck_a_final,
-                ck_b_final
-            ]?);
+            transcript
+                .first()
+                .unwrap()
+                .serialize_uncompressed(&mut hash_input)?;
+            ck_a_final.serialize_uncompressed(&mut hash_input)?;
+            ck_b_final.serialize_uncompressed(&mut hash_input)?;
             if let Some(c) = LMC::Scalar::from_random_bytes(&D::digest(&hash_input)) {
                 break c;
             };
@@ -285,7 +284,7 @@ where
             &ck_b_final,
             &ck_b_proof,
             &transcript,
-            &<P::Fr>::one(),
+            &<P::ScalarField>::one(),
             &c,
         )?;
 
@@ -302,7 +301,7 @@ where
     }
 }
 
-pub fn prove_commitment_key_kzg_opening<G: ProjectiveCurve>(
+pub fn prove_commitment_key_kzg_opening<G: CurveGroup>(
     srs_powers: &Vec<G>,
     transcript: &Vec<G::ScalarField>,
     r_shift: &G::ScalarField,
@@ -338,45 +337,39 @@ pub fn prove_commitment_key_kzg_opening<G: ProjectiveCurve>(
 }
 
 //TODO: Figure out how to avoid needing two separate methods for verification of opposite groups
-pub fn verify_commitment_key_g2_kzg_opening<P: PairingEngine>(
+pub fn verify_commitment_key_g2_kzg_opening<P: Pairing>(
     v_srs: &VerifierSRS<P>,
-    ck_final: &P::G2Projective,
-    ck_opening: &P::G2Projective,
-    transcript: &Vec<P::Fr>,
-    r_shift: &P::Fr,
-    kzg_challenge: &P::Fr,
+    ck_final: &P::G2,
+    ck_opening: &P::G2,
+    transcript: &Vec<P::ScalarField>,
+    r_shift: &P::ScalarField,
+    kzg_challenge: &P::ScalarField,
 ) -> Result<bool, Error> {
     let ck_polynomial_c_eval =
         polynomial_evaluation_product_form_from_transcript(transcript, kzg_challenge, r_shift);
-    Ok(P::pairing(
-        v_srs.g,
-        *ck_final - &v_srs.h.mul(ck_polynomial_c_eval.into_repr()),
-    ) == P::pairing(
-        v_srs.g_beta - &v_srs.g.mul(kzg_challenge.into_repr()),
-        *ck_opening,
-    ))
+    Ok(
+        P::pairing(v_srs.g, *ck_final - v_srs.h * ck_polynomial_c_eval)
+            == P::pairing(v_srs.g_beta - v_srs.g * kzg_challenge, *ck_opening),
+    )
 }
 
-pub fn verify_commitment_key_g1_kzg_opening<P: PairingEngine>(
+pub fn verify_commitment_key_g1_kzg_opening<P: Pairing>(
     v_srs: &VerifierSRS<P>,
-    ck_final: &P::G1Projective,
-    ck_opening: &P::G1Projective,
-    transcript: &Vec<P::Fr>,
-    r_shift: &P::Fr,
-    kzg_challenge: &P::Fr,
+    ck_final: &P::G1,
+    ck_opening: &P::G1,
+    transcript: &Vec<P::ScalarField>,
+    r_shift: &P::ScalarField,
+    kzg_challenge: &P::ScalarField,
 ) -> Result<bool, Error> {
     let ck_polynomial_c_eval =
         polynomial_evaluation_product_form_from_transcript(transcript, kzg_challenge, r_shift);
-    Ok(P::pairing(
-        *ck_final - &v_srs.g.mul(ck_polynomial_c_eval.into_repr()),
-        v_srs.h,
-    ) == P::pairing(
-        *ck_opening,
-        v_srs.h_alpha - &v_srs.h.mul(kzg_challenge.into_repr()),
-    ))
+    Ok(
+        P::pairing(*ck_final - v_srs.g * ck_polynomial_c_eval, v_srs.h)
+            == P::pairing(*ck_opening, v_srs.h_alpha - v_srs.h * kzg_challenge),
+    )
 }
 
-pub fn structured_generators_scalar_power<G: ProjectiveCurve>(
+pub fn structured_generators_scalar_power<G: CurveGroup>(
     num: usize,
     g: &G,
     s: &G::ScalarField,
@@ -389,12 +382,11 @@ pub fn structured_generators_scalar_power<G: ProjectiveCurve>(
         pow_s *= s;
     }
 
-    let window_size = FixedBaseMSM::get_mul_window_size(num);
+    let window_size = FixedBase::get_mul_window_size(num);
 
-    let scalar_bits = G::ScalarField::size_in_bits();
-    let g_table = FixedBaseMSM::get_window_table(scalar_bits, window_size, g.clone());
-    let powers_of_g =
-        FixedBaseMSM::multi_scalar_mul::<G>(scalar_bits, window_size, &g_table, &powers_of_scalar);
+    let scalar_bits = G::ScalarField::MODULUS_BIT_SIZE as usize;
+    let g_table = FixedBase::get_window_table(scalar_bits, window_size, g.clone());
+    let powers_of_g = FixedBase::msm::<G>(scalar_bits, window_size, &g_table, &powers_of_scalar);
     powers_of_g
 }
 
@@ -433,6 +425,7 @@ fn polynomial_coefficients_from_transcript<F: Field>(transcript: &Vec<F>, r_shif
 mod tests {
     use super::*;
     use ark_bls12_381::Bls12_381;
+    use ark_ec::pairing::PairingOutput;
     use ark_std::rand::{rngs::StdRng, SeedableRng};
     use blake2::Blake2b;
 
@@ -444,14 +437,13 @@ mod tests {
         random_generators,
     };
     use ark_inner_products::{
-        ExtensionFieldElement, InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct,
-        ScalarInnerProduct,
+        InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct, ScalarInnerProduct,
     };
 
     type GC1 = AFGHOCommitmentG1<Bls12_381>;
     type GC2 = AFGHOCommitmentG2<Bls12_381>;
-    type SC1 = PedersenCommitment<<Bls12_381 as PairingEngine>::G1Projective>;
-    type SC2 = PedersenCommitment<<Bls12_381 as PairingEngine>::G2Projective>;
+    type SC1 = PedersenCommitment<<Bls12_381 as Pairing>::G1>;
+    type SC2 = PedersenCommitment<<Bls12_381 as Pairing>::G2>;
 
     const TEST_SIZE: usize = 8;
 
@@ -459,7 +451,7 @@ mod tests {
     fn pairing_inner_product_test() {
         type IP = PairingInnerProduct<Bls12_381>;
         type IPC =
-            IdentityCommitment<ExtensionFieldElement<Bls12_381>, <Bls12_381 as PairingEngine>::Fr>;
+            IdentityCommitment<PairingOutput<Bls12_381>, <Bls12_381 as Pairing>::ScalarField>;
         type PairingTIPA = TIPA<IP, GC1, GC2, IPC, Bls12_381, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
@@ -480,11 +472,9 @@ mod tests {
 
     #[test]
     fn multiexponentiation_inner_product_test() {
-        type IP = MultiexponentiationInnerProduct<<Bls12_381 as PairingEngine>::G1Projective>;
-        type IPC = IdentityCommitment<
-            <Bls12_381 as PairingEngine>::G1Projective,
-            <Bls12_381 as PairingEngine>::Fr,
-        >;
+        type IP = MultiexponentiationInnerProduct<<Bls12_381 as Pairing>::G1>;
+        type IPC =
+            IdentityCommitment<<Bls12_381 as Pairing>::G1, <Bls12_381 as Pairing>::ScalarField>;
         type MultiExpTIPA = TIPA<IP, GC1, SC1, IPC, Bls12_381, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
@@ -494,7 +484,7 @@ mod tests {
         let m_a = random_generators(&mut rng, TEST_SIZE);
         let mut m_b = Vec::new();
         for _ in 0..TEST_SIZE {
-            m_b.push(<Bls12_381 as PairingEngine>::Fr::rand(&mut rng));
+            m_b.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
         }
         let com_a = GC1::commit(&ck_a, &m_a).unwrap();
         let com_b = SC1::commit(&ck_b, &m_b).unwrap();
@@ -508,9 +498,11 @@ mod tests {
 
     #[test]
     fn scalar_inner_product_test() {
-        type IP = ScalarInnerProduct<<Bls12_381 as PairingEngine>::Fr>;
-        type IPC =
-            IdentityCommitment<<Bls12_381 as PairingEngine>::Fr, <Bls12_381 as PairingEngine>::Fr>;
+        type IP = ScalarInnerProduct<<Bls12_381 as Pairing>::ScalarField>;
+        type IPC = IdentityCommitment<
+            <Bls12_381 as Pairing>::ScalarField,
+            <Bls12_381 as Pairing>::ScalarField,
+        >;
         type ScalarTIPA = TIPA<IP, SC2, SC1, IPC, Bls12_381, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
@@ -520,8 +512,8 @@ mod tests {
         let mut m_a = Vec::new();
         let mut m_b = Vec::new();
         for _ in 0..TEST_SIZE {
-            m_a.push(<Bls12_381 as PairingEngine>::Fr::rand(&mut rng));
-            m_b.push(<Bls12_381 as PairingEngine>::Fr::rand(&mut rng));
+            m_a.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
+            m_b.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
         }
         let com_a = SC2::commit(&ck_a, &m_a).unwrap();
         let com_b = SC1::commit(&ck_b, &m_b).unwrap();
@@ -537,7 +529,7 @@ mod tests {
     fn pairing_inner_product_with_srs_shift_test() {
         type IP = PairingInnerProduct<Bls12_381>;
         type IPC =
-            IdentityCommitment<ExtensionFieldElement<Bls12_381>, <Bls12_381 as PairingEngine>::Fr>;
+            IdentityCommitment<PairingOutput<Bls12_381>, <Bls12_381 as Pairing>::ScalarField>;
         type PairingTIPA = TIPA<IP, GC1, GC2, IPC, Bls12_381, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
@@ -550,18 +542,18 @@ mod tests {
         let com_a = GC1::commit(&ck_a, &m_a).unwrap();
         let com_b = GC2::commit(&ck_b, &m_b).unwrap();
 
-        let r_scalar = <<Bls12_381 as PairingEngine>::Fr>::rand(&mut rng);
+        let r_scalar = <<Bls12_381 as Pairing>::ScalarField>::rand(&mut rng);
         let r_vec = structured_scalar_power(TEST_SIZE, &r_scalar);
         let m_a_r = m_a
             .iter()
             .zip(&r_vec)
-            .map(|(a, r)| a.mul(r.into_repr()))
-            .collect::<Vec<<Bls12_381 as PairingEngine>::G1Projective>>();
+            .map(|(&a, r)| a * r)
+            .collect::<Vec<<Bls12_381 as Pairing>::G1>>();
         let ck_a_r = ck_a
             .iter()
             .zip(&r_vec)
-            .map(|(ck, r)| ck.mul(&r.inverse().unwrap().into_repr()))
-            .collect::<Vec<<Bls12_381 as PairingEngine>::G2Projective>>();
+            .map(|(&ck, r)| ck * r.inverse().unwrap())
+            .collect::<Vec<<Bls12_381 as Pairing>::G2>>();
 
         let t = vec![IP::inner_product(&m_a_r, &m_b).unwrap()];
         let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();

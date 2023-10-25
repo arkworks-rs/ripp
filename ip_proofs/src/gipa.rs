@@ -1,5 +1,5 @@
-use ark_ff::{to_bytes, Field, One};
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError, Write};
+use ark_ff::{Field, One};
+use ark_serialize::CanonicalSerialize;
 use ark_std::rand::Rng;
 use ark_std::{end_timer, start_timer};
 use digest::Digest;
@@ -21,7 +21,7 @@ pub struct GIPA<IP, LMC, RMC, IPC, D> {
     _digest: PhantomData<D>,
 }
 
-#[derive(CanonicalSerialize, CanonicalDeserialize)]
+#[derive(CanonicalSerialize)]
 pub struct GIPAProof<IP, LMC, RMC, IPC, D>
 where
     D: Digest,
@@ -189,7 +189,7 @@ where
         let (mut m_a, mut m_b) = values;
         let (mut ck_a, mut ck_b, ck_t) = ck;
         let mut r_commitment_steps = Vec::new();
-        let mut r_transcript = Vec::new();
+        let mut r_transcript: Vec<LMC::Scalar> = Vec::new();
         assert!(m_a.len().is_power_of_two());
         let (m_base, ck_base) = 'recurse: loop {
             let recurse = start_timer!(|| format!("Recurse round size {}", m_a.len()));
@@ -236,10 +236,13 @@ where
                 let (c, c_inv) = 'challenge: loop {
                     let mut hash_input = Vec::new();
                     hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
-                    //TODO: Should use CanonicalSerialize instead of ToBytes
-                    hash_input.extend_from_slice(&to_bytes![
-                        transcript, com_1.0, com_1.1, com_1.2, com_2.0, com_2.1, com_2.2
-                    ]?);
+                    transcript.serialize_uncompressed(&mut hash_input)?;
+                    com_1.0.serialize_uncompressed(&mut hash_input)?;
+                    com_1.1.serialize_uncompressed(&mut hash_input)?;
+                    com_1.2.serialize_uncompressed(&mut hash_input)?;
+                    com_2.0.serialize_uncompressed(&mut hash_input)?;
+                    com_2.1.serialize_uncompressed(&mut hash_input)?;
+                    com_2.2.serialize_uncompressed(&mut hash_input)?;
                     let c: LMC::Scalar = u128::from_be_bytes(
                         D::digest(&hash_input).as_slice()[0..16].try_into().unwrap(),
                     )
@@ -319,7 +322,7 @@ where
         proof: &GIPAProof<IP, LMC, RMC, IPC, D>,
     ) -> Result<((LMC::Output, RMC::Output, IPC::Output), Vec<LMC::Scalar>), Error> {
         let (mut com_a, mut com_b, mut com_t) = com;
-        let mut r_transcript = Vec::new();
+        let mut r_transcript: Vec<LMC::Scalar> = Vec::new();
         for (com_1, com_2) in proof.r_commitment_steps.iter().rev() {
             // Fiat-Shamir challenge
             let mut counter_nonce: usize = 0;
@@ -328,9 +331,13 @@ where
             let (c, c_inv) = 'challenge: loop {
                 let mut hash_input = Vec::new();
                 hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
-                hash_input.extend_from_slice(&to_bytes![
-                    transcript, com_1.0, com_1.1, com_1.2, com_2.0, com_2.1, com_2.2
-                ]?);
+                transcript.serialize_uncompressed(&mut hash_input)?;
+                com_1.0.serialize_uncompressed(&mut hash_input)?;
+                com_1.1.serialize_uncompressed(&mut hash_input)?;
+                com_1.2.serialize_uncompressed(&mut hash_input)?;
+                com_2.0.serialize_uncompressed(&mut hash_input)?;
+                com_2.1.serialize_uncompressed(&mut hash_input)?;
+                com_2.2.serialize_uncompressed(&mut hash_input)?;
                 let c: LMC::Scalar = u128::from_be_bytes(
                     D::digest(&hash_input).as_slice()[0..16].try_into().unwrap(),
                 )
@@ -437,7 +444,7 @@ where
 mod tests {
     use super::*;
     use ark_bls12_381::Bls12_381;
-    use ark_ec::PairingEngine;
+    use ark_ec::pairing::{Pairing, PairingOutput};
     use ark_ff::UniformRand;
     use ark_std::rand::{rngs::StdRng, SeedableRng};
     use blake2::Blake2b;
@@ -449,21 +456,20 @@ mod tests {
         random_generators,
     };
     use ark_inner_products::{
-        ExtensionFieldElement, InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct,
-        ScalarInnerProduct,
+        InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct, ScalarInnerProduct,
     };
 
     type GC1 = AFGHOCommitmentG1<Bls12_381>;
     type GC2 = AFGHOCommitmentG2<Bls12_381>;
-    type SC1 = PedersenCommitment<<Bls12_381 as PairingEngine>::G1Projective>;
-    type SC2 = PedersenCommitment<<Bls12_381 as PairingEngine>::G2Projective>;
+    type SC1 = PedersenCommitment<<Bls12_381 as Pairing>::G1>;
+    type SC2 = PedersenCommitment<<Bls12_381 as Pairing>::G2>;
     const TEST_SIZE: usize = 8;
 
     #[test]
     fn pairing_inner_product_test() {
         type IP = PairingInnerProduct<Bls12_381>;
         type IPC =
-            IdentityCommitment<ExtensionFieldElement<Bls12_381>, <Bls12_381 as PairingEngine>::Fr>;
+            IdentityCommitment<PairingOutput<Bls12_381>, <Bls12_381 as Pairing>::ScalarField>;
         type PairingGIPA = GIPA<IP, GC1, GC2, IPC, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
@@ -489,11 +495,9 @@ mod tests {
 
     #[test]
     fn multiexponentiation_inner_product_test() {
-        type IP = MultiexponentiationInnerProduct<<Bls12_381 as PairingEngine>::G1Projective>;
-        type IPC = IdentityCommitment<
-            <Bls12_381 as PairingEngine>::G1Projective,
-            <Bls12_381 as PairingEngine>::Fr,
-        >;
+        type IP = MultiexponentiationInnerProduct<<Bls12_381 as Pairing>::G1>;
+        type IPC =
+            IdentityCommitment<<Bls12_381 as Pairing>::G1, <Bls12_381 as Pairing>::ScalarField>;
         type MultiExpGIPA = GIPA<IP, GC1, SC1, IPC, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
@@ -501,7 +505,7 @@ mod tests {
         let m_a = random_generators(&mut rng, TEST_SIZE);
         let mut m_b = Vec::new();
         for _ in 0..TEST_SIZE {
-            m_b.push(<Bls12_381 as PairingEngine>::Fr::rand(&mut rng));
+            m_b.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
         }
         let com_a = GC1::commit(&ck_a, &m_a).unwrap();
         let com_b = SC1::commit(&ck_b, &m_b).unwrap();
@@ -522,9 +526,11 @@ mod tests {
 
     #[test]
     fn scalar_inner_product_test() {
-        type IP = ScalarInnerProduct<<Bls12_381 as PairingEngine>::Fr>;
-        type IPC =
-            IdentityCommitment<<Bls12_381 as PairingEngine>::Fr, <Bls12_381 as PairingEngine>::Fr>;
+        type IP = ScalarInnerProduct<<Bls12_381 as Pairing>::ScalarField>;
+        type IPC = IdentityCommitment<
+            <Bls12_381 as Pairing>::ScalarField,
+            <Bls12_381 as Pairing>::ScalarField,
+        >;
         type ScalarGIPA = GIPA<IP, SC2, SC2, IPC, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
@@ -532,8 +538,8 @@ mod tests {
         let mut m_a = Vec::new();
         let mut m_b = Vec::new();
         for _ in 0..TEST_SIZE {
-            m_a.push(<Bls12_381 as PairingEngine>::Fr::rand(&mut rng));
-            m_b.push(<Bls12_381 as PairingEngine>::Fr::rand(&mut rng));
+            m_a.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
+            m_b.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
         }
         let com_a = SC2::commit(&ck_a, &m_a).unwrap();
         let com_b = SC2::commit(&ck_b, &m_b).unwrap();

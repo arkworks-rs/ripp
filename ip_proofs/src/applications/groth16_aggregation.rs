@@ -1,8 +1,7 @@
-use ark_ec::{group::Group, AffineCurve, PairingEngine};
-use ark_ff::{to_bytes, Field, One};
+use ark_ec::pairing::{Pairing, PairingOutput};
+use ark_ff::{Field, One};
 use ark_groth16::{Proof, VerifyingKey};
-
-use std::ops::AddAssign;
+use ark_serialize::CanonicalSerialize;
 
 use ark_std::rand::Rng;
 use digest::Digest;
@@ -19,15 +18,14 @@ use ark_dh_commitments::{
     identity::{HomomorphicPlaceholderValue, IdentityCommitment, IdentityOutput},
 };
 use ark_inner_products::{
-    ExtensionFieldElement, InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct,
-    ScalarInnerProduct,
+    InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct, ScalarInnerProduct,
 };
 
 type PairingInnerProductAB<P, D> = TIPA<
     PairingInnerProduct<P>,
     AFGHOCommitmentG1<P>,
     AFGHOCommitmentG2<P>,
-    IdentityCommitment<ExtensionFieldElement<P>, <P as PairingEngine>::Fr>,
+    IdentityCommitment<PairingOutput<P>, <P as Pairing>::ScalarField>,
     P,
     D,
 >;
@@ -36,40 +34,40 @@ type PairingInnerProductABProof<P, D> = TIPAProof<
     PairingInnerProduct<P>,
     AFGHOCommitmentG1<P>,
     AFGHOCommitmentG2<P>,
-    IdentityCommitment<ExtensionFieldElement<P>, <P as PairingEngine>::Fr>,
+    IdentityCommitment<PairingOutput<P>, <P as Pairing>::ScalarField>,
     P,
     D,
 >;
 
 type MultiExpInnerProductC<P, D> = TIPAWithSSM<
-    MultiexponentiationInnerProduct<<P as PairingEngine>::G1Projective>,
+    MultiexponentiationInnerProduct<<P as Pairing>::G1>,
     AFGHOCommitmentG1<P>,
-    IdentityCommitment<<P as PairingEngine>::G1Projective, <P as PairingEngine>::Fr>,
+    IdentityCommitment<<P as Pairing>::G1, <P as Pairing>::ScalarField>,
     P,
     D,
 >;
 
 type MultiExpInnerProductCProof<P, D> = TIPAWithSSMProof<
-    MultiexponentiationInnerProduct<<P as PairingEngine>::G1Projective>,
+    MultiexponentiationInnerProduct<<P as Pairing>::G1>,
     AFGHOCommitmentG1<P>,
-    IdentityCommitment<<P as PairingEngine>::G1Projective, <P as PairingEngine>::Fr>,
+    IdentityCommitment<<P as Pairing>::G1, <P as Pairing>::ScalarField>,
     P,
     D,
 >;
 
-pub struct AggregateProof<P: PairingEngine, D: Digest> {
-    com_a: ExtensionFieldElement<P>,
-    com_b: ExtensionFieldElement<P>,
-    com_c: ExtensionFieldElement<P>,
-    ip_ab: ExtensionFieldElement<P>,
-    agg_c: P::G1Projective,
+pub struct AggregateProof<P: Pairing, D: Digest> {
+    com_a: PairingOutput<P>,
+    com_b: PairingOutput<P>,
+    com_c: PairingOutput<P>,
+    ip_ab: PairingOutput<P>,
+    agg_c: P::G1,
     tipa_proof_ab: PairingInnerProductABProof<P, D>,
     tipa_proof_c: MultiExpInnerProductCProof<P, D>,
 }
 
 pub fn setup_inner_product<P, D, R: Rng>(rng: &mut R, size: usize) -> Result<SRS<P>, Error>
 where
-    P: PairingEngine,
+    P: Pairing,
     D: Digest,
 {
     let (srs, _) = PairingInnerProductAB::<P, D>::setup(rng, size)?;
@@ -81,21 +79,21 @@ pub fn aggregate_proofs<P, D>(
     proofs: &[Proof<P>],
 ) -> Result<AggregateProof<P, D>, Error>
 where
-    P: PairingEngine,
+    P: Pairing,
     D: Digest,
 {
     let a = proofs
         .iter()
-        .map(|proof| proof.a.into_projective())
-        .collect::<Vec<P::G1Projective>>();
+        .map(|proof| proof.a.into())
+        .collect::<Vec<P::G1>>();
     let b = proofs
         .iter()
-        .map(|proof| proof.b.into_projective())
-        .collect::<Vec<P::G2Projective>>();
+        .map(|proof| proof.b.into())
+        .collect::<Vec<P::G2>>();
     let c = proofs
         .iter()
-        .map(|proof| proof.c.into_projective())
-        .collect::<Vec<P::G1Projective>>();
+        .map(|proof| proof.c.into())
+        .collect::<Vec<P::G1>>();
 
     let (ck_1, ck_2) = ip_srs.get_commitment_keys();
 
@@ -108,9 +106,10 @@ where
     let r = loop {
         let mut hash_input = Vec::new();
         hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
-        //TODO: Should use CanonicalSerialize instead of ToBytes
-        hash_input.extend_from_slice(&to_bytes![com_a, com_b, com_c]?);
-        if let Some(r) = <P::Fr>::from_random_bytes(&D::digest(&hash_input)) {
+        com_a.serialize_uncompressed(&mut hash_input)?;
+        com_b.serialize_uncompressed(&mut hash_input)?;
+        com_c.serialize_uncompressed(&mut hash_input)?;
+        if let Some(r) = <P::ScalarField>::from_random_bytes(&D::digest(&hash_input)) {
             break r;
         };
         counter_nonce += 1;
@@ -120,16 +119,16 @@ where
     let a_r = a
         .iter()
         .zip(&r_vec)
-        .map(|(a, r)| a.mul(r))
-        .collect::<Vec<P::G1Projective>>();
+        .map(|(&a, r)| a * r)
+        .collect::<Vec<P::G1>>();
     let ip_ab = PairingInnerProduct::<P>::inner_product(&a_r, &b)?;
-    let agg_c = MultiexponentiationInnerProduct::<P::G1Projective>::inner_product(&c, &r_vec)?;
+    let agg_c = MultiexponentiationInnerProduct::<P::G1>::inner_product(&c, &r_vec)?;
 
     let ck_1_r = ck_1
         .iter()
         .zip(&r_vec)
-        .map(|(ck, r)| ck.mul(&r.inverse().unwrap()))
-        .collect::<Vec<P::G2Projective>>();
+        .map(|(&ck, r)| ck * r.inverse().unwrap())
+        .collect::<Vec<P::G2>>();
 
     assert_eq!(
         com_a,
@@ -163,11 +162,11 @@ where
 pub fn verify_aggregate_proof<P, D>(
     ip_verifier_srs: &VerifierSRS<P>,
     vk: &VerifyingKey<P>,
-    public_inputs: &Vec<Vec<P::Fr>>, //TODO: Should use ToConstraintField instead
+    public_inputs: &Vec<Vec<P::ScalarField>>, //TODO: Should use ToConstraintField instead
     proof: &AggregateProof<P, D>,
 ) -> Result<bool, Error>
 where
-    P: PairingEngine,
+    P: Pairing,
     D: Digest,
 {
     // Random linear combination of proofs
@@ -175,9 +174,10 @@ where
     let r = loop {
         let mut hash_input = Vec::new();
         hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
-        //TODO: Should use CanonicalSerialize instead of ToBytes
-        hash_input.extend_from_slice(&to_bytes![proof.com_a, proof.com_b, proof.com_c]?);
-        if let Some(r) = <P::Fr>::from_random_bytes(&D::digest(&hash_input)) {
+        proof.com_a.serialize_uncompressed(&mut hash_input)?;
+        proof.com_b.serialize_uncompressed(&mut hash_input)?;
+        proof.com_c.serialize_uncompressed(&mut hash_input)?;
+        if let Some(r) = <P::ScalarField>::from_random_bytes(&D::digest(&hash_input)) {
             break r;
         };
         counter_nonce += 1;
@@ -205,28 +205,27 @@ where
 
     // Check aggregate pairing product equation
 
-    let r_sum =
-        (r.pow(&[public_inputs.len() as u64]) - &<P::Fr>::one()) / &(r.clone() - &<P::Fr>::one());
-    let p1 = P::pairing(vk.alpha_g1.into_projective().mul(&r_sum), vk.beta_g2);
+    let r_sum = (r.pow(&[public_inputs.len() as u64]) - &<P::ScalarField>::one())
+        / &(r.clone() - &<P::ScalarField>::one());
+    let p1 = P::pairing(P::G1::from(vk.alpha_g1) * r_sum, vk.beta_g2);
 
     assert_eq!(vk.gamma_abc_g1.len(), public_inputs[0].len() + 1);
     let r_vec = structured_scalar_power(public_inputs.len(), &r);
-    let mut g_ic = vk.gamma_abc_g1[0].into_projective().mul(&r_sum);
+    let mut g_ic = P::G1::from(vk.gamma_abc_g1[0]) * r_sum;
     for (i, b) in vk.gamma_abc_g1.iter().skip(1).enumerate() {
-        g_ic.add_assign(
-            &b.into_projective().mul(&ScalarInnerProduct::inner_product(
+        g_ic += P::G1::from(*b)
+            * &ScalarInnerProduct::inner_product(
                 &public_inputs
                     .iter()
                     .map(|inputs| inputs[i].clone())
-                    .collect::<Vec<P::Fr>>(),
+                    .collect::<Vec<P::ScalarField>>(),
                 &r_vec,
-            )?),
-        );
+            )?;
     }
     let p2 = P::pairing(g_ic, vk.gamma_g2);
     let p3 = P::pairing(proof.agg_c, vk.delta_g2);
 
-    let ppe_valid = proof.ip_ab.0 == (p1 * &p2) * &p3;
+    let ppe_valid = proof.ip_ab == p1 + p2 + p3;
 
     Ok(tipa_proof_ab_valid && tipa_proof_c_valid && ppe_valid)
 }

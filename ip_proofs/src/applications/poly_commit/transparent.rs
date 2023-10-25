@@ -1,7 +1,7 @@
-use ark_ec::PairingEngine;
+use ark_ec::pairing::{Pairing, PairingOutput};
 use ark_ff::{Field, Zero};
 use ark_poly::polynomial::{
-    univariate::DensePolynomial as UnivariatePolynomial, Polynomial, UVPolynomial,
+    univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial,
 };
 
 use ark_std::{end_timer, start_timer};
@@ -23,37 +23,35 @@ use ark_dh_commitments::{
     pedersen::PedersenCommitment,
     DoublyHomomorphicCommitment,
 };
-use ark_inner_products::{
-    ExtensionFieldElement, MultiexponentiationInnerProduct, ScalarInnerProduct,
-};
+use ark_inner_products::{MultiexponentiationInnerProduct, ScalarInnerProduct};
 
 type PolynomialEvaluationSecondTierIPA<P, D> = GIPAWithSSM<
-    MultiexponentiationInnerProduct<<P as PairingEngine>::G1Projective>,
+    MultiexponentiationInnerProduct<<P as Pairing>::G1>,
     AFGHOCommitmentG1<P>,
-    IdentityCommitment<<P as PairingEngine>::G1Projective, <P as PairingEngine>::Fr>,
+    IdentityCommitment<<P as Pairing>::G1, <P as Pairing>::ScalarField>,
     D,
 >;
 
 type PolynomialEvaluationSecondTierIPAProof<P, D> = GIPAProof<
-    MultiexponentiationInnerProduct<<P as PairingEngine>::G1Projective>,
+    MultiexponentiationInnerProduct<<P as Pairing>::G1>,
     AFGHOCommitmentG1<P>,
-    SSMPlaceholderCommitment<<P as PairingEngine>::Fr>,
-    IdentityCommitment<<P as PairingEngine>::G1Projective, <P as PairingEngine>::Fr>,
+    SSMPlaceholderCommitment<<P as Pairing>::ScalarField>,
+    IdentityCommitment<<P as Pairing>::G1, <P as Pairing>::ScalarField>,
     D,
 >;
 
 type PolynomialEvaluationFirstTierIPA<P, D> = GIPAWithSSM<
-    ScalarInnerProduct<<P as PairingEngine>::Fr>,
-    PedersenCommitment<<P as PairingEngine>::G1Projective>,
-    IdentityCommitment<<P as PairingEngine>::Fr, <P as PairingEngine>::Fr>,
+    ScalarInnerProduct<<P as Pairing>::ScalarField>,
+    PedersenCommitment<<P as Pairing>::G1>,
+    IdentityCommitment<<P as Pairing>::ScalarField, <P as Pairing>::ScalarField>,
     D,
 >;
 
 type PolynomialEvaluationFirstTierIPAProof<P, D> = GIPAProof<
-    ScalarInnerProduct<<P as PairingEngine>::Fr>,
-    PedersenCommitment<<P as PairingEngine>::G1Projective>,
-    SSMPlaceholderCommitment<<P as PairingEngine>::Fr>,
-    IdentityCommitment<<P as PairingEngine>::Fr, <P as PairingEngine>::Fr>,
+    ScalarInnerProduct<<P as Pairing>::ScalarField>,
+    PedersenCommitment<<P as Pairing>::G1>,
+    SSMPlaceholderCommitment<<P as Pairing>::ScalarField>,
+    IdentityCommitment<<P as Pairing>::ScalarField, <P as Pairing>::ScalarField>,
     D,
 >;
 
@@ -78,32 +76,32 @@ impl<F: Field> BivariatePolynomial<F> {
     }
 }
 
-pub struct OpeningProof<P: PairingEngine, D: Digest> {
+pub struct OpeningProof<P: Pairing, D: Digest> {
     second_tier_ip_proof: PolynomialEvaluationSecondTierIPAProof<P, D>,
-    y_eval_comm: P::G1Projective,
+    y_eval_comm: P::G1,
     first_tier_ip_proof: PolynomialEvaluationFirstTierIPAProof<P, D>,
 }
 
-pub struct BivariatePolynomialCommitment<P: PairingEngine, D: Digest> {
+pub struct BivariatePolynomialCommitment<P: Pairing, D: Digest> {
     _pairing: PhantomData<P>,
     _digest: PhantomData<D>,
 }
 
-impl<P: PairingEngine, D: Digest> BivariatePolynomialCommitment<P, D> {
+impl<P: Pairing, D: Digest> BivariatePolynomialCommitment<P, D> {
     pub fn setup<R: Rng>(
         rng: &mut R,
         x_degree: usize,
         y_degree: usize,
-    ) -> Result<(Vec<P::G1Projective>, Vec<P::G2Projective>), Error> {
+    ) -> Result<(Vec<P::G1>, Vec<P::G2>), Error> {
         let first_tier_ck = PolynomialEvaluationFirstTierIPA::<P, D>::setup(rng, y_degree + 1)?.0;
         let second_tier_ck = PolynomialEvaluationSecondTierIPA::<P, D>::setup(rng, x_degree + 1)?.0;
         Ok((first_tier_ck, second_tier_ck))
     }
 
     pub fn commit(
-        ck: &(Vec<P::G1Projective>, Vec<P::G2Projective>),
-        bivariate_polynomial: &BivariatePolynomial<P::Fr>,
-    ) -> Result<(ExtensionFieldElement<P>, Vec<P::G1Projective>), Error> {
+        ck: &(Vec<P::G1>, Vec<P::G2>),
+        bivariate_polynomial: &BivariatePolynomial<P::ScalarField>,
+    ) -> Result<(PairingOutput<P>, Vec<P::G1>), Error> {
         let (first_tier_ck, second_tier_ck) = ck;
         assert!(second_tier_ck.len() >= bivariate_polynomial.y_polynomials.len());
 
@@ -116,13 +114,10 @@ impl<P: PairingEngine, D: Digest> BivariatePolynomialCommitment<P, D> {
             .map(|y_polynomial| {
                 let mut coeffs = y_polynomial.coeffs.to_vec();
                 assert!(first_tier_ck.len() >= coeffs.len());
-                coeffs.resize(first_tier_ck.len(), <P::Fr>::zero());
-                PedersenCommitment::<<P as PairingEngine>::G1Projective>::commit(
-                    first_tier_ck,
-                    &coeffs,
-                )
+                coeffs.resize(first_tier_ck.len(), <P::ScalarField>::zero());
+                PedersenCommitment::<<P as Pairing>::G1>::commit(first_tier_ck, &coeffs)
             })
-            .collect::<Result<Vec<P::G1Projective>, Error>>()?;
+            .collect::<Result<Vec<P::G1>, Error>>()?;
 
         // Create AFGHO commitment to Y polynomial commitments
         Ok((
@@ -132,10 +127,10 @@ impl<P: PairingEngine, D: Digest> BivariatePolynomialCommitment<P, D> {
     }
 
     pub fn open(
-        ck: &(Vec<P::G1Projective>, Vec<P::G2Projective>),
-        bivariate_polynomial: &BivariatePolynomial<P::Fr>,
-        y_polynomial_comms: &Vec<P::G1Projective>,
-        point: &(P::Fr, P::Fr),
+        ck: &(Vec<P::G1>, Vec<P::G2>),
+        bivariate_polynomial: &BivariatePolynomial<P::ScalarField>,
+        y_polynomial_comms: &Vec<P::G1>,
+        point: &(P::ScalarField, P::ScalarField),
     ) -> Result<OpeningProof<P, D>, Error> {
         let (x, y) = point;
         let (first_tier_ck, second_tier_ck) = ck;
@@ -151,21 +146,19 @@ impl<P: PairingEngine, D: Digest> BivariatePolynomialCommitment<P, D> {
             .take(second_tier_ck.len())
             .map(|y_polynomial| {
                 let mut c = y_polynomial.coeffs.to_vec();
-                c.resize(first_tier_ck.len(), <P::Fr>::zero());
+                c.resize(first_tier_ck.len(), <P::ScalarField>::zero());
                 c
             })
-            .collect::<Vec<Vec<P::Fr>>>();
+            .collect::<Vec<Vec<P::ScalarField>>>();
         let y_eval_coeffs = (0..first_tier_ck.len())
             .map(|j| {
                 (0..second_tier_ck.len())
                     .map(|i| powers_of_x[i].clone() * &coeffs[i][j])
                     .sum()
             })
-            .collect::<Vec<P::Fr>>();
-        let y_eval_comm = PedersenCommitment::<<P as PairingEngine>::G1Projective>::commit(
-            first_tier_ck,
-            &y_eval_coeffs,
-        )?;
+            .collect::<Vec<P::ScalarField>>();
+        let y_eval_comm =
+            PedersenCommitment::<<P as Pairing>::G1>::commit(first_tier_ck, &y_eval_coeffs)?;
         end_timer!(precomp_time);
 
         let ipa_time = start_timer!(|| "Computing second tier IPA opening proof");
@@ -193,10 +186,10 @@ impl<P: PairingEngine, D: Digest> BivariatePolynomialCommitment<P, D> {
     }
 
     pub fn verify(
-        ck: &(Vec<P::G1Projective>, Vec<P::G2Projective>),
-        com: &ExtensionFieldElement<P>,
-        point: &(P::Fr, P::Fr),
-        eval: &P::Fr,
+        ck: &(Vec<P::G1>, Vec<P::G2>),
+        com: &PairingOutput<P>,
+        point: &(P::ScalarField, P::ScalarField),
+        eval: &P::ScalarField,
         proof: &OpeningProof<P, D>,
     ) -> Result<bool, Error> {
         let (first_tier_ck, second_tier_ck) = ck;
@@ -219,12 +212,12 @@ impl<P: PairingEngine, D: Digest> BivariatePolynomialCommitment<P, D> {
     }
 }
 
-pub struct UnivariatePolynomialCommitment<P: PairingEngine, D: Digest> {
+pub struct UnivariatePolynomialCommitment<P: Pairing, D: Digest> {
     _pairing: PhantomData<P>,
     _digest: PhantomData<D>,
 }
 
-impl<P: PairingEngine, D: Digest> UnivariatePolynomialCommitment<P, D> {
+impl<P: Pairing, D: Digest> UnivariatePolynomialCommitment<P, D> {
     fn bivariate_degrees(univariate_degree: usize) -> (usize, usize) {
         //(((univariate_degree + 1) as f64).sqrt().ceil() as usize).next_power_of_two() - 1;
         let sqrt = (((univariate_degree + 1) as f64).sqrt().ceil() as usize).next_power_of_two();
@@ -233,9 +226,7 @@ impl<P: PairingEngine, D: Digest> UnivariatePolynomialCommitment<P, D> {
         (sqrt / skew_factor - 1, sqrt * skew_factor - 1)
     }
 
-    fn parse_bivariate_degrees_from_ck(
-        ck: &(Vec<P::G1Projective>, Vec<P::G2Projective>),
-    ) -> (usize, usize) {
+    fn parse_bivariate_degrees_from_ck(ck: &(Vec<P::G1>, Vec<P::G2>)) -> (usize, usize) {
         let x_degree = ck.1.len() - 1;
         let y_degree = ck.0.len() - 1;
         (x_degree, y_degree)
@@ -243,10 +234,10 @@ impl<P: PairingEngine, D: Digest> UnivariatePolynomialCommitment<P, D> {
 
     fn bivariate_form(
         bivariate_degrees: (usize, usize),
-        polynomial: &UnivariatePolynomial<P::Fr>,
-    ) -> BivariatePolynomial<P::Fr> {
+        polynomial: &UnivariatePolynomial<P::ScalarField>,
+    ) -> BivariatePolynomial<P::ScalarField> {
         let (x_degree, y_degree) = bivariate_degrees;
-        let default_zero = vec![P::Fr::zero()];
+        let default_zero = vec![P::ScalarField::zero()];
         let mut coeff_iter = polynomial
             .coeffs
             .iter()
@@ -266,18 +257,15 @@ impl<P: PairingEngine, D: Digest> UnivariatePolynomialCommitment<P, D> {
         BivariatePolynomial { y_polynomials }
     }
 
-    pub fn setup<R: Rng>(
-        rng: &mut R,
-        degree: usize,
-    ) -> Result<(Vec<P::G1Projective>, Vec<P::G2Projective>), Error> {
+    pub fn setup<R: Rng>(rng: &mut R, degree: usize) -> Result<(Vec<P::G1>, Vec<P::G2>), Error> {
         let (x_degree, y_degree) = Self::bivariate_degrees(degree);
         BivariatePolynomialCommitment::<P, D>::setup(rng, x_degree, y_degree)
     }
 
     pub fn commit(
-        ck: &(Vec<P::G1Projective>, Vec<P::G2Projective>),
-        polynomial: &UnivariatePolynomial<P::Fr>,
-    ) -> Result<(ExtensionFieldElement<P>, Vec<P::G1Projective>), Error> {
+        ck: &(Vec<P::G1>, Vec<P::G2>),
+        polynomial: &UnivariatePolynomial<P::ScalarField>,
+    ) -> Result<(PairingOutput<P>, Vec<P::G1>), Error> {
         let bivariate_degrees = Self::parse_bivariate_degrees_from_ck(ck);
         BivariatePolynomialCommitment::<P, D>::commit(
             ck,
@@ -286,10 +274,10 @@ impl<P: PairingEngine, D: Digest> UnivariatePolynomialCommitment<P, D> {
     }
 
     pub fn open(
-        ck: &(Vec<P::G1Projective>, Vec<P::G2Projective>),
-        polynomial: &UnivariatePolynomial<P::Fr>,
-        y_polynomial_comms: &Vec<P::G1Projective>,
-        point: &P::Fr,
+        ck: &(Vec<P::G1>, Vec<P::G2>),
+        polynomial: &UnivariatePolynomial<P::ScalarField>,
+        y_polynomial_comms: &Vec<P::G1>,
+        point: &P::ScalarField,
     ) -> Result<OpeningProof<P, D>, Error> {
         let (x_degree, y_degree) = Self::parse_bivariate_degrees_from_ck(ck);
         let y = point.clone();
@@ -303,10 +291,10 @@ impl<P: PairingEngine, D: Digest> UnivariatePolynomialCommitment<P, D> {
     }
 
     pub fn verify(
-        ck: &(Vec<P::G1Projective>, Vec<P::G2Projective>),
-        com: &ExtensionFieldElement<P>,
-        point: &P::Fr,
-        eval: &P::Fr,
+        ck: &(Vec<P::G1>, Vec<P::G2>),
+        com: &PairingOutput<P>,
+        point: &P::ScalarField,
+        eval: &P::ScalarField,
         proof: &OpeningProof<P, D>,
     ) -> Result<bool, Error> {
         let (_, y_degree) = Self::parse_bivariate_degrees_from_ck(ck);
@@ -320,7 +308,6 @@ impl<P: PairingEngine, D: Digest> UnivariatePolynomialCommitment<P, D> {
 mod tests {
     use super::*;
     use ark_bls12_381::Bls12_381;
-    use ark_ec::PairingEngine;
     use ark_ff::UniformRand;
     use ark_std::rand::{rngs::StdRng, SeedableRng};
     use blake2::Blake2b;
@@ -345,7 +332,7 @@ mod tests {
         for _ in 0..BIVARIATE_X_DEGREE + 1 {
             let mut y_polynomial_coeffs = vec![];
             for _ in 0..BIVARIATE_Y_DEGREE + 1 {
-                y_polynomial_coeffs.push(<Bls12_381 as PairingEngine>::Fr::rand(&mut rng));
+                y_polynomial_coeffs.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
             }
             y_polynomials.push(UnivariatePolynomial::from_coefficients_slice(
                 &y_polynomial_coeffs,
@@ -383,7 +370,7 @@ mod tests {
 
         let mut polynomial_coeffs = vec![];
         for _ in 0..UNIVARIATE_DEGREE + 1 {
-            polynomial_coeffs.push(<Bls12_381 as PairingEngine>::Fr::rand(&mut rng));
+            polynomial_coeffs.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
         }
         let polynomial = UnivariatePolynomial::from_coefficients_slice(&polynomial_coeffs);
 
