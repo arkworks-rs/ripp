@@ -2,6 +2,8 @@
 #![deny(warnings, unused, missing_docs)]
 #![forbid(unsafe_code)]
 
+use std::marker::PhantomData;
+
 use ark_ec::{
     pairing::{Pairing, PairingOutput},
     scalar_mul::variable_base::VariableBaseMSM,
@@ -9,9 +11,9 @@ use ark_ec::{
 };
 use ark_ff::{Field, One, UniformRand};
 use ark_serialize::CanonicalSerialize;
+use ark_std::Zero;
 use digest::{generic_array::typenum::U32, Digest};
 use rayon::prelude::*;
-use std::marker::PhantomData;
 
 /// Fiat-Shamir Rng
 pub mod rng;
@@ -85,11 +87,7 @@ where
             let a_proj = a_l
                 .par_iter()
                 .zip(a_r)
-                .map(|(a_l, &a_r)| {
-                    let mut temp = a_r * x;
-                    temp += a_l;
-                    temp
-                })
+                .map(|(a_l, &a_r)| a_r * x + a_l)
                 .collect::<Vec<_>>();
             a = E::G1::normalize_batch(&a_proj);
 
@@ -97,11 +95,7 @@ where
             let b_proj = b_l
                 .par_iter()
                 .zip(b_r)
-                .map(|(b_l, &b_r)| {
-                    let mut temp = b_r * x_inv;
-                    temp += b_l;
-                    temp
-                })
+                .map(|(b_l, &b_r)| b_r * x_inv + b_l)
                 .collect::<Vec<_>>();
             b = E::G2::normalize_batch(&b_proj);
         }
@@ -161,7 +155,7 @@ where
                 .zip(&x_s)
                 .zip(&x_invs)
                 .map(|(((z_l, z_r), x), x_inv)| (*z_l * x) + (*z_r * x_inv))
-                .reduce(|| PairingOutput::<E>::default(), |a, b| a + b);
+                .reduce(|| PairingOutput::<E>::zero(), |a, b| a + b);
 
         let mut s: Vec<E::ScalarField> = vec![E::ScalarField::one(); length];
         let mut s_invs: Vec<E::ScalarField> = vec![E::ScalarField::one(); length];
@@ -229,16 +223,15 @@ mod tests {
             b.push(G2Projective::rand(&mut rng).into_affine());
             r.push(Fr::rand(&mut rng));
         }
-        println!("a == {:?}", a);
 
         let z = product_of_pairings_with_coeffs::<Bls12_377>(&a, &b, &r);
-        println!("z == {:?}", z);
 
         let proof = SIPP::<Bls12_377, Blake2s>::prove(&a, &b, &r, z);
         assert!(proof.is_ok());
         let proof = proof.unwrap();
 
         let accept = SIPP::<Bls12_377, Blake2s>::verify(&a, &b, &r, z, &proof);
+
         assert!(accept.is_ok());
         assert!(accept.unwrap());
     }
