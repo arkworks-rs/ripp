@@ -1,5 +1,5 @@
 use ark_ff::{Field, One};
-use ark_serialize::CanonicalSerialize;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::rand::Rng;
 use ark_std::{end_timer, start_timer};
 use digest::Digest;
@@ -21,7 +21,7 @@ pub struct GIPA<IP, LMC, RMC, IPC, D> {
     _digest: PhantomData<D>,
 }
 
-#[derive(CanonicalSerialize)]
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct GIPAProof<IP, LMC, RMC, IPC, D>
 where
     D: Digest,
@@ -45,7 +45,9 @@ where
         (LMC::Output, RMC::Output, IPC::Output),
     )>,
     pub(crate) r_base: (LMC::Message, RMC::Message),
-    _gipa: PhantomData<GIPA<IP, LMC, RMC, IPC, D>>,
+    // The fn() is here because PhantomData<T> is Sync iff T is Sync, and these types are not all
+    // Sync
+    _gipa: PhantomData<fn() -> GIPA<IP, LMC, RMC, IPC, D>>,
 }
 
 #[derive(Clone)]

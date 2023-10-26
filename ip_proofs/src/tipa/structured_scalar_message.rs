@@ -1,6 +1,6 @@
 use ark_ec::{pairing::Pairing, Group};
 use ark_ff::{Field, One, PrimeField, UniformRand, Zero};
-use ark_serialize::CanonicalSerialize;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{cfg_iter, rand::Rng};
 use ark_std::{end_timer, start_timer};
 use digest::Digest;
@@ -135,7 +135,7 @@ pub struct TIPAWithSSM<IP, LMC, IPC, P, D> {
     _digest: PhantomData<D>,
 }
 
-#[derive(CanonicalSerialize)]
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct TIPAWithSSMProof<IP, LMC, IPC, P, D>
 where
     D: Digest,

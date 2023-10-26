@@ -1,7 +1,7 @@
 use ark_ec::{pairing::Pairing, scalar_mul::fixed_base::FixedBase, CurveGroup, Group};
 use ark_ff::{Field, One, PrimeField, UniformRand, Zero};
 use ark_poly::polynomial::{univariate::DensePolynomial, DenseUVPolynomial};
-use ark_serialize::CanonicalSerialize;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::rand::Rng;
 use ark_std::{end_timer, start_timer};
 use digest::Digest;
@@ -38,7 +38,7 @@ pub struct TIPA<IP, LMC, RMC, IPC, P, D> {
     _digest: PhantomData<D>,
 }
 
-#[derive(CanonicalSerialize)]
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct TIPAProof<IP, LMC, RMC, IPC, P, D>
 where
     D: Digest,
