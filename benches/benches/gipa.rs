@@ -5,11 +5,9 @@ use ark_dh_commitments::{
     pedersen::PedersenCommitment,
     DoublyHomomorphicCommitment,
 };
-use ark_ec::PairingEngine;
+use ark_ec::pairing::{Pairing, PairingOutput};
 use ark_ff::UniformRand;
-use ark_inner_products::{
-    ExtensionFieldElement, InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct,
-};
+use ark_inner_products::{InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct};
 use ark_ip_proofs::gipa::GIPA;
 
 use ark_std::rand::{rngs::StdRng, Rng, SeedableRng};
@@ -70,7 +68,7 @@ fn main() {
     const LEN: usize = 16;
     type GC1 = AFGHOCommitmentG1<Bls12_381>;
     type GC2 = AFGHOCommitmentG2<Bls12_381>;
-    type SC1 = PedersenCommitment<<Bls12_381 as PairingEngine>::G1Projective>;
+    type SC1 = PedersenCommitment<<Bls12_381 as Pairing>::G1>;
     let mut rng = StdRng::seed_from_u64(0u64);
 
     println!("Benchmarking GIPA with vector length: {}", LEN);
@@ -80,20 +78,17 @@ fn main() {
         PairingInnerProduct<Bls12_381>,
         GC1,
         GC2,
-        IdentityCommitment<ExtensionFieldElement<Bls12_381>, <Bls12_381 as PairingEngine>::Fr>,
+        IdentityCommitment<PairingOutput<Bls12_381>, <Bls12_381 as Pairing>::ScalarField>,
         Blake2b,
         StdRng,
     >(&mut rng, LEN);
 
     println!("2) Multiexponentiation G1 inner product...");
     bench_gipa::<
-        MultiexponentiationInnerProduct<<Bls12_381 as PairingEngine>::G1Projective>,
+        MultiexponentiationInnerProduct<<Bls12_381 as Pairing>::G1>,
         GC1,
         SC1,
-        IdentityCommitment<
-            <Bls12_381 as PairingEngine>::G1Projective,
-            <Bls12_381 as PairingEngine>::Fr,
-        >,
+        IdentityCommitment<<Bls12_381 as Pairing>::G1, <Bls12_381 as Pairing>::ScalarField>,
         Blake2b,
         StdRng,
     >(&mut rng, LEN);

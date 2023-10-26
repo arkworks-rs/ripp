@@ -1,12 +1,12 @@
 use ark_bls12_381::Bls12_381;
-use ark_ec::PairingEngine;
+use ark_ec::pairing::Pairing;
 use ark_ff::UniformRand;
 use ark_ip_proofs::applications::poly_commit::{
     transparent::UnivariatePolynomialCommitment as TransparentIPA,
     UnivariatePolynomialCommitment as IPA, KZG,
 };
 use ark_poly::polynomial::{
-    univariate::DensePolynomial as UnivariatePolynomial, Polynomial, UVPolynomial,
+    univariate::DensePolynomial as UnivariatePolynomial, DenseUVPolynomial, Polynomial,
 };
 
 use ark_std::rand::{rngs::StdRng, SeedableRng};
@@ -67,7 +67,7 @@ fn main() {
             csv_writer.flush().unwrap();
             for i in 1..num_trials + 1 {
                 let polynomial = UnivariatePolynomial::rand(degree, &mut rng);
-                let point = <Bls12_381 as PairingEngine>::Fr::rand(&mut rng);
+                let point = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
                 let eval = polynomial.evaluate(&point);
 
                 // Commit
@@ -139,7 +139,7 @@ fn main() {
             csv_writer.flush().unwrap();
             for i in 1..num_trials + 1 {
                 let polynomial = UnivariatePolynomial::rand(degree, &mut rng);
-                let point = <Bls12_381 as PairingEngine>::Fr::rand(&mut rng);
+                let point = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
                 let eval = polynomial.evaluate(&point);
 
                 // Commit
@@ -213,7 +213,7 @@ fn main() {
                 csv_writer.flush().unwrap();
                 for i in 1..num_trials + 1 {
                     let polynomial = UnivariatePolynomial::rand(degree, &mut rng);
-                    let point = <Bls12_381 as PairingEngine>::Fr::rand(&mut rng);
+                    let point = <Bls12_381 as Pairing>::ScalarField::rand(&mut rng);
                     let eval = polynomial.evaluate(&point);
 
                     // Commit

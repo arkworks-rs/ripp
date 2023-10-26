@@ -1,7 +1,4 @@
-use ark_bls12_377::{
-    constraints::PairingVar as BLS12PairingVar, Bls12_377, Fr as BLS12Fr,
-    FrParameters as BLS12FrParameters,
-};
+use ark_bls12_377::{constraints::PairingVar as BLS12PairingVar, Bls12_377, Fr as BLS12Fr};
 use ark_bw6_761::{Fr as BW6Fr, BW6_761};
 use ark_crypto_primitives::{
     prf::{
@@ -11,10 +8,11 @@ use ark_crypto_primitives::{
     },
     snark::*,
 };
-use ark_ec::{AffineCurve, PairingEngine, ProjectiveCurve};
-use ark_ff::{
-    biginteger::BigInteger, FftParameters, One, PrimeField, ToConstraintField, UniformRand,
+use ark_ec::{
+    pairing::{MillerLoopOutput, Pairing},
+    CurveGroup,
 };
+use ark_ff::{One, PrimeField, ToConstraintField, UniformRand};
 use ark_groth16::{constraints::*, Groth16, PreparedVerifyingKey, Proof, VerifyingKey};
 use ark_r1cs_std::prelude::*;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
@@ -97,7 +95,7 @@ impl ConstraintSynthesizer<BW6Fr> for AggregateBlake2SCircuitVerificationCircuit
                     .iter()
                     .map(|bls_fr| {
                         bls_fr
-                            .into_repr()
+                            .into_bigint()
                             .as_ref()
                             .iter()
                             .map(|bls_fr_int| bls_fr_int.to_le_bytes().to_vec())
@@ -116,8 +114,7 @@ impl ConstraintSynthesizer<BW6Fr> for AggregateBlake2SCircuitVerificationCircuit
             // Now split BW6-761 byte representation back to iterator over BLS12-377 field element byte representations
             .iter()
             .map(|h_as_bls_fr_bytes| {
-                let bls_field_element_size_in_bytes =
-                    <BLS12FrParameters as FftParameters>::BigInt::NUM_LIMBS * 8;
+                let bls_field_element_size_in_bytes = (BLS12Fr::MODULUS_BIT_SIZE as usize + 7) / 8;
                 h_as_bls_fr_bytes
                     .chunks(bls_field_element_size_in_bytes)
                     .map(|bls_field_element_chunk| bls_field_element_chunk.to_vec())
@@ -182,7 +179,7 @@ impl ToConstraintField<BW6Fr> for AggregateBlake2SCircuitVerificationCircuitInpu
                     .iter()
                     .map(|bls_fr| {
                         bls_fr
-                            .into_repr()
+                            .into_bigint()
                             .as_ref()
                             .iter()
                             .map(|bls_fr_int| bls_fr_int.to_le_bytes().to_vec())
@@ -322,7 +319,7 @@ fn main() {
                 &hash_outputs
                     .iter()
                     .map(|h| h.to_field_elements())
-                    .collect::<Option<Vec<Vec<<Bls12_377 as PairingEngine>::Fr>>>>()
+                    .collect::<Option<Vec<Vec<<Bls12_377 as Pairing>::ScalarField>>>>()
                     .unwrap(),
                 &proofs,
             )
@@ -381,7 +378,7 @@ fn main() {
                     &hash_outputs
                         .iter()
                         .map(|h| h.to_field_elements())
-                        .collect::<Option<Vec<Vec<<Bls12_377 as PairingEngine>::Fr>>>>()
+                        .collect::<Option<Vec<Vec<<Bls12_377 as Pairing>::ScalarField>>>>()
                         .unwrap(),
                     &aggregate_proof,
                 )
@@ -528,15 +525,15 @@ fn main() {
     }
 }
 
-pub fn batch_verify_proof<E: PairingEngine>(
+pub fn batch_verify_proof<E: Pairing>(
     pvk: &PreparedVerifyingKey<E>,
-    public_inputs: &[Vec<E::Fr>],
+    public_inputs: &[Vec<E::ScalarField>],
     proofs: &[Proof<E>],
 ) -> Result<bool, SynthesisError> {
     let mut rng = StdRng::seed_from_u64(0u64);
     let mut r_powers = Vec::with_capacity(proofs.len());
     for _ in 0..proofs.len() {
-        let challenge: E::Fr = u128::rand(&mut rng).into();
+        let challenge: E::ScalarField = u128::rand(&mut rng).into();
         r_powers.push(challenge);
     }
 
@@ -544,48 +541,55 @@ pub fn batch_verify_proof<E: PairingEngine>(
         .iter()
         .zip(&r_powers)
         .map(|(input, r)| {
-            let mut g_ic = pvk.vk.gamma_abc_g1[0].into_projective();
-            for (i, b) in input.iter().zip(pvk.vk.gamma_abc_g1.iter().skip(1)) {
-                g_ic += &b.mul(i.into_repr());
+            let mut g_ic: E::G1 = pvk.vk.gamma_abc_g1[0].into();
+            for (&i, &b) in input.iter().zip(pvk.vk.gamma_abc_g1.iter().skip(1)) {
+                g_ic += b * i;
             }
-            g_ic.mul(r.into_repr())
+            g_ic * r
         })
-        .sum::<E::G1Projective>()
-        .into_affine();
+        .sum::<E::G1>()
+        .into();
 
     let combined_proof_a_s = proofs
         .iter()
         .zip(&r_powers)
-        .map(|(proof, r)| proof.a.mul(*r))
+        .map(|(proof, r)| proof.a * r)
         .collect::<Vec<_>>();
-    let combined_proof_a_s = E::G1Projective::batch_normalization_into_affine(&combined_proof_a_s);
-    let ml_inputs = proofs
-        .iter()
-        .zip(&combined_proof_a_s)
-        .map(|(proof, a)| ((*a).into(), proof.b.into()))
+    let combined_proof_a_s = E::G1::normalize_batch(&combined_proof_a_s);
+    let combined_proof_a_s = combined_proof_a_s
+        .into_iter()
+        .map(E::G1Prepared::from)
         .collect::<Vec<_>>();
-    let a_r_times_b = E::miller_loop(ml_inputs.iter());
+    let combined_proof_b_s = proofs
+        .into_iter()
+        .map(|proof| proof.b.into())
+        .collect::<Vec<E::G2Prepared>>();
+    let a_r_times_b = E::multi_miller_loop(combined_proof_a_s, combined_proof_b_s);
 
     let combined_c_s = proofs
         .iter()
         .zip(&r_powers)
-        .map(|(proof, r)| proof.c.mul(*r))
-        .sum::<E::G1Projective>()
+        .map(|(proof, r)| proof.c * r)
+        .sum::<E::G1>()
         .into_affine();
 
-    let sum_of_rs = (&r_powers).iter().copied().sum::<E::Fr>();
-    let combined_alpha = (-pvk.vk.alpha_g1.mul(sum_of_rs)).into_affine();
-    let qap = E::miller_loop(
+    let sum_of_rs = (&r_powers).iter().copied().sum::<E::ScalarField>();
+    let combined_alpha = (-(pvk.vk.alpha_g1 * sum_of_rs)).into_affine();
+    let qap = E::multi_miller_loop(
         [
-            (combined_alpha.into(), pvk.vk.beta_g2.into()),
-            (combined_inputs.into(), pvk.gamma_g2_neg_pc.clone()),
-            (combined_c_s.into(), pvk.delta_g2_neg_pc.clone()),
-        ]
-        .iter(),
+            E::G1Prepared::from(combined_alpha),
+            combined_inputs.into(),
+            combined_c_s.into(),
+        ],
+        [
+            E::G2Prepared::from(pvk.vk.beta_g2),
+            pvk.gamma_g2_neg_pc.clone().into(),
+            pvk.delta_g2_neg_pc.clone().into(),
+        ],
     );
 
-    let test =
-        E::final_exponentiation(&(qap * &a_r_times_b)).ok_or(SynthesisError::UnexpectedIdentity)?;
+    let test = E::final_exponentiation(MillerLoopOutput(qap.0 * a_r_times_b.0))
+        .ok_or(SynthesisError::UnexpectedIdentity)?;
 
-    Ok(test == E::Fqk::one())
+    Ok(test.0 == E::TargetField::one())
 }
