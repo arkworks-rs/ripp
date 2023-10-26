@@ -5,7 +5,7 @@
 use std::marker::PhantomData;
 
 use ark_ec::{
-    pairing::{Pairing, PairingOutput},
+    pairing::{MillerLoopOutput, Pairing, PairingOutput},
     scalar_mul::variable_base::VariableBaseMSM,
     CurveGroup,
 };
@@ -196,7 +196,24 @@ pub fn product_of_pairings_with_coeffs<E: Pairing>(
     let a = a.par_iter().map(E::G1Prepared::from).collect::<Vec<_>>();
     let b = b.par_iter().map(E::G2Prepared::from).collect::<Vec<_>>();
 
-    E::multi_pairing(a, b)
+    // We want to process N chunks in parallel where N is the number of threads available
+    let num_chunks = rayon::current_num_threads();
+    let chunk_size = if num_chunks <= a.len() {
+        a.len() / num_chunks
+    } else {
+        // More threads than elements. Just do it all in parallel
+        1
+    };
+
+    // Compute all the (partial) pairings and take the product. We have to take the product over
+    // P::TargetField because MillerLoopOutput doesn't impl Product
+    let ml_result = a
+        .par_chunks(chunk_size)
+        .zip(b.par_chunks(chunk_size))
+        .map(|(aa, bb)| E::multi_miller_loop(aa.iter().cloned(), bb.iter().cloned()).0)
+        .product();
+
+    E::final_exponentiation(MillerLoopOutput(ml_result)).unwrap()
 }
 
 /// Compute the product of pairings of `a` and `b`.
