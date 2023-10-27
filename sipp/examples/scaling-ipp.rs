@@ -1,6 +1,6 @@
 // For benchmarking
 use ark_bls12_377::*;
-use ark_ec::ProjectiveCurve;
+use ark_ec::{CurveGroup, Group};
 use ark_ff::UniformRand;
 use ark_sipp::{rng::FiatShamirRng, SIPP};
 use ark_std::rand::seq::SliceRandom;
@@ -46,8 +46,8 @@ fn main() {
         a_s.push(g.double());
         b_s.push(h.double());
     }
-    let mut a_s = ProjectiveCurve::batch_normalization_into_affine(&a_s);
-    let mut b_s = ProjectiveCurve::batch_normalization_into_affine(&b_s);
+    let mut a_s = G1Projective::normalize_batch(&a_s);
+    let mut b_s = G2Projective::normalize_batch(&b_s);
     let r_s = vec![Fr::rand(&mut rng); a_s.len()];
 
     let output_file = output_directory + &format!("/ipp-{}-threads.csv", num_threads);

@@ -7,19 +7,19 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dev-dependencies]
-ark-ec = { version = "0.3", features = [ "parallel" ] }
-ark-ff = { version = "0.3", features = [ "parallel" ] }
-ark-poly = { version = "0.3", features = [ "parallel" ] }
-ark-std = { version = "0.3", features = [ "parallel" ] }
-ark-groth16 = { version = "0.3", features = [ "parallel", "r1cs" ] }
-ark-crypto-primitives = { version = "0.3", features = [ "parallel", "r1cs" ] }
-ark-bls12-381 = { version = "0.3", features = [ "curve" ] }
-ark-ed-on-bls12-381 = "0.3"
-ark-bls12-377 = { version = "0.3", features = [ "curve", "r1cs" ] }
-ark-bw6-761 = "0.3"
+ark-ec = { version = "0.4", features = [ "parallel" ] }
+ark-ff = { version = "0.4", features = [ "parallel" ] }
+ark-poly = { version = "0.4", features = [ "parallel" ] }
+ark-std = { version = "0.4", features = [ "parallel" ] }
+ark-groth16 = { version = "0.4", features = [ "parallel", "r1cs" ] }
+ark-crypto-primitives = { version = "0.4", features = [ "parallel", "r1cs", "prf" ] }
+ark-bls12-381 = { version = "0.4", features = [ "curve" ] }
+ark-ed-on-bls12-381 = "0.4"
+ark-bls12-377 = { version = "0.4", features = [ "curve", "r1cs" ] }
+ark-bw6-761 = "0.4"
 
-ark-relations = "0.3"
-ark-r1cs-std = "0.3"
+ark-relations = "0.4"
+ark-r1cs-std = "0.4"
 
 digest = "0.9"
 blake2 = "0.9"

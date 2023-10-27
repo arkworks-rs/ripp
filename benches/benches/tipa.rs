@@ -5,11 +5,12 @@ use ark_dh_commitments::{
     pedersen::PedersenCommitment,
     DoublyHomomorphicCommitment,
 };
-use ark_ec::{group::Group, PairingEngine};
-use ark_ff::{Field, UniformRand};
-use ark_inner_products::{
-    ExtensionFieldElement, InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct,
+use ark_ec::{
+    pairing::{Pairing, PairingOutput},
+    Group,
 };
+use ark_ff::{Field, UniformRand};
+use ark_inner_products::{InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct};
 use ark_ip_proofs::tipa::{
     structured_scalar_message::{structured_scalar_power, TIPAWithSSM},
     TIPACompatibleSetup, TIPA,
@@ -24,23 +25,22 @@ use std::{ops::MulAssign, time::Instant};
 fn bench_tipa<IP, LMC, RMC, IPC, P, D, R: Rng>(rng: &mut R, len: usize)
 where
     D: Digest,
-    P: PairingEngine,
+    P: Pairing,
     IP: InnerProduct<
         LeftMessage = LMC::Message,
         RightMessage = RMC::Message,
         Output = IPC::Message,
     >,
-    LMC: DoublyHomomorphicCommitment<Scalar = P::Fr, Key = P::G2Projective> + TIPACompatibleSetup,
-    RMC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar, Key = P::G1Projective>
-        + TIPACompatibleSetup,
+    LMC: DoublyHomomorphicCommitment<Scalar = P::ScalarField, Key = P::G2> + TIPACompatibleSetup,
+    RMC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar, Key = P::G1> + TIPACompatibleSetup,
     IPC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar>,
-    LMC::Message: MulAssign<P::Fr>,
-    RMC::Message: MulAssign<P::Fr>,
-    IPC::Message: MulAssign<P::Fr>,
-    IPC::Key: MulAssign<P::Fr>,
-    LMC::Output: MulAssign<P::Fr>,
-    RMC::Output: MulAssign<P::Fr>,
-    IPC::Output: MulAssign<P::Fr>,
+    LMC::Message: MulAssign<P::ScalarField>,
+    RMC::Message: MulAssign<P::ScalarField>,
+    IPC::Message: MulAssign<P::ScalarField>,
+    IPC::Key: MulAssign<P::ScalarField>,
+    LMC::Output: MulAssign<P::ScalarField>,
+    RMC::Output: MulAssign<P::ScalarField>,
+    IPC::Output: MulAssign<P::ScalarField>,
     IPC::Output: MulAssign<LMC::Scalar>,
     IP::LeftMessage: UniformRand,
     IP::RightMessage: UniformRand,
@@ -74,23 +74,22 @@ where
 fn bench_tipa_srs_shift<IP, LMC, RMC, IPC, P, D, R: Rng>(rng: &mut R, len: usize)
 where
     D: Digest,
-    P: PairingEngine,
+    P: Pairing,
     IP: InnerProduct<
         LeftMessage = LMC::Message,
         RightMessage = RMC::Message,
         Output = IPC::Message,
     >,
-    LMC: DoublyHomomorphicCommitment<Scalar = P::Fr, Key = P::G2Projective> + TIPACompatibleSetup,
-    RMC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar, Key = P::G1Projective>
-        + TIPACompatibleSetup,
+    LMC: DoublyHomomorphicCommitment<Scalar = P::ScalarField, Key = P::G2> + TIPACompatibleSetup,
+    RMC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar, Key = P::G1> + TIPACompatibleSetup,
     IPC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar>,
-    LMC::Message: MulAssign<P::Fr> + Group<ScalarField = P::Fr>,
-    RMC::Message: MulAssign<P::Fr> + Group,
-    IPC::Message: MulAssign<P::Fr>,
-    IPC::Key: MulAssign<P::Fr>,
-    LMC::Output: MulAssign<P::Fr>,
-    RMC::Output: MulAssign<P::Fr>,
-    IPC::Output: MulAssign<P::Fr>,
+    LMC::Message: MulAssign<P::ScalarField> + Group<ScalarField = P::ScalarField>,
+    RMC::Message: MulAssign<P::ScalarField> + Group,
+    IPC::Message: MulAssign<P::ScalarField>,
+    IPC::Key: MulAssign<P::ScalarField>,
+    LMC::Output: MulAssign<P::ScalarField>,
+    RMC::Output: MulAssign<P::ScalarField>,
+    IPC::Output: MulAssign<P::ScalarField>,
     IPC::Output: MulAssign<LMC::Scalar>,
     IP::LeftMessage: UniformRand + Group,
     IP::RightMessage: UniformRand + Group,
@@ -107,17 +106,17 @@ where
     let v_srs = srs.get_verifier_key();
     let com_l = LMC::commit(&ck_l, &l).unwrap();
     let com_r = RMC::commit(&ck_r, &r).unwrap();
-    let a_scalar = <P::Fr>::rand(rng);
+    let a_scalar = <P::ScalarField>::rand(rng);
     let r_vec = structured_scalar_power(len, &a_scalar);
     let l_a = l
         .iter()
         .zip(&r_vec)
-        .map(|(a, r)| a.mul(r))
+        .map(|(&a, r)| a * r)
         .collect::<Vec<LMC::Message>>();
     let ck_l_a = ck_l
         .iter()
         .zip(&r_vec)
-        .map(|(ck, r)| ck.mul(&r.inverse().unwrap()))
+        .map(|(&ck, r)| ck * r.inverse().unwrap())
         .collect::<Vec<LMC::Key>>();
 
     let t = vec![IP::inner_product(&l_a, &r).unwrap()];
@@ -148,15 +147,15 @@ where
 fn bench_tipa_ssm<IP, LMC, IPC, P, D, R: Rng>(rng: &mut R, len: usize)
 where
     D: Digest,
-    P: PairingEngine,
+    P: Pairing,
     IP: InnerProduct<LeftMessage = LMC::Message, RightMessage = LMC::Scalar, Output = IPC::Message>,
-    LMC: DoublyHomomorphicCommitment<Scalar = P::Fr, Key = P::G2Projective> + TIPACompatibleSetup,
+    LMC: DoublyHomomorphicCommitment<Scalar = P::ScalarField, Key = P::G2> + TIPACompatibleSetup,
     IPC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar>,
-    LMC::Message: MulAssign<P::Fr>,
-    IPC::Message: MulAssign<P::Fr>,
-    IPC::Key: MulAssign<P::Fr>,
-    LMC::Output: MulAssign<P::Fr>,
-    IPC::Output: MulAssign<P::Fr>,
+    LMC::Message: MulAssign<P::ScalarField>,
+    IPC::Message: MulAssign<P::ScalarField>,
+    IPC::Key: MulAssign<P::ScalarField>,
+    LMC::Output: MulAssign<P::ScalarField>,
+    IPC::Output: MulAssign<P::ScalarField>,
     IPC::Output: MulAssign<LMC::Scalar>,
     IP::LeftMessage: UniformRand,
     IP::RightMessage: UniformRand,
@@ -165,7 +164,7 @@ where
     for _ in 0..len {
         l.push(<IP::LeftMessage>::rand(rng));
     }
-    let scalar = <P::Fr>::rand(rng);
+    let scalar = <P::ScalarField>::rand(rng);
     let r = structured_scalar_power(len, &scalar);
 
     let (srs, ck_t) = TIPAWithSSM::<IP, LMC, IPC, P, D>::setup(rng, len).unwrap();
@@ -200,7 +199,7 @@ fn main() {
     const LEN: usize = 16;
     type GC1 = AFGHOCommitmentG1<Bls12_381>;
     type GC2 = AFGHOCommitmentG2<Bls12_381>;
-    type SC1 = PedersenCommitment<<Bls12_381 as PairingEngine>::G1Projective>;
+    type SC1 = PedersenCommitment<<Bls12_381 as Pairing>::G1>;
     let mut rng = StdRng::seed_from_u64(0u64);
 
     println!("Benchmarking TIPA with vector length: {}", LEN);
@@ -210,7 +209,7 @@ fn main() {
         PairingInnerProduct<Bls12_381>,
         GC1,
         GC2,
-        IdentityCommitment<ExtensionFieldElement<Bls12_381>, <Bls12_381 as PairingEngine>::Fr>,
+        IdentityCommitment<PairingOutput<Bls12_381>, <Bls12_381 as Pairing>::ScalarField>,
         Bls12_381,
         Blake2b,
         StdRng,
@@ -218,13 +217,10 @@ fn main() {
 
     println!("2) Multiexponentiation G1 inner product...");
     bench_tipa::<
-        MultiexponentiationInnerProduct<<Bls12_381 as PairingEngine>::G1Projective>,
+        MultiexponentiationInnerProduct<<Bls12_381 as Pairing>::G1>,
         GC1,
         SC1,
-        IdentityCommitment<
-            <Bls12_381 as PairingEngine>::G1Projective,
-            <Bls12_381 as PairingEngine>::Fr,
-        >,
+        IdentityCommitment<<Bls12_381 as Pairing>::G1, <Bls12_381 as Pairing>::ScalarField>,
         Bls12_381,
         Blake2b,
         StdRng,
@@ -235,7 +231,7 @@ fn main() {
         PairingInnerProduct<Bls12_381>,
         GC1,
         GC2,
-        IdentityCommitment<ExtensionFieldElement<Bls12_381>, <Bls12_381 as PairingEngine>::Fr>,
+        IdentityCommitment<PairingOutput<Bls12_381>, <Bls12_381 as Pairing>::ScalarField>,
         Bls12_381,
         Blake2b,
         StdRng,
@@ -243,12 +239,9 @@ fn main() {
 
     println!("4) Multiexponentiation G1 inner product with structured scalar message...");
     bench_tipa_ssm::<
-        MultiexponentiationInnerProduct<<Bls12_381 as PairingEngine>::G1Projective>,
+        MultiexponentiationInnerProduct<<Bls12_381 as Pairing>::G1>,
         GC1,
-        IdentityCommitment<
-            <Bls12_381 as PairingEngine>::G1Projective,
-            <Bls12_381 as PairingEngine>::Fr,
-        >,
+        IdentityCommitment<<Bls12_381 as Pairing>::G1, <Bls12_381 as Pairing>::ScalarField>,
         Bls12_381,
         Blake2b,
         StdRng,

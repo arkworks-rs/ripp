@@ -1,5 +1,5 @@
 use ark_bls12_381::Bls12_381;
-use ark_ec::PairingEngine;
+use ark_ec::pairing::Pairing;
 use ark_ff::UniformRand;
 use ark_inner_products::{InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct};
 
@@ -33,14 +33,12 @@ fn main() {
     bench_inner_product::<PairingInnerProduct<Bls12_381>, StdRng>(&mut rng, LEN);
 
     println!("2) Multiexponentiation G1 inner product...");
-    bench_inner_product::<
-        MultiexponentiationInnerProduct<<Bls12_381 as PairingEngine>::G1Projective>,
-        StdRng,
-    >(&mut rng, LEN);
+    bench_inner_product::<MultiexponentiationInnerProduct<<Bls12_381 as Pairing>::G1>, StdRng>(
+        &mut rng, LEN,
+    );
 
     println!("3) Multiexponentiation G2 inner product...");
-    bench_inner_product::<
-        MultiexponentiationInnerProduct<<Bls12_381 as PairingEngine>::G2Projective>,
-        StdRng,
-    >(&mut rng, LEN);
+    bench_inner_product::<MultiexponentiationInnerProduct<<Bls12_381 as Pairing>::G2>, StdRng>(
+        &mut rng, LEN,
+    );
 }

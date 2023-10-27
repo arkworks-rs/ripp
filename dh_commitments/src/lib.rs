@@ -1,5 +1,5 @@
-use ark_ec::group::Group;
-use ark_ff::{bytes::ToBytes, fields::PrimeField};
+use ark_ec::Group;
+use ark_ff::fields::PrimeField;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::rand::Rng;
 use std::{
@@ -19,8 +19,7 @@ pub type Error = Box<dyn ErrorTrait>;
 
 pub trait DoublyHomomorphicCommitment: Clone {
     type Scalar: PrimeField;
-    type Message: ToBytes
-        + CanonicalSerialize
+    type Message: CanonicalSerialize
         + CanonicalDeserialize
         + Clone
         + Default
@@ -29,8 +28,7 @@ pub trait DoublyHomomorphicCommitment: Clone {
         + Sync
         + Add<Self::Message, Output = Self::Message>
         + MulAssign<Self::Scalar>;
-    type Key: ToBytes
-        + CanonicalSerialize
+    type Key: CanonicalSerialize
         + CanonicalDeserialize
         + Clone
         + Default
@@ -39,8 +37,7 @@ pub trait DoublyHomomorphicCommitment: Clone {
         + Sync
         + Add<Self::Key, Output = Self::Key>
         + MulAssign<Self::Scalar>;
-    type Output: ToBytes
-        + CanonicalSerialize
+    type Output: CanonicalSerialize
         + CanonicalDeserialize
         + Clone
         + Default

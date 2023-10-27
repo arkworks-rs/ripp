@@ -2,11 +2,18 @@
 #![deny(warnings, unused, missing_docs)]
 #![forbid(unsafe_code)]
 
-use ark_ec::{msm::VariableBaseMSM, AffineCurve, PairingEngine, ProjectiveCurve};
-use ark_ff::{to_bytes, Field, One, PrimeField, UniformRand};
-use digest::Digest;
-use rayon::prelude::*;
 use std::marker::PhantomData;
+
+use ark_ec::{
+    pairing::{MillerLoopOutput, Pairing, PairingOutput},
+    scalar_mul::variable_base::VariableBaseMSM,
+    CurveGroup,
+};
+use ark_ff::{Field, One, UniformRand};
+use ark_serialize::CanonicalSerialize;
+use ark_std::Zero;
+use digest::{generic_array::typenum::U32, Digest};
+use rayon::prelude::*;
 
 /// Fiat-Shamir Rng
 pub mod rng;
@@ -15,24 +22,28 @@ use rng::FiatShamirRng;
 
 /// SIPP is a inner-pairing product proof that allows a verifier to check an
 /// inner-pairing product over `n` elements with only a single pairing.
-pub struct SIPP<E: PairingEngine, D: Digest> {
+pub struct SIPP<E: Pairing, D: Digest> {
     _engine: PhantomData<E>,
     _digest: PhantomData<D>,
 }
 
 /// `Proof` contains the GT elements produced by the prover.
 // TODO(psi): why not just make Proof an alias since there's only one field?
-pub struct Proof<E: PairingEngine> {
-    gt_elems: Vec<(E::Fqk, E::Fqk)>,
+pub struct Proof<E: Pairing> {
+    gt_elems: Vec<(PairingOutput<E>, PairingOutput<E>)>,
 }
 
-impl<E: PairingEngine, D: Digest> SIPP<E, D> {
+impl<E, D> SIPP<E, D>
+where
+    E: Pairing,
+    D: Digest<OutputSize = U32>,
+{
     /// Produce a proof of the inner pairing product.
     pub fn prove(
         a: &[E::G1Affine],
         b: &[E::G2Affine],
-        r: &[E::Fr],
-        value: E::Fqk,
+        r: &[E::ScalarField],
+        value: PairingOutput<E>,
     ) -> Result<Proof<E>, ()> {
         assert_eq!(a.len(), b.len());
         // Ensure the order of the input vectors is a power of 2
@@ -42,13 +53,17 @@ impl<E: PairingEngine, D: Digest> SIPP<E, D> {
         assert_eq!(length.count_ones(), 1);
         let mut proof_vec = Vec::new();
         // TODO(psi): should we also input a succinct bilinear group description to the rng?
-        let mut rng = FiatShamirRng::<D>::from_seed(&to_bytes![a, b, r, value].unwrap());
+        let mut rng = {
+            let mut seed = Vec::new();
+            (a, b, r, value).serialize_uncompressed(&mut seed).unwrap();
+            FiatShamirRng::<D>::from_seed(&seed)
+        };
         let a = a
             .into_par_iter()
             .zip(r)
-            .map(|(a, r)| a.mul(*r))
+            .map(|(&a, r)| a * r)
             .collect::<Vec<_>>();
-        let mut a = E::G1Projective::batch_normalization_into_affine(&a);
+        let mut a = E::G1::normalize_batch(&a);
         let mut b = b.to_vec();
 
         while length != 1 {
@@ -62,31 +77,27 @@ impl<E: PairingEngine, D: Digest> SIPP<E, D> {
             let z_l = product_of_pairings::<E>(a_r, b_l);
             let z_r = product_of_pairings::<E>(a_l, b_r);
             proof_vec.push((z_l, z_r));
-            rng.absorb(&to_bytes![z_l, z_r].unwrap());
-            let x: E::Fr = u128::rand(&mut rng).into();
+            {
+                let mut buf = Vec::new();
+                (z_l, z_r).serialize_uncompressed(&mut buf).unwrap();
+                rng.absorb(&buf);
+            }
+            let x: E::ScalarField = u128::rand(&mut rng).into();
 
             let a_proj = a_l
                 .par_iter()
                 .zip(a_r)
-                .map(|(a_l, a_r)| {
-                    let mut temp = a_r.mul(x);
-                    temp.add_assign_mixed(a_l);
-                    temp
-                })
+                .map(|(a_l, &a_r)| a_r * x + a_l)
                 .collect::<Vec<_>>();
-            a = E::G1Projective::batch_normalization_into_affine(&a_proj);
+            a = E::G1::normalize_batch(&a_proj);
 
             let x_inv = x.inverse().unwrap();
             let b_proj = b_l
                 .par_iter()
                 .zip(b_r)
-                .map(|(b_l, b_r)| {
-                    let mut temp = b_r.mul(x_inv);
-                    temp.add_assign_mixed(b_l);
-                    temp
-                })
+                .map(|(b_l, &b_r)| b_r * x_inv + b_l)
                 .collect::<Vec<_>>();
-            b = E::G2Projective::batch_normalization_into_affine(&b_proj);
+            b = E::G2::normalize_batch(&b_proj);
         }
 
         Ok(Proof {
@@ -98,8 +109,8 @@ impl<E: PairingEngine, D: Digest> SIPP<E, D> {
     pub fn verify(
         a: &[E::G1Affine],
         b: &[E::G2Affine],
-        r: &[E::Fr],
-        claimed_value: E::Fqk,
+        r: &[E::ScalarField],
+        claimed_value: PairingOutput<E>,
         proof: &Proof<E>,
     ) -> Result<bool, ()> {
         // Ensure the order of the input vectors is a power of 2
@@ -112,14 +123,24 @@ impl<E: PairingEngine, D: Digest> SIPP<E, D> {
         assert_eq!(proof_len as f32, f32::log2(length as f32));
 
         // TODO(psi): should we also input a succinct bilinear group description to the rng?
-        let mut rng = FiatShamirRng::<D>::from_seed(&to_bytes![a, b, r, claimed_value].unwrap());
+        let mut rng = {
+            let mut seed = Vec::new();
+            (a, b, r, claimed_value)
+                .serialize_uncompressed(&mut seed)
+                .unwrap();
+            FiatShamirRng::<D>::from_seed(&seed)
+        };
 
         let x_s = proof
             .gt_elems
             .iter()
             .map(|(z_l, z_r)| {
-                rng.absorb(&to_bytes![z_l, z_r].unwrap());
-                let x: E::Fr = u128::rand(&mut rng).into();
+                {
+                    let mut buf = Vec::new();
+                    (*z_l, *z_r).serialize_uncompressed(&mut buf).unwrap();
+                    rng.absorb(&buf);
+                }
+                let x: E::ScalarField = u128::rand(&mut rng).into();
                 x
             })
             .collect::<Vec<_>>();
@@ -128,18 +149,16 @@ impl<E: PairingEngine, D: Digest> SIPP<E, D> {
         ark_ff::batch_inversion(&mut x_invs);
 
         let z_prime = claimed_value
-            * &proof
+            + proof
                 .gt_elems
                 .par_iter()
                 .zip(&x_s)
                 .zip(&x_invs)
-                .map(|(((z_l, z_r), x), x_inv)| {
-                    z_l.pow(x.into_repr()) * &z_r.pow(x_inv.into_repr())
-                })
-                .reduce(|| E::Fqk::one(), |a, b| a * &b);
+                .map(|(((z_l, z_r), x), x_inv)| (*z_l * x) + (*z_r * x_inv))
+                .reduce(|| PairingOutput::<E>::zero(), |a, b| a + b);
 
-        let mut s: Vec<E::Fr> = vec![E::Fr::one(); length];
-        let mut s_invs: Vec<E::Fr> = vec![E::Fr::one(); length];
+        let mut s: Vec<E::ScalarField> = vec![E::ScalarField::one(); length];
+        let mut s_invs: Vec<E::ScalarField> = vec![E::ScalarField::one(); length];
         // TODO(psi): batch verify
         for (j, (x, x_inv)) in x_s.into_iter().zip(x_invs).enumerate() {
             for i in 0..length {
@@ -150,18 +169,10 @@ impl<E: PairingEngine, D: Digest> SIPP<E, D> {
             }
         }
 
-        let s = s
-            .into_iter()
-            .zip(r)
-            .map(|(x, r)| (x * r).into_repr())
-            .collect::<Vec<_>>();
-        let s_invs = s_invs
-            .iter()
-            .map(|x_inv| x_inv.into_repr())
-            .collect::<Vec<_>>();
+        let s = s.into_iter().zip(r).map(|(x, r)| x * r).collect::<Vec<_>>();
 
-        let a_prime = VariableBaseMSM::multi_scalar_mul(&a, &s);
-        let b_prime = VariableBaseMSM::multi_scalar_mul(&b, &s_invs);
+        let a_prime = E::G1::msm(&a, &s).unwrap();
+        let b_prime = E::G2::msm(&b, &s_invs).unwrap();
 
         let accept = E::pairing(a_prime, b_prime) == z_prime;
 
@@ -170,39 +181,45 @@ impl<E: PairingEngine, D: Digest> SIPP<E, D> {
 }
 
 /// Compute the product of pairings of `r_i * a_i` and `b_i`.
-pub fn product_of_pairings_with_coeffs<E: PairingEngine>(
+pub fn product_of_pairings_with_coeffs<E: Pairing>(
     a: &[E::G1Affine],
     b: &[E::G2Affine],
-    r: &[E::Fr],
-) -> E::Fqk {
+    r: &[E::ScalarField],
+) -> PairingOutput<E> {
     let a = a
         .into_par_iter()
         .zip(r)
-        .map(|(a, r)| a.mul(*r))
+        .map(|(&a, r)| a * r)
         .collect::<Vec<_>>();
-    let a = E::G1Projective::batch_normalization_into_affine(&a);
-    let elements = a
-        .par_iter()
-        .zip(b)
-        .map(|(a, b)| (E::G1Prepared::from(*a), E::G2Prepared::from(*b)))
-        .collect::<Vec<_>>();
-    let num_chunks = elements.len() / rayon::current_num_threads();
-    let num_chunks = if num_chunks == 0 {
-        elements.len()
+    let a = E::G1::normalize_batch(&a);
+
+    let a = a.par_iter().map(E::G1Prepared::from).collect::<Vec<_>>();
+    let b = b.par_iter().map(E::G2Prepared::from).collect::<Vec<_>>();
+
+    // We want to process N chunks in parallel where N is the number of threads available
+    let num_chunks = rayon::current_num_threads();
+    let chunk_size = if num_chunks <= a.len() {
+        a.len() / num_chunks
     } else {
-        num_chunks
+        // More threads than elements. Just do it all in parallel
+        1
     };
-    let ml_result = elements
-        .par_chunks(num_chunks)
-        .map(E::miller_loop)
+
+    // Compute all the (partial) pairings and take the product. We have to take the product over
+    // P::TargetField because MillerLoopOutput doesn't impl Product
+    let ml_result = a
+        .par_chunks(chunk_size)
+        .zip(b.par_chunks(chunk_size))
+        .map(|(aa, bb)| E::multi_miller_loop(aa.iter().cloned(), bb.iter().cloned()).0)
         .product();
-    E::final_exponentiation(&ml_result).unwrap()
+
+    E::final_exponentiation(MillerLoopOutput(ml_result)).unwrap()
 }
 
 /// Compute the product of pairings of `a` and `b`.
 #[must_use]
-pub fn product_of_pairings<E: PairingEngine>(a: &[E::G1Affine], b: &[E::G2Affine]) -> E::Fqk {
-    let r = vec![E::Fr::one(); a.len()];
+pub fn product_of_pairings<E: Pairing>(a: &[E::G1Affine], b: &[E::G2Affine]) -> PairingOutput<E> {
+    let r = vec![E::ScalarField::one(); a.len()];
     product_of_pairings_with_coeffs::<E>(a, b, &r)
 }
 
@@ -214,7 +231,7 @@ mod tests {
 
     #[test]
     fn prove_and_verify_base_case() {
-        let mut rng = FiatShamirRng::<Blake2s>::from_seed(&to_bytes![b"falafel"].unwrap());
+        let mut rng = FiatShamirRng::<Blake2s>::from_seed(b"falafel");
         let mut a = Vec::with_capacity(32);
         let mut b = Vec::with_capacity(32);
         let mut r = Vec::with_capacity(32);
@@ -231,6 +248,7 @@ mod tests {
         let proof = proof.unwrap();
 
         let accept = SIPP::<Bls12_377, Blake2s>::verify(&a, &b, &r, z, &proof);
+
         assert!(accept.is_ok());
         assert!(accept.unwrap());
     }
