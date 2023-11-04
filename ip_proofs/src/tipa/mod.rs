@@ -6,11 +6,11 @@ use ark_std::rand::Rng;
 use ark_std::{end_timer, start_timer};
 use digest::Digest;
 use itertools::Itertools;
-use std::{marker::PhantomData, ops::MulAssign};
+use std::marker::PhantomData;
 
 use crate::{
     gipa::{GIPAProof, GIPA},
-    Error,
+    Error, ip_commitment::{IPCommitment, IPCommKey},
 };
 use ark_dh_commitments::{
     afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
@@ -19,7 +19,7 @@ use ark_dh_commitments::{
 };
 use ark_inner_products::{InnerProduct, MultiexponentiationInnerProduct};
 
-pub mod structured_scalar_message;
+// pub mod structured_scalar_message;
 
 //TODO: Could generalize: Don't need TIPA over G1 and G2, would work with G1 and G1 or over different pairing engines
 pub trait TIPACompatibleSetup {}
@@ -29,59 +29,33 @@ impl<P: Pairing> TIPACompatibleSetup for AFGHOCommitmentG1<P> {}
 impl<P: Pairing> TIPACompatibleSetup for AFGHOCommitmentG2<P> {}
 
 //TODO: May need to add "reverse" MultiexponentiationInnerProduct to allow for MIP with G2 messages (because TIP hard-coded G1 left and G2 right)
-pub struct TIPA<IP, LMC, RMC, IPC, P, D> {
+pub struct TIPA<IP, IPC, P, D> {
     _inner_product: PhantomData<IP>,
-    _left_commitment: PhantomData<LMC>,
-    _right_commitment: PhantomData<RMC>,
     _inner_product_commitment: PhantomData<IPC>,
     _pair: PhantomData<P>,
     _digest: PhantomData<D>,
 }
 
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct TIPAProof<IP, LMC, RMC, IPC, P, D>
+pub struct TIPAProof<IP, IPC, P, D>
 where
     D: Digest,
     P: Pairing,
-    IP: InnerProduct<
-        LeftMessage = LMC::Message,
-        RightMessage = RMC::Message,
-        Output = IPC::Message,
-    >,
-    LMC: DoublyHomomorphicCommitment + TIPACompatibleSetup,
-    RMC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar> + TIPACompatibleSetup,
-    IPC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar>,
-    RMC::Message: MulAssign<LMC::Scalar>,
-    IPC::Message: MulAssign<LMC::Scalar>,
-    RMC::Key: MulAssign<LMC::Scalar>,
-    IPC::Key: MulAssign<LMC::Scalar>,
-    RMC::Output: MulAssign<LMC::Scalar>,
-    IPC::Output: MulAssign<LMC::Scalar>,
+    IP: InnerProduct,
+    IPC: IPCommitment<IP = IP>,
 {
-    gipa_proof: GIPAProof<IP, LMC, RMC, IPC, D>,
-    final_ck: (LMC::Key, RMC::Key),
+    gipa_proof: GIPAProof<IP, IPC, D>,
+    final_ck: (IPC::LeftKey, IPC::RightKey),
     final_ck_proof: (P::G2, P::G1),
     _pair: PhantomData<P>,
 }
 
-impl<IP, LMC, RMC, IPC, P, D> Clone for TIPAProof<IP, LMC, RMC, IPC, P, D>
+impl<IP, IPC, P, D> Clone for TIPAProof<IP, IPC, P, D>
 where
     D: Digest,
     P: Pairing,
-    IP: InnerProduct<
-        LeftMessage = LMC::Message,
-        RightMessage = RMC::Message,
-        Output = IPC::Message,
-    >,
-    LMC: DoublyHomomorphicCommitment + TIPACompatibleSetup,
-    RMC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar> + TIPACompatibleSetup,
-    IPC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar>,
-    RMC::Message: MulAssign<LMC::Scalar>,
-    IPC::Message: MulAssign<LMC::Scalar>,
-    RMC::Key: MulAssign<LMC::Scalar>,
-    IPC::Key: MulAssign<LMC::Scalar>,
-    RMC::Output: MulAssign<LMC::Scalar>,
-    IPC::Output: MulAssign<LMC::Scalar>,
+    IP: InnerProduct,
+    IPC: IPCommitment<IP = IP>,
 {
     fn clone(&self) -> Self {
         Self {
@@ -127,27 +101,14 @@ impl<P: Pairing> SRS<P> {
     }
 }
 
-impl<IP, LMC, RMC, IPC, P, D> TIPA<IP, LMC, RMC, IPC, P, D>
+impl<IP, IPC, P, D> TIPA<IP, IPC, P, D>
 where
     D: Digest,
     P: Pairing,
-    IP: InnerProduct<
-        LeftMessage = LMC::Message,
-        RightMessage = RMC::Message,
-        Output = IPC::Message,
-    >,
-    LMC: DoublyHomomorphicCommitment<Scalar = P::ScalarField, Key = P::G2> + TIPACompatibleSetup,
-    RMC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar, Key = P::G1> + TIPACompatibleSetup,
-    IPC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar>,
-    LMC::Message: MulAssign<P::ScalarField>,
-    RMC::Message: MulAssign<P::ScalarField>,
-    IPC::Message: MulAssign<P::ScalarField>,
-    IPC::Key: MulAssign<P::ScalarField>,
-    LMC::Output: MulAssign<P::ScalarField>,
-    RMC::Output: MulAssign<P::ScalarField>,
-    IPC::Output: MulAssign<P::ScalarField>,
+    IP: InnerProduct,
+    IPC: IPCommitment<IP = IP>,
 {
-    pub fn setup<R: Rng>(rng: &mut R, size: usize) -> Result<(SRS<P>, IPC::Key), Error> {
+    pub fn setup<'a>(rng: &mut impl Rng, size: usize) -> Result<(SRS<P>, IPCommKey<'a, IPC>), Error> {
         let alpha = <P::ScalarField>::rand(rng);
         let beta = <P::ScalarField>::rand(rng);
         let g = <P::G1>::generator();
@@ -159,28 +120,28 @@ where
                 g_beta: g * beta,
                 h_alpha: h * alpha,
             },
-            IPC::setup(rng, 1)?.pop().unwrap(),
+            IPC::setup(1, rng)?.pop().unwrap(),
         ))
     }
 
-    pub fn prove(
+    pub fn prove<'a>(
         srs: &SRS<P>,
+        ck: &IPCommKey<'a, IPC>,
         values: (&[IP::LeftMessage], &[IP::RightMessage]),
-        ck: (&[LMC::Key], &[RMC::Key], &IPC::Key),
-    ) -> Result<TIPAProof<IP, LMC, RMC, IPC, P, D>, Error> {
+    ) -> Result<TIPAProof<IP, IPC, P, D>, Error> {
         Self::prove_with_srs_shift(srs, values, ck, &<P::ScalarField>::one())
     }
 
     // Shifts KZG proof for left message by scalar r (used for efficient composition with aggregation protocols)
     // LMC commitment key should already be shifted before being passed as input
-    pub fn prove_with_srs_shift(
+    pub fn prove_with_srs_shift<'a>(
         srs: &SRS<P>,
+        ck: &IPCommKey<'a, IPC>,
         values: (&[IP::LeftMessage], &[IP::RightMessage]),
-        ck: (&[LMC::Key], &[RMC::Key], &IPC::Key),
         r_shift: &P::ScalarField,
-    ) -> Result<TIPAProof<IP, LMC, RMC, IPC, P, D>, Error> {
+    ) -> Result<TIPAProof<IP, IPC, P, D>, Error> {
         // Run GIPA
-        let (proof, aux) = <GIPA<IP, LMC, RMC, IPC, D>>::prove_with_aux(
+        let (proof, aux) = <GIPA<IP, IPC, D>>::prove_with_aux(
             values,
             (ck.0, ck.1, &vec![ck.2.clone()]),
         )?;
@@ -202,7 +163,7 @@ where
                 .serialize_uncompressed(&mut hash_input)?;
             ck_a_final.serialize_uncompressed(&mut hash_input)?;
             ck_b_final.serialize_uncompressed(&mut hash_input)?;
-            if let Some(c) = LMC::Scalar::from_random_bytes(&D::digest(&hash_input)) {
+            if let Some(c) = IPC::Scalar::from_random_bytes(&D::digest(&hash_input)) {
                 break c;
             };
             counter_nonce += 1;
@@ -230,20 +191,20 @@ where
         })
     }
 
-    pub fn verify(
+    pub fn verify<'a>(
         v_srs: &VerifierSRS<P>,
-        ck_t: &IPC::Key,
-        com: (&LMC::Output, &RMC::Output, &IPC::Output),
-        proof: &TIPAProof<IP, LMC, RMC, IPC, P, D>,
+        ck: &IPCommKey<'a, IPC>,
+        com: &IPC::Output,
+        proof: &TIPAProof<IP, IPC, P, D>,
     ) -> Result<bool, Error> {
-        Self::verify_with_srs_shift(v_srs, ck_t, com, proof, &<P::ScalarField>::one())
+        Self::verify_with_srs_shift(v_srs, ck, com, proof, &<P::ScalarField>::one())
     }
 
-    pub fn verify_with_srs_shift(
+    pub fn verify_with_srs_shift<'a>(
         v_srs: &VerifierSRS<P>,
-        ck_t: &IPC::Key,
-        com: (&LMC::Output, &RMC::Output, &IPC::Output),
-        proof: &TIPAProof<IP, LMC, RMC, IPC, P, D>,
+        ck: &IPCommKey<'a, IPC>,
+        com: &IPC::Output,
+        proof: &TIPAProof<IP, IPC, P, D>,
         r_shift: &P::ScalarField,
     ) -> Result<bool, Error> {
         let (base_com, transcript) =
@@ -251,7 +212,7 @@ where
         let transcript_inverse = transcript.iter().map(|x| x.inverse().unwrap()).collect();
 
         // Verify commitment keys wellformed
-        let (ck_a_final, ck_b_final) = &proof.final_ck;
+        let ck_final = &proof.final_ck;
         let (ck_a_proof, ck_b_proof) = &proof.final_ck_proof;
 
         // KZG challenge point
@@ -263,9 +224,8 @@ where
                 .first()
                 .unwrap()
                 .serialize_uncompressed(&mut hash_input)?;
-            ck_a_final.serialize_uncompressed(&mut hash_input)?;
-            ck_b_final.serialize_uncompressed(&mut hash_input)?;
-            if let Some(c) = LMC::Scalar::from_random_bytes(&D::digest(&hash_input)) {
+            ck_final.serialize_uncompressed(&mut hash_input)?;
+            if let Some(c) = IPC::Scalar::from_random_bytes(&D::digest(&hash_input)) {
                 break c;
             };
             counter_nonce += 1;
@@ -273,7 +233,7 @@ where
 
         let ck_a_valid = verify_commitment_key_g2_kzg_opening(
             v_srs,
-            &ck_a_final,
+            &ck_final,
             &ck_a_proof,
             &transcript_inverse,
             &r_shift.inverse().unwrap(),
@@ -281,7 +241,7 @@ where
         )?;
         let ck_b_valid = verify_commitment_key_g1_kzg_opening(
             v_srs,
-            &ck_b_final,
+            &ck_final,
             &ck_b_proof,
             &transcript,
             &<P::ScalarField>::one(),
@@ -293,9 +253,7 @@ where
         let a_base = vec![proof.gipa_proof.r_base.0.clone()];
         let b_base = vec![proof.gipa_proof.r_base.1.clone()];
         let t_base = vec![IP::inner_product(&a_base, &b_base)?];
-        let base_valid = LMC::verify(&vec![ck_a_final.clone()], &a_base, &com_a)?
-            && RMC::verify(&vec![ck_b_final.clone()], &b_base, &com_b)?
-            && IPC::verify(&vec![ck_t.clone()], &t_base, &com_t)?;
+        let base_valid = IPC::verify(&ck_final, &a_base, &b_base, &t_base, com)?;
 
         Ok(ck_a_valid && ck_b_valid && base_valid)
     }

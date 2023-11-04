@@ -15,7 +15,7 @@ use crate::{
         prove_commitment_key_kzg_opening, structured_generators_scalar_power,
         verify_commitment_key_g2_kzg_opening, TIPACompatibleSetup, VerifierSRS, SRS,
     },
-    Error,
+    Error, ip_commitment::{IPCommitment, IPCommKey},
 };
 use ark_dh_commitments::{identity::HomomorphicPlaceholderValue, DoublyHomomorphicCommitment};
 use ark_inner_products::InnerProduct;
@@ -46,33 +46,28 @@ impl<F: PrimeField> DoublyHomomorphicCommitment for SSMPlaceholderCommitment<F> 
     }
 }
 
-pub struct GIPAWithSSM<IP, LMC, IPC, D> {
+pub struct GIPAWithSSM<IP, IPC, D> {
     _inner_product: PhantomData<IP>,
-    _left_commitment: PhantomData<LMC>,
     _inner_product_commitment: PhantomData<IPC>,
     _digest: PhantomData<D>,
 }
 
-impl<IP, LMC, IPC, D> GIPAWithSSM<IP, LMC, IPC, D>
+impl<IP, LMC, IPC, D> GIPAWithSSM<IP, IPC, D>
 where
     D: Digest,
-    IP: InnerProduct<LeftMessage = LMC::Message, RightMessage = LMC::Scalar, Output = IPC::Message>,
-    LMC: DoublyHomomorphicCommitment,
-    IPC: DoublyHomomorphicCommitment<Scalar = LMC::Scalar>,
-    IPC::Message: MulAssign<LMC::Scalar>,
-    IPC::Key: MulAssign<LMC::Scalar>,
-    IPC::Output: MulAssign<LMC::Scalar>,
+    IP: InnerProduct,
+    IPC: IPCommitment<IP>,
 {
-    pub fn setup<R: Rng>(rng: &mut R, size: usize) -> Result<(Vec<LMC::Key>, IPC::Key), Error> {
-        Ok((LMC::setup(rng, size)?, IPC::setup(rng, 1)?.pop().unwrap()))
+    pub fn setup<'a>(size: usize, rng: &mut impl Rng) -> Result<IPCommKey<'a, IP, IPC>, Error> {
+        Ok(IPC::setup(1, rng)?)
     }
 
-    pub fn prove_with_structured_scalar_message(
+    pub fn prove_with_structured_scalar_message<'a>(
+        ck: &IPCommKey<'a, IP, IPC>,
         values: (&[IP::LeftMessage], &[IP::RightMessage]),
-        ck: (&[LMC::Key], &IPC::Key),
-    ) -> Result<GIPAProof<IP, LMC, SSMPlaceholderCommitment<LMC::Scalar>, IPC, D>, Error> {
+    ) -> Result<GIPAProof<IP, IPC, D>, Error> {
         let (proof, _) =
-            <GIPA<IP, LMC, SSMPlaceholderCommitment<LMC::Scalar>, IPC, D>>::prove_with_aux(
+            <GIPA<IP, IPC, D>>::prove_with_aux(
                 values,
                 (
                     ck.0,
@@ -83,11 +78,11 @@ where
         Ok(proof)
     }
 
-    pub fn verify_with_structured_scalar_message(
-        ck: (&[LMC::Key], &IPC::Key),
-        com: (&LMC::Output, &IPC::Output),
-        scalar_b: &LMC::Scalar,
-        proof: &GIPAProof<IP, LMC, SSMPlaceholderCommitment<LMC::Scalar>, IPC, D>,
+    pub fn verify_with_structured_scalar_message<'a>(
+        ck: &IPCommKey<'a, IP, IPC>,
+        com: &IPC::Output,
+        scalar_b: &IPC::Scalar,
+        proof: &GIPAProof<IP, IPC, D>,
     ) -> Result<bool, Error> {
         // Calculate base commitments and recursive transcript
         //TODO: Scalar b not included in generating challenges

@@ -8,6 +8,7 @@ use std::{
 pub mod applications;
 pub mod gipa;
 pub mod tipa;
+pub mod ip_commitment;
 
 pub type Error = Box<dyn ErrorTrait>;
 
