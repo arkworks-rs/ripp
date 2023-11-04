@@ -10,7 +10,8 @@ use std::marker::PhantomData;
 
 use crate::{
     gipa::{GIPAProof, GIPA},
-    Error, ip_commitment::{IPCommitment, IPCommKey},
+    ip_commitment::{IPCommKey, IPCommitment},
+    Error,
 };
 use ark_dh_commitments::{
     afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
@@ -108,7 +109,10 @@ where
     IP: InnerProduct,
     IPC: IPCommitment<IP = IP>,
 {
-    pub fn setup<'a>(rng: &mut impl Rng, size: usize) -> Result<(SRS<P>, IPCommKey<'a, IPC>), Error> {
+    pub fn setup<'a>(
+        rng: &mut impl Rng,
+        size: usize,
+    ) -> Result<(SRS<P>, IPCommKey<'a, IPC>), Error> {
         let alpha = <P::ScalarField>::rand(rng);
         let beta = <P::ScalarField>::rand(rng);
         let g = <P::G1>::generator();
@@ -141,10 +145,8 @@ where
         r_shift: &P::ScalarField,
     ) -> Result<TIPAProof<IP, IPC, P, D>, Error> {
         // Run GIPA
-        let (proof, aux) = <GIPA<IP, IPC, D>>::prove_with_aux(
-            values,
-            (ck.0, ck.1, &vec![ck.2.clone()]),
-        )?;
+        let (proof, aux) =
+            <GIPA<IP, IPC, D>>::prove_with_aux(values, (ck.0, ck.1, &vec![ck.2.clone()]))?;
 
         // Prove final commitment keys are wellformed
         let (ck_a_final, ck_b_final) = aux.ck_base;

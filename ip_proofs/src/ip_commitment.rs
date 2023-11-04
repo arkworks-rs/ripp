@@ -1,17 +1,22 @@
 use std::borrow::Cow;
 
 use ark_dh_commitments::Error;
-use ark_std::{ops::{Add, MulAssign}, rand::Rng, end_timer, start_timer, cfg_iter};
+use ark_std::{
+    cfg_iter, end_timer,
+    ops::{Add, MulAssign},
+    rand::Rng,
+    start_timer,
+};
 
 use ark_inner_products::InnerProduct;
-use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 use crate::mul_helper;
 
-mod tipp;
 mod mipp;
 mod snarkpack;
 mod ssm;
+mod tipp;
 
 type LeftMessage<IPC> = <<IPC as IPCommitment>::IP as InnerProduct>::LeftMessage;
 type RightMessage<IPC> = <<IPC as IPCommitment>::IP as InnerProduct>::RightMessage;
@@ -55,12 +60,23 @@ pub trait IPCommitment {
         + Eq
         + Add<Self::Output, Output = Self::Output>
         + MulAssign<Self::Scalar>;
-    
+
     fn setup(size: usize, r: &mut impl Rng) -> Result<IPCommKey<'_, Self>, Error>;
 
-    fn commit<'a>(ck: &IPCommKey<'a, Self>, l: &[LeftMessage<Self>], r: &[RightMessage<Self>], ip: &[OutputMessage<Self>]) -> Result<Self::Output, Error>;
+    fn commit<'a>(
+        ck: &IPCommKey<'a, Self>,
+        l: &[LeftMessage<Self>],
+        r: &[RightMessage<Self>],
+        ip: &[OutputMessage<Self>],
+    ) -> Result<Self::Output, Error>;
 
-    fn verify<'a>(ck: &IPCommKey<'a, Self>, l: &[LeftMessage<Self>], r: &[RightMessage<Self>], ip: &[OutputMessage<Self>], com: &Self::Output) -> Result<bool, Error> {
+    fn verify<'a>(
+        ck: &IPCommKey<'a, Self>,
+        l: &[LeftMessage<Self>],
+        r: &[RightMessage<Self>],
+        ip: &[OutputMessage<Self>],
+        com: &Self::Output,
+    ) -> Result<bool, Error> {
         Ok(Self::commit(ck, l, r, ip)? == *com)
     }
 }
@@ -126,6 +142,4 @@ impl<'a, IPC: IPCommitment> IPCommKey<'a, IPC> {
         *self.ck_b = Cow::Owned(ck_b);
         Ok(())
     }
-
-
 }

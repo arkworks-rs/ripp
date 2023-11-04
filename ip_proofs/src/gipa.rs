@@ -5,7 +5,10 @@ use ark_std::{end_timer, start_timer};
 use digest::Digest;
 use std::{convert::TryInto, marker::PhantomData};
 
-use crate::{mul_helper, Error, InnerProductArgumentError, ip_commitment::{IPCommitment, IPCommKey}};
+use crate::{
+    ip_commitment::{IPCommKey, IPCommitment},
+    mul_helper, Error, InnerProductArgumentError,
+};
 use ark_dh_commitments::DoublyHomomorphicCommitment;
 use ark_inner_products::InnerProduct;
 use ark_std::cfg_iter;
@@ -25,7 +28,6 @@ where
     D: Digest,
     IP: InnerProduct,
     IPC: IPCommitment<IP = IP>,
-
 {
     pub(crate) r_commitment_steps: Vec<IPC::Output>,
     pub(crate) r_base: (IP::LeftMessage, IP::RightMessage),
@@ -54,10 +56,7 @@ where
     IP: InnerProduct,
     IPC: IPCommitment<IP = IP>,
 {
-    pub fn setup<'a>(
-        size: usize,
-        rng: &mut impl Rng,
-    ) -> Result<IPCommKey<'a, IPC>, Error> {
+    pub fn setup<'a>(size: usize, rng: &mut impl Rng) -> Result<IPCommKey<'a, IPC>, Error> {
         IPC::setup(size, rng)
     }
 
@@ -115,13 +114,7 @@ where
     pub fn prove_with_aux<'a>(
         ck: &IPCommKey<'a, IPC>,
         values: (&[IP::LeftMessage], &[IP::RightMessage]),
-    ) -> Result<
-        (
-            GIPAProof<IP, IPC, D>,
-            GIPAAux<IP, IPC, D>,
-        ),
-        Error,
-    > {
+    ) -> Result<(GIPAProof<IP, IPC, D>, GIPAAux<IP, IPC, D>), Error> {
         let (m_a, m_b) = values;
         let (ck_a, ck_b, ck_t) = ck;
         Self::_prove(
@@ -134,13 +127,7 @@ where
     fn _prove<'a>(
         values: (Vec<IP::LeftMessage>, Vec<IP::RightMessage>),
         ck: &IPCommKey<'a, IPC>,
-    ) -> Result<
-        (
-            GIPAProof<IP, IPC, D>,
-            GIPAAux<IP, IPC, D>,
-        ),
-        Error,
-    > {
+    ) -> Result<(GIPAProof<IP, IPC, D>, GIPAAux<IP, IPC, D>), Error> {
         let (mut m_a, mut m_b) = values;
         let (mut ck_a, mut ck_b, ck_t) = ck;
         let mut r_commitment_steps = Vec::new();
@@ -167,10 +154,12 @@ where
                 let (ck_1, ck_2) = ck.split(split);
 
                 let cl = start_timer!(|| "Commit L");
-                let com_1 = IPC::commit(&ck_1, &m_a_1, &m_b_1, &[IP::inner_product(m_a_1, m_b_1)?])?;
+                let com_1 =
+                    IPC::commit(&ck_1, &m_a_1, &m_b_1, &[IP::inner_product(m_a_1, m_b_1)?])?;
                 end_timer!(cl);
                 let cr = start_timer!(|| "Commit R");
-                let com_2 = IPC::commit(&ck_2, &m_a_2, &m_b_2, &[IP::inner_product(m_a_2, m_b_2)?])?;
+                let com_2 =
+                    IPC::commit(&ck_2, &m_a_2, &m_b_2, &[IP::inner_product(m_a_2, m_b_2)?])?;
                 end_timer!(cr);
 
                 // Fiat-Shamir challenge
@@ -213,7 +202,6 @@ where
                 end_timer!(rescale_m2);
 
                 ck.fold_into(&ck_1, &ck_2, &c_inv, &c)?;
-                
 
                 r_commitment_steps.push((com_1, com_2));
                 r_transcript.push(c);
@@ -337,9 +325,6 @@ where
         Ok(IPC::verify(&base_ck, &a_base, &b_base, &t_base, &com_t)?)
     }
 }
-
-
-
 
 impl<IP, IPC, D> Clone for GIPAProof<IP, IPC, D>
 where
