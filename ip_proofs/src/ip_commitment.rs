@@ -1,8 +1,9 @@
-use std::borrow::Cow;
+use std::ops::{Mul, AddAssign};
 
 use ark_dh_commitments::Error;
 use ark_std::{
     cfg_iter, end_timer,
+    borrow::Cow,
     ops::{Add, MulAssign},
     rand::Rng,
     start_timer,
@@ -11,6 +12,10 @@ use ark_std::{
 use ark_inner_products::InnerProduct;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
+use derivative::Derivative;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+
 use crate::mul_helper;
 
 mod mipp;
@@ -18,13 +23,14 @@ mod snarkpack;
 mod ssm;
 mod tipp;
 
-type LeftMessage<IPC> = <<IPC as IPCommitment>::IP as InnerProduct>::LeftMessage;
-type RightMessage<IPC> = <<IPC as IPCommitment>::IP as InnerProduct>::RightMessage;
-type OutputMessage<IPC> = <<IPC as IPCommitment>::IP as InnerProduct>::Output;
+pub type LeftMessage<IPC> = <<IPC as IPCommitment>::IP as InnerProduct>::LeftMessage;
+pub type RightMessage<IPC> = <<IPC as IPCommitment>::IP as InnerProduct>::RightMessage;
+pub type OutputMessage<IPC> = <<IPC as IPCommitment>::IP as InnerProduct>::Output;
+pub type Scalar<IPC> = <<IPC as IPCommitment>::IP as InnerProduct>::Scalar;
 
-pub trait IPCommitment {
+pub trait IPCommitment: Sized {
     type IP: InnerProduct;
-    type Scalar;
+
     type LeftKey: CanonicalSerialize
         + CanonicalDeserialize
         + Clone
@@ -33,7 +39,9 @@ pub trait IPCommitment {
         + Send
         + Sync
         + Add<Self::LeftKey, Output = Self::LeftKey>
-        + MulAssign<Self::Scalar>;
+        + Mul<Scalar<Self>, Output = Self::LeftKey>
+        + MulAssign<Scalar<Self>>;
+
     type RightKey: CanonicalSerialize
         + CanonicalDeserialize
         + Clone
@@ -42,7 +50,9 @@ pub trait IPCommitment {
         + Send
         + Sync
         + Add<Self::RightKey, Output = Self::RightKey>
-        + MulAssign<Self::Scalar>;
+        + Mul<Scalar<Self>, Output = Self::RightKey>
+        + MulAssign<Scalar<Self>>;
+
     type IPKey: CanonicalSerialize
         + CanonicalDeserialize
         + Clone
@@ -51,15 +61,18 @@ pub trait IPCommitment {
         + Send
         + Sync
         + Add<Self::IPKey, Output = Self::IPKey>
-        + MulAssign<Self::Scalar>;
+        + Mul<Scalar<Self>, Output = Self::IPKey>
+        + MulAssign<Scalar<Self>>;
 
-    type Output: CanonicalSerialize
+    type Commitment: CanonicalSerialize
         + CanonicalDeserialize
-        + Clone
+        + Copy
         + Default
         + Eq
-        + Add<Self::Output, Output = Self::Output>
-        + MulAssign<Self::Scalar>;
+        + Add<Self::Commitment, Output = Self::Commitment>
+        + AddAssign<Self::Commitment>
+        + Mul<Scalar<Self>, Output = Self::Commitment>
+        + MulAssign<Scalar<Self>>;
 
     fn setup(size: usize, r: &mut impl Rng) -> Result<IPCommKey<'_, Self>, Error>;
 
@@ -68,19 +81,21 @@ pub trait IPCommitment {
         l: &[LeftMessage<Self>],
         r: &[RightMessage<Self>],
         ip: &[OutputMessage<Self>],
-    ) -> Result<Self::Output, Error>;
+    ) -> Result<Self::Commitment, Error>;
 
     fn verify<'a>(
         ck: &IPCommKey<'a, Self>,
         l: &[LeftMessage<Self>],
         r: &[RightMessage<Self>],
         ip: &[OutputMessage<Self>],
-        com: &Self::Output,
+        com: &Self::Commitment,
     ) -> Result<bool, Error> {
         Ok(Self::commit(ck, l, r, ip)? == *com)
     }
 }
 
+#[derive(Derivative)]
+#[derivative(Clone(bound = ""))]
 pub struct IPCommKey<'a, IPC: IPCommitment> {
     pub ck_a: Cow<'a, [IPC::LeftKey]>,
     pub ck_b: Cow<'a, [IPC::RightKey]>,
@@ -120,26 +135,26 @@ impl<'a, IPC: IPCommitment> IPCommKey<'a, IPC> {
         &mut self,
         ck_1: &Self,
         ck_2: &Self,
-        c_inv: &IPC::Scalar,
-        c: &IPC::Scalar,
+        c_inv: &Scalar<IPC>,
+        c: &Scalar<IPC>,
     ) -> Result<(), Error> {
         let rescale_a = start_timer!(|| "Rescale CK_B");
-        let ck_a = cfg_iter!(&ck_2.ck_a)
+        let ck_a = cfg_iter!(ck_2.ck_a.as_ref())
             .map(|a| mul_helper(a, &c_inv))
-            .zip(&ck_1.ck_a)
+            .zip(ck_1.ck_a.as_ref())
             .map(|(a_1, a_2)| a_1 + a_2.clone())
             .collect::<Vec<IPC::LeftKey>>();
         end_timer!(rescale_a);
 
         let rescale_b = start_timer!(|| "Rescale CK_A");
-        let ck_b = cfg_iter!(&ck_1.ck_b)
+        let ck_b = cfg_iter!(ck_1.ck_b.as_ref())
             .map(|b| mul_helper(b, &c))
-            .zip(ck_2.ck_b)
+            .zip(ck_2.ck_b.as_ref())
             .map(|(b_1, b_2)| b_1 + b_2.clone())
             .collect::<Vec<IPC::RightKey>>();
         end_timer!(rescale_b);
-        *self.ck_a = Cow::Owned(ck_a);
-        *self.ck_b = Cow::Owned(ck_b);
+        self.ck_a = Cow::Owned(ck_a);
+        self.ck_b = Cow::Owned(ck_b);
         Ok(())
     }
 }

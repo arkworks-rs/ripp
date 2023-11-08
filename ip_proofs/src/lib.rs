@@ -5,7 +5,7 @@ use std::{
     ops::MulAssign,
 };
 
-pub mod applications;
+// pub mod applications;
 pub mod gipa;
 pub mod ip_commitment;
 pub mod tipa;

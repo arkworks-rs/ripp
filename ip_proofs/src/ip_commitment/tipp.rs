@@ -24,5 +24,5 @@ impl<E: Pairing> IPCommitment for TIPPCommitment<E> {
     type LeftKey = GC1<E>;
     type RightKey = GC2<E>;
     type IPKey = IPC<E>;
-    type Output = PairingOutput<E>;
+    type Commitment = PairingOutput<E>;
 }

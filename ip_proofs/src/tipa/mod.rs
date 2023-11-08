@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 
 use crate::{
     gipa::{GIPAProof, GIPA},
-    ip_commitment::{IPCommKey, IPCommitment},
+    ip_commitment::{IPCommKey, IPCommitment, Scalar},
     Error,
 };
 use ark_dh_commitments::{
@@ -131,9 +131,10 @@ where
     pub fn prove<'a>(
         srs: &SRS<P>,
         ck: &IPCommKey<'a, IPC>,
-        values: (&[IP::LeftMessage], &[IP::RightMessage]),
+        left: &[IP::LeftMessage],
+        right: &[IP::RightMessage],
     ) -> Result<TIPAProof<IP, IPC, P, D>, Error> {
-        Self::prove_with_srs_shift(srs, values, ck, &<P::ScalarField>::one())
+        Self::prove_with_srs_shift(srs, ck, left, right, &<P::ScalarField>::one())
     }
 
     // Shifts KZG proof for left message by scalar r (used for efficient composition with aggregation protocols)
@@ -141,12 +142,12 @@ where
     pub fn prove_with_srs_shift<'a>(
         srs: &SRS<P>,
         ck: &IPCommKey<'a, IPC>,
-        values: (&[IP::LeftMessage], &[IP::RightMessage]),
+        left: &[IP::LeftMessage],
+        right: &[IP::RightMessage],
         r_shift: &P::ScalarField,
     ) -> Result<TIPAProof<IP, IPC, P, D>, Error> {
         // Run GIPA
-        let (proof, aux) =
-            <GIPA<IP, IPC, D>>::prove_with_aux(values, (ck.0, ck.1, &vec![ck.2.clone()]))?;
+        let (proof, aux) = <GIPA<IP, IPC, D>>::prove_with_aux(ck, left, right)?;
 
         // Prove final commitment keys are wellformed
         let (ck_a_final, ck_b_final) = aux.ck_base;
@@ -165,7 +166,7 @@ where
                 .serialize_uncompressed(&mut hash_input)?;
             ck_a_final.serialize_uncompressed(&mut hash_input)?;
             ck_b_final.serialize_uncompressed(&mut hash_input)?;
-            if let Some(c) = IPC::Scalar::from_random_bytes(&D::digest(&hash_input)) {
+            if let Some(c) = Scalar<IPC>::from_random_bytes(&D::digest(&hash_input)) {
                 break c;
             };
             counter_nonce += 1;
@@ -196,7 +197,7 @@ where
     pub fn verify<'a>(
         v_srs: &VerifierSRS<P>,
         ck: &IPCommKey<'a, IPC>,
-        com: &IPC::Output,
+        com: &IPC::Commitment,
         proof: &TIPAProof<IP, IPC, P, D>,
     ) -> Result<bool, Error> {
         Self::verify_with_srs_shift(v_srs, ck, com, proof, &<P::ScalarField>::one())
@@ -205,7 +206,7 @@ where
     pub fn verify_with_srs_shift<'a>(
         v_srs: &VerifierSRS<P>,
         ck: &IPCommKey<'a, IPC>,
-        com: &IPC::Output,
+        com: &IPC::Commitment,
         proof: &TIPAProof<IP, IPC, P, D>,
         r_shift: &P::ScalarField,
     ) -> Result<bool, Error> {
@@ -227,7 +228,7 @@ where
                 .unwrap()
                 .serialize_uncompressed(&mut hash_input)?;
             ck_final.serialize_uncompressed(&mut hash_input)?;
-            if let Some(c) = IPC::Scalar::from_random_bytes(&D::digest(&hash_input)) {
+            if let Some(c) = Scalar::<IPC>::from_random_bytes(&D::digest(&hash_input)) {
                 break c;
             };
             counter_nonce += 1;

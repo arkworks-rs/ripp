@@ -3,11 +3,12 @@ use ark_ec::{
     CurveGroup,
 };
 use ark_ff::Field;
+use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
 use ark_std::cfg_iter;
 use std::{
     error::Error as ErrorTrait,
     fmt::{Display, Formatter, Result as FmtResult},
-    marker::PhantomData,
+    marker::PhantomData, ops::{Add, MulAssign},
 };
 
 #[cfg(feature = "parallel")]
@@ -38,9 +39,22 @@ impl Display for InnerProductError {
 }
 
 pub trait InnerProduct: Copy {
-    type LeftMessage;
-    type RightMessage;
-    type Output;
+    type Scalar: Field;
+    type LeftMessage: Clone
+        + Send
+        + Sync
+        + CanonicalSerialize
+        + CanonicalDeserialize
+        + Add<Output = Self::LeftMessage>
+        + MulAssign<Self::Scalar>;
+    type RightMessage: Clone
+        + Send
+        + Sync
+        + CanonicalSerialize
+        + CanonicalDeserialize
+        + Add<Output = Self::RightMessage>
+        + MulAssign<Self::Scalar>;
+    type Output: Eq + Clone + Send + Sync + CanonicalSerialize + CanonicalDeserialize;
 
     fn inner_product(
         left: &[Self::LeftMessage],
@@ -57,6 +71,7 @@ impl<P: Pairing> InnerProduct for PairingInnerProduct<P> {
     type LeftMessage = P::G1;
     type RightMessage = P::G2;
     type Output = PairingOutput<P>;
+    type Scalar = P::ScalarField;
 
     fn inner_product(
         left: &[Self::LeftMessage],
@@ -124,6 +139,7 @@ impl<G: CurveGroup> InnerProduct for MultiexponentiationInnerProduct<G> {
     type LeftMessage = G;
     type RightMessage = G::ScalarField;
     type Output = G;
+    type Scalar = G::ScalarField;
 
     fn inner_product(
         left: &[Self::LeftMessage],
@@ -147,6 +163,7 @@ pub struct ScalarInnerProduct<F: Field> {
 }
 
 impl<F: Field> InnerProduct for ScalarInnerProduct<F> {
+    type Scalar = F;
     type LeftMessage = F;
     type RightMessage = F;
     type Output = F;

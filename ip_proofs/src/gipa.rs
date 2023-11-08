@@ -1,17 +1,18 @@
 use ark_ff::{Field, One};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use ark_std::rand::Rng;
-use ark_std::{end_timer, start_timer};
+use ark_std::{
+    convert::TryInto, marker::PhantomData, borrow::Cow,
+    rand::Rng,
+end_timer, start_timer,
+cfg_iter,
+};
 use digest::Digest;
-use std::{convert::TryInto, marker::PhantomData};
 
 use crate::{
-    ip_commitment::{IPCommKey, IPCommitment},
+    ip_commitment::{IPCommKey, IPCommitment, Scalar},
     mul_helper, Error, InnerProductArgumentError,
 };
-use ark_dh_commitments::DoublyHomomorphicCommitment;
 use ark_inner_products::InnerProduct;
-use ark_std::cfg_iter;
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -29,7 +30,7 @@ where
     IP: InnerProduct,
     IPC: IPCommitment<IP = IP>,
 {
-    pub(crate) r_commitment_steps: Vec<IPC::Output>,
+    pub(crate) r_commitment_steps: Vec<(IPC::Commitment, IPC::Commitment)>,
     pub(crate) r_base: (IP::LeftMessage, IP::RightMessage),
     // The fn() is here because PhantomData<T> is Sync iff T is Sync, and these types are not all
     // Sync
@@ -37,14 +38,14 @@ where
 }
 
 #[derive(Clone)]
-pub struct GIPAAux<IP, IPC, D>
+pub struct GIPAAux<'a, IP, IPC, D>
 where
     D: Digest,
     IP: InnerProduct,
     IPC: IPCommitment<IP = IP>,
 {
-    pub(crate) r_transcript: Vec<IPC::Scalar>,
-    pub(crate) ck_base: (IPC::LeftKey, IPC::RightKey),
+    pub(crate) r_transcript: Vec<Scalar<IPC>>,
+    pub(crate) ck_base: IPCommKey<'a, IPC>,
     _gipa: PhantomData<GIPA<IP, IPC, D>>,
 }
 
@@ -62,104 +63,105 @@ where
 
     pub fn prove<'a>(
         ck: &IPCommKey<'a, IPC>,
-        values: (&[IP::LeftMessage], &[IP::RightMessage], &IP::Output),
-        com: &IPC::Output,
+        left: &[IP::LeftMessage], 
+        right: &[IP::RightMessage], 
+        output: &IP::Output,
+        com: &IPC::Commitment,
     ) -> Result<GIPAProof<IP, IPC, D>, Error> {
-        if IP::inner_product(values.0, values.1)? != values.2.clone() {
+        if &IP::inner_product(left, right)? != output {
             return Err(Box::new(InnerProductArgumentError::InnerProductInvalid));
         }
-        if values.0.len().count_ones() != 1 {
+        if left.len().count_ones() != 1 {
             // Power of 2 length
             return Err(Box::new(InnerProductArgumentError::MessageLengthInvalid(
-                values.0.len(),
-                values.1.len(),
+                left.len(),
+                right.len(),
             )));
         }
-        if !IPC::verify(ck, values.0, values.1, &[values.2.clone()], com)? {
+        if !IPC::verify(ck, left, right, core::slice::from_ref(output), com)? {
             return Err(Box::new(InnerProductArgumentError::InnerProductInvalid));
         }
 
-        let (proof, _) =
-            Self::prove_with_aux((values.0, values.1), (ck.0, ck.1, &vec![ck.2.clone()]))?;
+        let (proof, _) = Self::prove_with_aux(ck, left, right)?;
         Ok(proof)
     }
 
     pub fn verify<'a>(
         ck: &IPCommKey<'a, IPC>,
-        com: &IPC::Output,
+        com: &IPC::Commitment,
         proof: &GIPAProof<IP, IPC, D>,
     ) -> Result<bool, Error> {
-        if ck.0.len().count_ones() != 1 || ck.0.len() != ck.1.len() {
+        if !ck.ck_a.len().is_power_of_two() || ck.ck_a.len() != ck.ck_b.len() {
             // Power of 2 length
             return Err(Box::new(InnerProductArgumentError::MessageLengthInvalid(
-                ck.0.len(),
-                ck.1.len(),
+                ck.ck_a.len(),
+                ck.ck_b.len(),
             )));
         }
         // Calculate base commitment and transcript
         let (base_com, transcript) = Self::_compute_recursive_challenges(
-            (com.0.clone(), com.1.clone(), com.2.clone()),
+            com,
             proof,
         )?;
         // Calculate base commitment keys
-        let (ck_a_base, ck_b_base) = Self::_compute_final_commitment_keys(ck, &transcript)?;
+        let ck_base = Self::_compute_final_commitment_keys(ck, &transcript)?;
         // Verify base commitment
         Self::_verify_base_commitment(
-            (&ck_a_base, &ck_b_base, &vec![ck.2.clone()]),
-            base_com,
+            &ck_base,
+            &base_com,
             proof,
         )
     }
 
     pub fn prove_with_aux<'a>(
         ck: &IPCommKey<'a, IPC>,
-        values: (&[IP::LeftMessage], &[IP::RightMessage]),
-    ) -> Result<(GIPAProof<IP, IPC, D>, GIPAAux<IP, IPC, D>), Error> {
-        let (m_a, m_b) = values;
-        let (ck_a, ck_b, ck_t) = ck;
+        left: &[IP::LeftMessage],
+        right: &[IP::RightMessage],
+    ) -> Result<(GIPAProof<IP, IPC, D>, GIPAAux<'a, IP, IPC, D>), Error> {
         Self::_prove(
-            (m_a.to_vec(), m_b.to_vec()),
-            (ck_a.to_vec(), ck_b.to_vec(), ck_t.to_vec()),
+            ck,
+            left.to_vec(),
+            right.to_vec(),
         )
     }
 
     // Returns vector of recursive commitments and transcripts in reverse order
     fn _prove<'a>(
-        values: (Vec<IP::LeftMessage>, Vec<IP::RightMessage>),
         ck: &IPCommKey<'a, IPC>,
-    ) -> Result<(GIPAProof<IP, IPC, D>, GIPAAux<IP, IPC, D>), Error> {
-        let (mut m_a, mut m_b) = values;
-        let (mut ck_a, mut ck_b, ck_t) = ck;
+        left: Vec<IP::LeftMessage>, 
+        right: Vec<IP::RightMessage>,
+    ) -> Result<(GIPAProof<IP, IPC, D>, GIPAAux<'a, IP, IPC, D>), Error> {
+        let mut ck = ck.clone();
         let mut r_commitment_steps = Vec::new();
-        let mut r_transcript: Vec<IPC::Scalar> = Vec::new();
-        assert!(m_a.len().is_power_of_two());
+        let mut r_transcript: Vec<Scalar<IPC>> = Vec::new();
+        assert!(left.len().is_power_of_two());
         let (m_base, ck_base) = 'recurse: loop {
-            let recurse = start_timer!(|| format!("Recurse round size {}", m_a.len()));
-            if m_a.len() == 1 {
+            let recurse = start_timer!(|| format!("Recurse round size {}", left.len()));
+            if left.len() == 1 {
                 // base case
                 break 'recurse (
-                    (m_a[0].clone(), m_b[0].clone()),
-                    (ck_a[0].clone(), ck_b[0].clone()),
+                    (left[0].clone(), right[0].clone()),
+                    ck,
                 );
             } else {
                 // recursive step
                 // Recurse with problem of half size
-                let split = m_a.len() / 2;
+                let split = left.len() / 2;
 
-                let m_a_1 = &m_a[split..];
-                let m_a_2 = &m_a[..split];
-                let m_b_1 = &m_b[..split];
-                let m_b_2 = &m_b[split..];
+                let left_1 = &left[split..];
+                let left_2 = &left[..split];
+                let right_1 = &right[..split];
+                let right_2 = &right[split..];
 
-                let (ck_1, ck_2) = ck.split(split);
+                let (ck_l, ck_r) = ck.split(split);
 
                 let cl = start_timer!(|| "Commit L");
                 let com_1 =
-                    IPC::commit(&ck_1, &m_a_1, &m_b_1, &[IP::inner_product(m_a_1, m_b_1)?])?;
+                    IPC::commit(&ck_l, &left_1, &right_1, &[IP::inner_product(left_1, right_1)?])?;
                 end_timer!(cl);
                 let cr = start_timer!(|| "Commit R");
                 let com_2 =
-                    IPC::commit(&ck_2, &m_a_2, &m_b_2, &[IP::inner_product(m_a_2, m_b_2)?])?;
+                    IPC::commit(&ck_r, &left_2, &right_2, &[IP::inner_product(left_2, right_2)?])?;
                 end_timer!(cr);
 
                 // Fiat-Shamir challenge
@@ -172,7 +174,7 @@ where
                     transcript.serialize_uncompressed(&mut hash_input)?;
                     com_1.serialize_uncompressed(&mut hash_input)?;
                     com_2.serialize_uncompressed(&mut hash_input)?;
-                    let c: IPC::Scalar = u128::from_be_bytes(
+                    let c: Scalar<IPC> = u128::from_be_bytes(
                         D::digest(&hash_input).as_slice()[0..16].try_into().unwrap(),
                     )
                     .into();
@@ -186,22 +188,22 @@ where
 
                 // Set up values for next step of recursion
                 let rescale_m1 = start_timer!(|| "Rescale M1");
-                m_a = cfg_iter!(m_a_1)
+                left = cfg_iter!(left_1)
                     .map(|a| mul_helper(a, &c))
-                    .zip(m_a_2)
+                    .zip(left_2)
                     .map(|(a_1, a_2)| a_1 + a_2.clone())
                     .collect::<Vec<IP::LeftMessage>>();
                 end_timer!(rescale_m1);
 
                 let rescale_m2 = start_timer!(|| "Rescale M2");
-                m_b = cfg_iter!(m_b_2)
+                right = cfg_iter!(right_2)
                     .map(|b| mul_helper(b, &c_inv))
-                    .zip(m_b_1)
+                    .zip(right_1)
                     .map(|(b_1, b_2)| b_1 + b_2.clone())
                     .collect::<Vec<IP::RightMessage>>();
                 end_timer!(rescale_m2);
 
-                ck.fold_into(&ck_1, &ck_2, &c_inv, &c)?;
+                ck.fold_into(&ck_l, &ck_r, &c_inv, &c)?;
 
                 r_commitment_steps.push((com_1, com_2));
                 r_transcript.push(c);
@@ -226,18 +228,18 @@ where
 
     // Helper function used to calculate recursive challenges from proof execution (transcript in reverse)
     pub fn verify_recursive_challenge_transcript(
-        com: &IPC::Output,
+        com: &IPC::Commitment,
         proof: &GIPAProof<IP, IPC, D>,
-    ) -> Result<(IPC::Output, Vec<IPC::Scalar>), Error> {
-        Self::_compute_recursive_challenges((com.0.clone(), com.1.clone(), com.2.clone()), proof)
+    ) -> Result<(IPC::Commitment, Vec<Scalar<IPC>>), Error> {
+        Self::_compute_recursive_challenges(com, proof)
     }
 
     fn _compute_recursive_challenges(
-        com: IPC::Output,
+        com: &IPC::Commitment,
         proof: &GIPAProof<IP, IPC, D>,
-    ) -> Result<(IPC::Output, Vec<IPC::Scalar>), Error> {
-        let (mut com_a, mut com_b, mut com_t) = com;
-        let mut r_transcript: Vec<IPC::Scalar> = Vec::new();
+    ) -> Result<(IPC::Commitment, Vec<Scalar<IPC>>), Error> {
+        let mut com = com.clone();
+        let mut r_transcript: Vec<Scalar<IPC>> = Vec::new();
         for (com_1, com_2) in proof.r_commitment_steps.iter().rev() {
             // Fiat-Shamir challenge
             let mut counter_nonce: usize = 0;
@@ -247,13 +249,9 @@ where
                 let mut hash_input = Vec::new();
                 hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
                 transcript.serialize_uncompressed(&mut hash_input)?;
-                com_1.0.serialize_uncompressed(&mut hash_input)?;
-                com_1.1.serialize_uncompressed(&mut hash_input)?;
-                com_1.2.serialize_uncompressed(&mut hash_input)?;
-                com_2.0.serialize_uncompressed(&mut hash_input)?;
-                com_2.1.serialize_uncompressed(&mut hash_input)?;
-                com_2.2.serialize_uncompressed(&mut hash_input)?;
-                let c: IPC::Scalar = u128::from_be_bytes(
+                com_1.serialize_uncompressed(&mut hash_input)?;
+                com_2.serialize_uncompressed(&mut hash_input)?;
+                let c: Scalar<IPC> = u128::from_be_bytes(
                     D::digest(&hash_input).as_slice()[0..16].try_into().unwrap(),
                 )
                 .into();
@@ -265,26 +263,22 @@ where
                 counter_nonce += 1;
             };
 
-            com_a = mul_helper(&com_1.0, &c) + com_a.clone() + mul_helper(&com_2.0, &c_inv);
-            com_b = mul_helper(&com_1.1, &c) + com_b.clone() + mul_helper(&com_2.1, &c_inv);
-            com_t = mul_helper(&com_1.2, &c) + com_t.clone() + mul_helper(&com_2.2, &c_inv);
-
+            com += *com_1 * c + *com_2 * c_inv;
             r_transcript.push(c);
         }
         r_transcript.reverse();
-        Ok(((com_a, com_b, com_t), r_transcript))
+        Ok((com, r_transcript))
     }
 
     pub(crate) fn _compute_final_commitment_keys<'a>(
-        ck: IPCommKey<'a, IPC>,
-        transcript: &Vec<IPC::Scalar>,
+        ck: &IPCommKey<'a, IPC>,
+        transcript: &Vec<Scalar<IPC>>,
     ) -> Result<IPCommKey<'a, IPC>, Error> {
         // Calculate base commitment keys
-        let (ck_a, ck_b, _) = ck;
-        assert!(ck_a.len().is_power_of_two());
+        assert!(ck.ck_a.len().is_power_of_two());
 
-        let mut ck_a_agg_challenge_exponents = vec![IPC::Scalar::one()];
-        let mut ck_b_agg_challenge_exponents = vec![IPC::Scalar::one()];
+        let mut ck_a_agg_challenge_exponents = vec![Scalar::<IPC>::one()];
+        let mut ck_b_agg_challenge_exponents = vec![Scalar::<IPC>::one()];
         for (i, c) in transcript.iter().enumerate() {
             let c_inv = c.inverse().unwrap();
             for j in 0..(2_usize).pow(i as u32) {
@@ -292,37 +286,39 @@ where
                 ck_b_agg_challenge_exponents.push(ck_b_agg_challenge_exponents[j] * c);
             }
         }
-        assert_eq!(ck_a_agg_challenge_exponents.len(), ck_a.len());
+        assert_eq!(ck_a_agg_challenge_exponents.len(), ck.ck_a.len());
         //TODO: Optimization: Use VariableMSM multiexponentiation
-        let ck_a_base_init = mul_helper(&ck_a[0], &ck_a_agg_challenge_exponents[0]);
-        let ck_a_base = ck_a[1..]
+        let ck_a_base_init = mul_helper(&ck.ck_a[0], &ck_a_agg_challenge_exponents[0]);
+        let ck_a_base = ck.ck_a[1..]
             .iter()
             .zip(&ck_a_agg_challenge_exponents[1..])
             .map(|(g, x)| mul_helper(g, &x))
             .fold(ck_a_base_init, |sum, x| sum + x);
         //.reduce(|| ck_a_base_init.clone(), |sum, x| sum + x);
-        let ck_b_base_init = mul_helper(&ck_b[0], &ck_b_agg_challenge_exponents[0]);
-        let ck_b_base = ck_b[1..]
+        let ck_b_base_init = mul_helper(&ck.ck_b[0], &ck_b_agg_challenge_exponents[0]);
+        let ck_b_base = ck.ck_b[1..]
             .iter()
             .zip(&ck_b_agg_challenge_exponents[1..])
             .map(|(g, x)| mul_helper(g, &x))
             .fold(ck_b_base_init, |sum, x| sum + x);
         //.reduce(|| ck_b_base_init.clone(), |sum, x| sum + x);
-        Ok((ck_a_base, ck_b_base))
+        Ok(IPCommKey::new(
+            Cow::Owned(vec![ck_a_base]),
+            Cow::Owned(vec![ck_b_base]),
+            Cow::Owned(ck.ck_t.as_ref().to_vec()),
+        ))
     }
 
     pub(crate) fn _verify_base_commitment<'a>(
         base_ck: &IPCommKey<'a, IPC>,
-        base_com: IPC::Output,
+        base_com: &IPC::Commitment,
         proof: &GIPAProof<IP, IPC, D>,
     ) -> Result<bool, Error> {
-        let (com_a, com_b, com_t) = base_com;
-        let (ck_a_base, ck_b_base, ck_t) = base_ck;
-        let a_base = ![proof.r_base.0.clone()];
+        let a_base = [proof.r_base.0.clone()];
         let b_base = [proof.r_base.1.clone()];
         let t_base = [IP::inner_product(&a_base, &b_base)?];
 
-        Ok(IPC::verify(&base_ck, &a_base, &b_base, &t_base, &com_t)?)
+        Ok(IPC::verify(&base_ck, &a_base, &b_base, &t_base, &base_com)?)
     }
 }
 
@@ -371,7 +367,7 @@ mod tests {
         type IP = PairingInnerProduct<Bls12_381>;
         type IPC =
             IdentityCommitment<PairingOutput<Bls12_381>, <Bls12_381 as Pairing>::ScalarField>;
-        type PairingGIPA = GIPA<IP, GC1, GC2, IPC, Blake2b>;
+        type PairingGIPA = GIPA<IP, IPC, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
         let (ck_a, ck_b, ck_t) = PairingGIPA::setup(&mut rng, TEST_SIZE).unwrap();
@@ -399,7 +395,7 @@ mod tests {
         type IP = MultiexponentiationInnerProduct<<Bls12_381 as Pairing>::G1>;
         type IPC =
             IdentityCommitment<<Bls12_381 as Pairing>::G1, <Bls12_381 as Pairing>::ScalarField>;
-        type MultiExpGIPA = GIPA<IP, GC1, SC1, IPC, Blake2b>;
+        type MultiExpGIPA = GIPA<IP, IPC, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
         let (ck_a, ck_b, ck_t) = MultiExpGIPA::setup(&mut rng, TEST_SIZE).unwrap();
@@ -432,7 +428,7 @@ mod tests {
             <Bls12_381 as Pairing>::ScalarField,
             <Bls12_381 as Pairing>::ScalarField,
         >;
-        type ScalarGIPA = GIPA<IP, SC2, SC2, IPC, Blake2b>;
+        type ScalarGIPA = GIPA<IP, IPC, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
         let (ck_a, ck_b, ck_t) = ScalarGIPA::setup(&mut rng, TEST_SIZE).unwrap();

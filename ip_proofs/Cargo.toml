@@ -24,6 +24,7 @@ digest = "0.9"
 num-traits = "0.2"
 itertools = "0.11"
 rayon = { version = "1", optional = true }
+derivative = "2.1"
 
 ark-inner-products = { path = "../inner_products" }
 ark-dh-commitments = { path = "../dh_commitments" }
