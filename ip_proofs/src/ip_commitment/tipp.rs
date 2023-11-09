@@ -1,14 +1,11 @@
 use std::marker::PhantomData;
 
-use ark_dh_commitments::{
-    afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
-    identity::IdentityCommitment,
-    pedersen::PedersenCommitment,
-};
+use ark_dh_commitments::{afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2}, Error, identity::IdentityCommitment, pedersen::PedersenCommitment};
 use ark_ec::pairing::{Pairing, PairingOutput};
+use ark_std::rand::Rng;
 use ark_inner_products::PairingInnerProduct;
 
-use super::IPCommitment;
+use super::{IPCommitment, IPCommKey, LeftMessage, OutputMessage, RightMessage};
 
 struct TIPPCommitment<E: Pairing>(PhantomData<E>);
 type GC1<E> = AFGHOCommitmentG1<E>;
@@ -20,9 +17,16 @@ type IPC<E> = IdentityCommitment<PairingOutput<E>, <E as Pairing>::ScalarField>;
 
 impl<E: Pairing> IPCommitment for TIPPCommitment<E> {
     type IP = IP<E>;
-    type Scalar = E::ScalarField;
     type LeftKey = GC1<E>;
     type RightKey = GC2<E>;
     type IPKey = IPC<E>;
     type Commitment = PairingOutput<E>;
+
+    fn setup(size: usize, r: &mut impl Rng) -> Result<IPCommKey<'_, Self>, Error> {
+        todo!()
+    }
+
+    fn commit<'a>(ck: &IPCommKey<'a, Self>, l: &[LeftMessage<Self>], r: &[RightMessage<Self>], ip: &[OutputMessage<Self>]) -> Result<Self::Commitment, Error> {
+        todo!()
+    }
 }

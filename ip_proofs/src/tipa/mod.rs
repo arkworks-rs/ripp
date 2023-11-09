@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 
 use crate::{
     gipa::{GIPAProof, GIPA},
-    ip_commitment::{IPCommKey, IPCommitment, Scalar},
+    ip_commitment::{FinalIPCommKey, IPCommKey, IPCommitment, Scalar},
     Error,
 };
 use ark_dh_commitments::{
@@ -46,7 +46,7 @@ where
     IPC: IPCommitment<IP = IP>,
 {
     gipa_proof: GIPAProof<IP, IPC, D>,
-    final_ck: (IPC::LeftKey, IPC::RightKey),
+    final_ck: FinalIPCommKey<IPC>,
     final_ck_proof: (P::G2, P::G1),
     _pair: PhantomData<P>,
 }
@@ -107,7 +107,7 @@ where
     D: Digest,
     P: Pairing,
     IP: InnerProduct,
-    IPC: IPCommitment<IP = IP>,
+    IPC: IPCommitment<LeftKey = P::G2, RightKey = P::G1, IP = IP>,
 {
     pub fn setup<'a>(
         rng: &mut impl Rng,
@@ -124,7 +124,7 @@ where
                 g_beta: g * beta,
                 h_alpha: h * alpha,
             },
-            IPC::setup(1, rng)?.pop().unwrap(),
+            IPC::setup(1, rng)?,
         ))
     }
 
@@ -149,8 +149,10 @@ where
         // Run GIPA
         let (proof, aux) = <GIPA<IP, IPC, D>>::prove_with_aux(ck, left, right)?;
 
+        // Unpack the final commitment key. Make sure it's len 1
+        let ck_base = aux.ck_base;
+
         // Prove final commitment keys are wellformed
-        let (ck_a_final, ck_b_final) = aux.ck_base;
         let transcript = aux.r_transcript;
         let transcript_inverse = transcript.iter().map(|x| x.inverse().unwrap()).collect();
         let r_inverse = r_shift.inverse().unwrap();
@@ -164,9 +166,9 @@ where
                 .first()
                 .unwrap()
                 .serialize_uncompressed(&mut hash_input)?;
-            ck_a_final.serialize_uncompressed(&mut hash_input)?;
-            ck_b_final.serialize_uncompressed(&mut hash_input)?;
-            if let Some(c) = Scalar<IPC>::from_random_bytes(&D::digest(&hash_input)) {
+            ck_base.ck_a.serialize_uncompressed(&mut hash_input)?;
+            ck_base.ck_b.serialize_uncompressed(&mut hash_input)?;
+            if let Some(c) = Scalar::<IPC>::from_random_bytes(&D::digest(&hash_input)) {
                 break c;
             };
             counter_nonce += 1;
@@ -188,7 +190,7 @@ where
 
         Ok(TIPAProof {
             gipa_proof: proof,
-            final_ck: (ck_a_final, ck_b_final),
+            final_ck: ck_base.into(),
             final_ck_proof: (ck_a_kzg_opening, ck_b_kzg_opening),
             _pair: PhantomData,
         })
@@ -236,7 +238,7 @@ where
 
         let ck_a_valid = verify_commitment_key_g2_kzg_opening(
             v_srs,
-            &ck_final,
+            &ck_final.ck_a,
             &ck_a_proof,
             &transcript_inverse,
             &r_shift.inverse().unwrap(),
@@ -244,7 +246,7 @@ where
         )?;
         let ck_b_valid = verify_commitment_key_g1_kzg_opening(
             v_srs,
-            &ck_final,
+            &ck_final.ck_b,
             &ck_b_proof,
             &transcript,
             &<P::ScalarField>::one(),
@@ -256,7 +258,7 @@ where
         let a_base = vec![proof.gipa_proof.r_base.0.clone()];
         let b_base = vec![proof.gipa_proof.r_base.1.clone()];
         let t_base = vec![IP::inner_product(&a_base, &b_base)?];
-        let base_valid = IPC::verify(&ck_final, &a_base, &b_base, &t_base, com)?;
+        let base_valid = IPC::verify(&ck_final.into(), &a_base, &b_base, &t_base, com)?;
 
         Ok(ck_a_valid && ck_b_valid && base_valid)
     }
@@ -390,7 +392,6 @@ mod tests {
     use ark_std::rand::{rngs::StdRng, SeedableRng};
     use blake2::Blake2b;
 
-    use crate::tipa::structured_scalar_message::structured_scalar_power;
     use ark_dh_commitments::{
         afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
         identity::IdentityCommitment,
@@ -400,6 +401,14 @@ mod tests {
     use ark_inner_products::{
         InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct, ScalarInnerProduct,
     };
+
+    pub fn structured_scalar_power<F: Field>(num: usize, s: &F) -> Vec<F> {
+        let mut powers = vec![F::one()];
+        for i in 1..num {
+            powers.push(powers[i - 1] * s);
+        }
+        powers
+    }
 
     type GC1 = AFGHOCommitmentG1<Bls12_381>;
     type GC2 = AFGHOCommitmentG2<Bls12_381>;
@@ -413,7 +422,7 @@ mod tests {
         type IP = PairingInnerProduct<Bls12_381>;
         type IPC =
             IdentityCommitment<PairingOutput<Bls12_381>, <Bls12_381 as Pairing>::ScalarField>;
-        type PairingTIPA = TIPA<IP, GC1, GC2, IPC, Bls12_381, Blake2b>;
+        type PairingTIPA = TIPA<IP, IPC, Bls12_381, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
         let (srs, ck_t) = PairingTIPA::setup(&mut rng, TEST_SIZE).unwrap();
@@ -436,7 +445,7 @@ mod tests {
         type IP = MultiexponentiationInnerProduct<<Bls12_381 as Pairing>::G1>;
         type IPC =
             IdentityCommitment<<Bls12_381 as Pairing>::G1, <Bls12_381 as Pairing>::ScalarField>;
-        type MultiExpTIPA = TIPA<IP, GC1, SC1, IPC, Bls12_381, Blake2b>;
+        type MultiExpTIPA = TIPA<IP, IPC, Bls12_381, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
         let (srs, ck_t) = MultiExpTIPA::setup(&mut rng, TEST_SIZE).unwrap();
@@ -464,7 +473,7 @@ mod tests {
             <Bls12_381 as Pairing>::ScalarField,
             <Bls12_381 as Pairing>::ScalarField,
         >;
-        type ScalarTIPA = TIPA<IP, SC2, SC1, IPC, Bls12_381, Blake2b>;
+        type ScalarTIPA = TIPA<IP, IPC, Bls12_381, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
         let (srs, ck_t) = ScalarTIPA::setup(&mut rng, TEST_SIZE).unwrap();
@@ -491,7 +500,7 @@ mod tests {
         type IP = PairingInnerProduct<Bls12_381>;
         type IPC =
             IdentityCommitment<PairingOutput<Bls12_381>, <Bls12_381 as Pairing>::ScalarField>;
-        type PairingTIPA = TIPA<IP, GC1, GC2, IPC, Bls12_381, Blake2b>;
+        type PairingTIPA = TIPA<IP, IPC, Bls12_381, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
         let (srs, ck_t) = PairingTIPA::setup(&mut rng, TEST_SIZE).unwrap();

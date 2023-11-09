@@ -1,15 +1,12 @@
 use ark_ff::{Field, One};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{
-    convert::TryInto, marker::PhantomData, borrow::Cow,
-    rand::Rng,
-end_timer, start_timer,
-cfg_iter,
+    borrow::Cow, cfg_iter, convert::TryInto, end_timer, marker::PhantomData, rand::Rng, start_timer,
 };
 use digest::Digest;
 
 use crate::{
-    ip_commitment::{IPCommKey, IPCommitment, Scalar},
+    ip_commitment::{FinalIPCommKey, IPCommKey, IPCommitment, Scalar},
     mul_helper, Error, InnerProductArgumentError,
 };
 use ark_inner_products::InnerProduct;
@@ -25,10 +22,10 @@ pub struct GIPA<IP, IPC, D> {
 
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct GIPAProof<IP, IPC, D>
-where
-    D: Digest,
-    IP: InnerProduct,
-    IPC: IPCommitment<IP = IP>,
+    where
+        D: Digest,
+        IP: InnerProduct,
+        IPC: IPCommitment<IP=IP>,
 {
     pub(crate) r_commitment_steps: Vec<(IPC::Commitment, IPC::Commitment)>,
     pub(crate) r_base: (IP::LeftMessage, IP::RightMessage),
@@ -38,24 +35,24 @@ where
 }
 
 #[derive(Clone)]
-pub struct GIPAAux<'a, IP, IPC, D>
-where
-    D: Digest,
-    IP: InnerProduct,
-    IPC: IPCommitment<IP = IP>,
+pub struct GIPAAux<IP, IPC, D>
+    where
+        D: Digest,
+        IP: InnerProduct,
+        IPC: IPCommitment<IP=IP>,
 {
     pub(crate) r_transcript: Vec<Scalar<IPC>>,
-    pub(crate) ck_base: IPCommKey<'a, IPC>,
+    pub(crate) ck_base: FinalIPCommKey<IPC>,
     _gipa: PhantomData<GIPA<IP, IPC, D>>,
 }
 
 //TODO: Can extend GIPA to support "identity commitments" in addition to "compact commitments", i.e. for SIPP
 
 impl<IP, IPC, D> GIPA<IP, IPC, D>
-where
-    D: Digest,
-    IP: InnerProduct,
-    IPC: IPCommitment<IP = IP>,
+    where
+        D: Digest,
+        IP: InnerProduct,
+        IPC: IPCommitment<IP=IP>,
 {
     pub fn setup<'a>(size: usize, rng: &mut impl Rng) -> Result<IPCommKey<'a, IPC>, Error> {
         IPC::setup(size, rng)
@@ -63,8 +60,8 @@ where
 
     pub fn prove<'a>(
         ck: &IPCommKey<'a, IPC>,
-        left: &[IP::LeftMessage], 
-        right: &[IP::RightMessage], 
+        left: &[IP::LeftMessage],
+        right: &[IP::RightMessage],
         output: &IP::Output,
         com: &IPC::Commitment,
     ) -> Result<GIPAProof<IP, IPC, D>, Error> {
@@ -99,38 +96,27 @@ where
             )));
         }
         // Calculate base commitment and transcript
-        let (base_com, transcript) = Self::_compute_recursive_challenges(
-            com,
-            proof,
-        )?;
+        let (base_com, transcript) = Self::_compute_recursive_challenges(com, proof)?;
         // Calculate base commitment keys
         let ck_base = Self::_compute_final_commitment_keys(ck, &transcript)?;
         // Verify base commitment
-        Self::_verify_base_commitment(
-            &ck_base,
-            &base_com,
-            proof,
-        )
+        Self::_verify_base_commitment(&ck_base, &base_com, proof)
     }
 
-    pub fn prove_with_aux<'a>(
-        ck: &IPCommKey<'a, IPC>,
+    pub fn prove_with_aux(
+        ck: &IPCommKey<IPC>,
         left: &[IP::LeftMessage],
         right: &[IP::RightMessage],
-    ) -> Result<(GIPAProof<IP, IPC, D>, GIPAAux<'a, IP, IPC, D>), Error> {
-        Self::_prove(
-            ck,
-            left.to_vec(),
-            right.to_vec(),
-        )
+    ) -> Result<(GIPAProof<IP, IPC, D>, GIPAAux<IP, IPC, D>), Error> {
+        Self::_prove(ck, left.to_vec(), right.to_vec())
     }
 
     // Returns vector of recursive commitments and transcripts in reverse order
     fn _prove<'a>(
         ck: &IPCommKey<'a, IPC>,
-        left: Vec<IP::LeftMessage>, 
-        right: Vec<IP::RightMessage>,
-    ) -> Result<(GIPAProof<IP, IPC, D>, GIPAAux<'a, IP, IPC, D>), Error> {
+        mut left: Vec<IP::LeftMessage>,
+        mut right: Vec<IP::RightMessage>,
+    ) -> Result<(GIPAProof<IP, IPC, D>, GIPAAux<IP, IPC, D>), Error> {
         let mut ck = ck.clone();
         let mut r_commitment_steps = Vec::new();
         let mut r_transcript: Vec<Scalar<IPC>> = Vec::new();
@@ -139,10 +125,7 @@ where
             let recurse = start_timer!(|| format!("Recurse round size {}", left.len()));
             if left.len() == 1 {
                 // base case
-                break 'recurse (
-                    (left[0].clone(), right[0].clone()),
-                    ck,
-                );
+                break 'recurse ((left[0].clone(), right[0].clone()), ck);
             } else {
                 // recursive step
                 // Recurse with problem of half size
@@ -156,12 +139,20 @@ where
                 let (ck_l, ck_r) = ck.split(split);
 
                 let cl = start_timer!(|| "Commit L");
-                let com_1 =
-                    IPC::commit(&ck_l, &left_1, &right_1, &[IP::inner_product(left_1, right_1)?])?;
+                let com_1 = IPC::commit(
+                    &ck_l,
+                    &left_1,
+                    &right_1,
+                    &[IP::inner_product(left_1, right_1)?],
+                )?;
                 end_timer!(cl);
                 let cr = start_timer!(|| "Commit R");
-                let com_2 =
-                    IPC::commit(&ck_r, &left_2, &right_2, &[IP::inner_product(left_2, right_2)?])?;
+                let com_2 = IPC::commit(
+                    &ck_r,
+                    &left_2,
+                    &right_2,
+                    &[IP::inner_product(left_2, right_2)?],
+                )?;
                 end_timer!(cr);
 
                 // Fiat-Shamir challenge
@@ -177,7 +168,7 @@ where
                     let c: Scalar<IPC> = u128::from_be_bytes(
                         D::digest(&hash_input).as_slice()[0..16].try_into().unwrap(),
                     )
-                    .into();
+                        .into();
                     if let Some(c_inv) = c.inverse() {
                         // Optimization for multiexponentiation to rescale G2 elements with 128-bit challenge
                         // Swap 'c' and 'c_inv' since can't control bit size of c_inv
@@ -220,7 +211,7 @@ where
             },
             GIPAAux {
                 r_transcript,
-                ck_base,
+                ck_base: ck_base.try_into().unwrap(),
                 _gipa: PhantomData,
             },
         ))
@@ -254,7 +245,7 @@ where
                 let c: Scalar<IPC> = u128::from_be_bytes(
                     D::digest(&hash_input).as_slice()[0..16].try_into().unwrap(),
                 )
-                .into();
+                    .into();
                 if let Some(c_inv) = c.inverse() {
                     // Optimization for multiexponentiation to rescale G2 elements with 128-bit challenge
                     // Swap 'c' and 'c_inv' since can't control bit size of c_inv
@@ -263,7 +254,7 @@ where
                 counter_nonce += 1;
             };
 
-            com += *com_1 * c + *com_2 * c_inv;
+            com += com_1 * c + com_2 * c_inv;
             r_transcript.push(c);
         }
         r_transcript.reverse();
@@ -323,10 +314,10 @@ where
 }
 
 impl<IP, IPC, D> Clone for GIPAProof<IP, IPC, D>
-where
-    D: Digest,
-    IP: InnerProduct,
-    IPC: IPCommitment<IP = IP>,
+    where
+        D: Digest,
+        IP: InnerProduct,
+        IPC: IPCommitment<IP=IP>,
 {
     fn clone(&self) -> Self {
         GIPAProof {
@@ -340,6 +331,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ip_commitment::IdentityCommitment;
+
     use ark_bls12_381::Bls12_381;
     use ark_ec::pairing::{Pairing, PairingOutput};
     use ark_ff::UniformRand;
@@ -348,7 +341,6 @@ mod tests {
 
     use ark_dh_commitments::{
         afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
-        identity::IdentityCommitment,
         pedersen::PedersenCommitment,
         random_generators,
     };
@@ -360,17 +352,18 @@ mod tests {
     type GC2 = AFGHOCommitmentG2<Bls12_381>;
     type SC1 = PedersenCommitment<<Bls12_381 as Pairing>::G1>;
     type SC2 = PedersenCommitment<<Bls12_381 as Pairing>::G2>;
+
     const TEST_SIZE: usize = 8;
 
     #[test]
     fn pairing_inner_product_test() {
         type IP = PairingInnerProduct<Bls12_381>;
         type IPC =
-            IdentityCommitment<PairingOutput<Bls12_381>, <Bls12_381 as Pairing>::ScalarField>;
+        IdentityCommitment<IP>;
         type PairingGIPA = GIPA<IP, IPC, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
-        let (ck_a, ck_b, ck_t) = PairingGIPA::setup(&mut rng, TEST_SIZE).unwrap();
+        let ck = PairingGIPA::setup(TEST_SIZE, &mut rng).unwrap();
         let m_a = random_generators(&mut rng, TEST_SIZE);
         let m_b = random_generators(&mut rng, TEST_SIZE);
         let com_a = GC1::commit(&ck_a, &m_a).unwrap();
@@ -379,14 +372,14 @@ mod tests {
         let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
 
         let proof = PairingGIPA::prove(
-            (&m_a, &m_b, &t[0]),
             (&ck_a, &ck_b, &ck_t),
+            (&m_a, &m_b, &t[0]),
             (&com_a, &com_b, &com_t),
         )
-        .unwrap();
+            .unwrap();
 
         assert!(
-            PairingGIPA::verify((&ck_a, &ck_b, &ck_t), (&com_a, &com_b, &com_t), &proof,).unwrap()
+            PairingGIPA::verify((&ck_a, &ck_b, &ck_t), (&com_a, &com_b, &com_t), &proof).unwrap()
         );
     }
 
@@ -394,7 +387,7 @@ mod tests {
     fn multiexponentiation_inner_product_test() {
         type IP = MultiexponentiationInnerProduct<<Bls12_381 as Pairing>::G1>;
         type IPC =
-            IdentityCommitment<<Bls12_381 as Pairing>::G1, <Bls12_381 as Pairing>::ScalarField>;
+        IdentityCommitment<<Bls12_381 as Pairing>::G1, <Bls12_381 as Pairing>::ScalarField>;
         type MultiExpGIPA = GIPA<IP, IPC, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
@@ -414,10 +407,10 @@ mod tests {
             (&ck_a, &ck_b, &ck_t),
             (&com_a, &com_b, &com_t),
         )
-        .unwrap();
+            .unwrap();
 
         assert!(
-            MultiExpGIPA::verify((&ck_a, &ck_b, &ck_t), (&com_a, &com_b, &com_t), &proof,).unwrap()
+            MultiExpGIPA::verify((&ck_a, &ck_b, &ck_t), (&com_a, &com_b, &com_t), &proof).unwrap()
         );
     }
 
@@ -448,10 +441,10 @@ mod tests {
             (&ck_a, &ck_b, &ck_t),
             (&com_a, &com_b, &com_t),
         )
-        .unwrap();
+            .unwrap();
 
         assert!(
-            ScalarGIPA::verify((&ck_a, &ck_b, &ck_t), (&com_a, &com_b, &com_t), &proof,).unwrap()
+            ScalarGIPA::verify((&ck_a, &ck_b, &ck_t), (&com_a, &com_b, &com_t), &proof).unwrap()
         );
     }
 }
