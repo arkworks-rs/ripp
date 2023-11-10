@@ -22,10 +22,10 @@ pub struct GIPA<IP, IPC, D> {
 
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct GIPAProof<IP, IPC, D>
-    where
-        D: Digest,
-        IP: InnerProduct,
-        IPC: IPCommitment<IP=IP>,
+where
+    D: Digest,
+    IP: InnerProduct,
+    IPC: IPCommitment<IP = IP>,
 {
     pub(crate) r_commitment_steps: Vec<(IPC::Commitment, IPC::Commitment)>,
     pub(crate) r_base: (IP::LeftMessage, IP::RightMessage),
@@ -36,10 +36,10 @@ pub struct GIPAProof<IP, IPC, D>
 
 #[derive(Clone)]
 pub struct GIPAAux<IP, IPC, D>
-    where
-        D: Digest,
-        IP: InnerProduct,
-        IPC: IPCommitment<IP=IP>,
+where
+    D: Digest,
+    IP: InnerProduct,
+    IPC: IPCommitment<IP = IP>,
 {
     pub(crate) r_transcript: Vec<Scalar<IPC>>,
     pub(crate) ck_base: FinalIPCommKey<IPC>,
@@ -49,10 +49,10 @@ pub struct GIPAAux<IP, IPC, D>
 //TODO: Can extend GIPA to support "identity commitments" in addition to "compact commitments", i.e. for SIPP
 
 impl<IP, IPC, D> GIPA<IP, IPC, D>
-    where
-        D: Digest,
-        IP: InnerProduct,
-        IPC: IPCommitment<IP=IP>,
+where
+    D: Digest,
+    IP: InnerProduct,
+    IPC: IPCommitment<IP = IP>,
 {
     pub fn setup<'a>(size: usize, rng: &mut impl Rng) -> Result<IPCommKey<'a, IPC>, Error> {
         IPC::setup(size, rng)
@@ -168,7 +168,7 @@ impl<IP, IPC, D> GIPA<IP, IPC, D>
                     let c: Scalar<IPC> = u128::from_be_bytes(
                         D::digest(&hash_input).as_slice()[0..16].try_into().unwrap(),
                     )
-                        .into();
+                    .into();
                     if let Some(c_inv) = c.inverse() {
                         // Optimization for multiexponentiation to rescale G2 elements with 128-bit challenge
                         // Swap 'c' and 'c_inv' since can't control bit size of c_inv
@@ -245,7 +245,7 @@ impl<IP, IPC, D> GIPA<IP, IPC, D>
                 let c: Scalar<IPC> = u128::from_be_bytes(
                     D::digest(&hash_input).as_slice()[0..16].try_into().unwrap(),
                 )
-                    .into();
+                .into();
                 if let Some(c_inv) = c.inverse() {
                     // Optimization for multiexponentiation to rescale G2 elements with 128-bit challenge
                     // Swap 'c' and 'c_inv' since can't control bit size of c_inv
@@ -314,10 +314,10 @@ impl<IP, IPC, D> GIPA<IP, IPC, D>
 }
 
 impl<IP, IPC, D> Clone for GIPAProof<IP, IPC, D>
-    where
-        D: Digest,
-        IP: InnerProduct,
-        IPC: IPCommitment<IP=IP>,
+where
+    D: Digest,
+    IP: InnerProduct,
+    IPC: IPCommitment<IP = IP>,
 {
     fn clone(&self) -> Self {
         GIPAProof {
@@ -358,8 +358,7 @@ mod tests {
     #[test]
     fn pairing_inner_product_test() {
         type IP = PairingInnerProduct<Bls12_381>;
-        type IPC =
-        IdentityCommitment<IP>;
+        type IPC = IdentityCommitment<IP>;
         type PairingGIPA = GIPA<IP, IPC, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
@@ -376,7 +375,7 @@ mod tests {
             (&m_a, &m_b, &t[0]),
             (&com_a, &com_b, &com_t),
         )
-            .unwrap();
+        .unwrap();
 
         assert!(
             PairingGIPA::verify((&ck_a, &ck_b, &ck_t), (&com_a, &com_b, &com_t), &proof).unwrap()
@@ -387,7 +386,7 @@ mod tests {
     fn multiexponentiation_inner_product_test() {
         type IP = MultiexponentiationInnerProduct<<Bls12_381 as Pairing>::G1>;
         type IPC =
-        IdentityCommitment<<Bls12_381 as Pairing>::G1, <Bls12_381 as Pairing>::ScalarField>;
+            IdentityCommitment<<Bls12_381 as Pairing>::G1, <Bls12_381 as Pairing>::ScalarField>;
         type MultiExpGIPA = GIPA<IP, IPC, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
@@ -407,7 +406,7 @@ mod tests {
             (&ck_a, &ck_b, &ck_t),
             (&com_a, &com_b, &com_t),
         )
-            .unwrap();
+        .unwrap();
 
         assert!(
             MultiExpGIPA::verify((&ck_a, &ck_b, &ck_t), (&com_a, &com_b, &com_t), &proof).unwrap()
@@ -441,7 +440,7 @@ mod tests {
             (&ck_a, &ck_b, &ck_t),
             (&com_a, &com_b, &com_t),
         )
-            .unwrap();
+        .unwrap();
 
         assert!(
             ScalarGIPA::verify((&ck_a, &ck_b, &ck_t), (&com_a, &com_b, &com_t), &proof).unwrap()

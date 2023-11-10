@@ -36,46 +36,46 @@ pub trait IPCommitment: Sized {
     type IP: InnerProduct;
 
     type LeftKey: CanonicalSerialize
-    + CanonicalDeserialize
-    + Clone
-    + Default
-    + Eq
-    + Send
-    + Sync
-    + Add<Self::LeftKey, Output=Self::LeftKey>
-    + Mul<Scalar<Self>, Output=Self::LeftKey>
-    + MulAssign<Scalar<Self>>;
+        + CanonicalDeserialize
+        + Clone
+        + Default
+        + Eq
+        + Send
+        + Sync
+        + Add<Self::LeftKey, Output = Self::LeftKey>
+        + Mul<Scalar<Self>, Output = Self::LeftKey>
+        + MulAssign<Scalar<Self>>;
 
     type RightKey: CanonicalSerialize
-    + CanonicalDeserialize
-    + Clone
-    + Default
-    + Eq
-    + Send
-    + Sync
-    + Add<Self::RightKey, Output=Self::RightKey>
-    + Mul<Scalar<Self>, Output=Self::RightKey>
-    + MulAssign<Scalar<Self>>;
+        + CanonicalDeserialize
+        + Clone
+        + Default
+        + Eq
+        + Send
+        + Sync
+        + Add<Self::RightKey, Output = Self::RightKey>
+        + Mul<Scalar<Self>, Output = Self::RightKey>
+        + MulAssign<Scalar<Self>>;
 
     type IPKey: CanonicalSerialize
-    + CanonicalDeserialize
-    + Clone
-    + Default
-    + Eq
-    + Send
-    + Sync
-    + Add<Self::IPKey, Output=Self::IPKey>
-    + Mul<Scalar<Self>, Output=Self::IPKey>
-    + MulAssign<Scalar<Self>>;
+        + CanonicalDeserialize
+        + Clone
+        + Default
+        + Eq
+        + Send
+        + Sync
+        + Add<Self::IPKey, Output = Self::IPKey>
+        + Mul<Scalar<Self>, Output = Self::IPKey>
+        + MulAssign<Scalar<Self>>;
 
     type Commitment: CanonicalSerialize
-    + CanonicalDeserialize
-    + Default
-    + Eq
-    + Add<Self::Commitment, Output=Self::Commitment>
-    + AddAssign<Self::Commitment>
-    + Mul<Scalar<Self>, Output=Self::Commitment>
-    + MulAssign<Scalar<Self>>;
+        + CanonicalDeserialize
+        + Default
+        + Eq
+        + Add<Self::Commitment, Output = Self::Commitment>
+        + AddAssign<Self::Commitment>
+        + Mul<Scalar<Self>, Output = Self::Commitment>
+        + MulAssign<Scalar<Self>>;
 
     fn setup(size: usize, r: &mut impl Rng) -> Result<IPCommKey<'_, Self>, Error>;
 
@@ -235,16 +235,16 @@ impl<T> MulAssign<T> for HomomorphicPlaceholderValue {
 pub struct IdentityOutput<IP: InnerProduct>(
     pub Vec<(IP::LeftMessage, IP::RightMessage, IP::Output)>,
 )
-    where
-        IP::LeftMessage: Default + Eq,
-        IP::RightMessage: Default + Eq,
-        IP::Output: Default + Eq;
+where
+    IP::LeftMessage: Default + Eq,
+    IP::RightMessage: Default + Eq,
+    IP::Output: Default + Eq;
 
 impl<IP: InnerProduct> Add for IdentityOutput<IP>
-    where
-        IP::LeftMessage: Default + Eq,
-        IP::RightMessage: Default + Eq,
-        IP::Output: Default + Eq,
+where
+    IP::LeftMessage: Default + Eq,
+    IP::RightMessage: Default + Eq,
+    IP::Output: Default + Eq,
 {
     type Output = Self;
 
@@ -260,10 +260,10 @@ impl<IP: InnerProduct> Add for IdentityOutput<IP>
 }
 
 impl<IP: InnerProduct> AddAssign for IdentityOutput<IP>
-    where
-        IP::LeftMessage: Default + Eq,
-        IP::RightMessage: Default + Eq,
-        IP::Output: Default + Eq,
+where
+    IP::LeftMessage: Default + Eq,
+    IP::RightMessage: Default + Eq,
+    IP::Output: Default + Eq,
 {
     fn add_assign(&mut self, other: Self) {
         *self = self + other
@@ -271,10 +271,10 @@ impl<IP: InnerProduct> AddAssign for IdentityOutput<IP>
 }
 
 impl<IP: InnerProduct> MulAssign<IP::Scalar> for IdentityOutput<IP>
-    where
-        IP::LeftMessage: Default + Eq,
-        IP::RightMessage: Default + Eq,
-        IP::Output: Default + Eq,
+where
+    IP::LeftMessage: Default + Eq,
+    IP::RightMessage: Default + Eq,
+    IP::Output: Default + Eq,
 {
     fn mul_assign(&mut self, rhs: IP::Scalar) {
         self.0.iter_mut().for_each(|(a, b, t)| {
@@ -286,10 +286,10 @@ impl<IP: InnerProduct> MulAssign<IP::Scalar> for IdentityOutput<IP>
 }
 
 impl<IP: InnerProduct> IPCommitment for IdentityCommitment<IP>
-    where
-        IP::LeftMessage: Default + Eq,
-        IP::RightMessage: Default + Eq,
-        IP::Output: Default + Eq,
+where
+    IP::LeftMessage: Default + Eq,
+    IP::RightMessage: Default + Eq,
+    IP::Output: Default + Eq,
 {
     type IP = IP;
 
@@ -313,6 +313,8 @@ impl<IP: InnerProduct> IPCommitment for IdentityCommitment<IP>
         r: &[RightMessage<Self>],
         ip: &[OutputMessage<Self>],
     ) -> Result<Self::Commitment, Error> {
-        Ok(IdentityOutput(l.iter().zip(r.iter()).zip(ip.iter()).collect()))
+        Ok(IdentityOutput(
+            l.iter().zip(r.iter()).zip(ip.iter()).collect(),
+        ))
     }
 }
