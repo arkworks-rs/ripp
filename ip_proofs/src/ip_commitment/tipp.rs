@@ -1,30 +1,24 @@
-use std::marker::PhantomData;
-
-use ark_dh_commitments::{
-    afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
-    identity::IdentityCommitment,
-    pedersen::PedersenCommitment,
-    Error,
+use std::{
+    marker::PhantomData,
+    ops::{Add, Mul, MulAssign},
 };
+
+use ark_dh_commitments::Error;
 use ark_ec::pairing::{Pairing, PairingOutput};
 use ark_inner_products::PairingInnerProduct;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::rand::Rng;
+use derivative::Derivative;
 
 use super::{IPCommKey, IPCommitment, LeftMessage, OutputMessage, RightMessage};
 
 struct TIPPCommitment<E: Pairing>(PhantomData<E>);
-type GC1<E> = AFGHOCommitmentG1<E>;
-type GC2<E> = AFGHOCommitmentG2<E>;
-type SC1<E> = PedersenCommitment<<E as Pairing>::G1>;
-type SC2<E> = PedersenCommitment<<E as Pairing>::G2>;
-type IP<E> = PairingInnerProduct<E>;
-type IPC<E> = IdentityCommitment<PairingOutput<E>, <E as Pairing>::ScalarField>;
 
 impl<E: Pairing> IPCommitment for TIPPCommitment<E> {
-    type IP = IP<E>;
-    type LeftKey = GC1<E>;
-    type RightKey = GC2<E>;
-    type IPKey = IPC<E>;
+    type IP = PairingInnerProduct<E>;
+    type LeftKey = LeftKey<E>;
+    type RightKey = RightKey<E>;
+    type IPKey = InnerProductKey<E>;
     type Commitment = PairingOutput<E>;
 
     fn setup(size: usize, r: &mut impl Rng) -> Result<IPCommKey<'_, Self>, Error> {
@@ -38,5 +32,98 @@ impl<E: Pairing> IPCommitment for TIPPCommitment<E> {
         ip: &[OutputMessage<Self>],
     ) -> Result<Self::Commitment, Error> {
         todo!()
+    }
+}
+
+#[derive(Derivative, CanonicalSerialize, CanonicalDeserialize)]
+#[derivative(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LeftKey<E: Pairing> {
+    v_1: E::G2,
+    v_2: E::G2,
+}
+
+#[derive(Derivative, CanonicalSerialize, CanonicalDeserialize)]
+#[derivative(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RightKey<E: Pairing> {
+    w_1: E::G1,
+    w_2: E::G1,
+}
+
+#[derive(Derivative, CanonicalSerialize, CanonicalDeserialize)]
+#[derivative(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct InnerProductKey<E: Pairing>(PhantomData<E>);
+
+/************************************************/
+/************************************************/
+/************************************************/
+
+impl<E: Pairing> Add<Self> for LeftKey<E> {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            v_1: self.v_1 + rhs.v_1,
+            v_2: self.v_2 + rhs.v_2,
+        }
+    }
+}
+
+impl<E: Pairing> MulAssign<E::ScalarField> for LeftKey<E> {
+    fn mul_assign(&mut self, rhs: E::ScalarField) {
+        self.v_1 *= rhs;
+        self.v_2 *= rhs;
+    }
+}
+
+impl<E: Pairing> Mul<E::ScalarField> for LeftKey<E> {
+    type Output = Self;
+    fn mul(mut self, rhs: E::ScalarField) -> Self::Output {
+        self *= rhs;
+        self
+    }
+}
+
+impl<E: Pairing> Add<Self> for RightKey<E> {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            w_1: self.w_1 + rhs.w_1,
+            w_2: self.w_2 + rhs.w_2,
+        }
+    }
+}
+
+impl<E: Pairing> MulAssign<E::ScalarField> for RightKey<E> {
+    fn mul_assign(&mut self, rhs: E::ScalarField) {
+        self.w_1 *= rhs;
+        self.w_2 *= rhs;
+    }
+}
+
+impl<E: Pairing> Mul<E::ScalarField> for RightKey<E> {
+    type Output = Self;
+    fn mul(mut self, rhs: E::ScalarField) -> Self::Output {
+        self *= rhs;
+        self
+    }
+}
+
+impl<E: Pairing> Add<Self> for InnerProductKey<E> {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        self
+    }
+}
+impl<E: Pairing> MulAssign<E::ScalarField> for InnerProductKey<E> {
+    fn mul_assign(&mut self, rhs: E::ScalarField) {}
+}
+
+impl<E: Pairing> Mul<E::ScalarField> for InnerProductKey<E> {
+    type Output = Self;
+    fn mul(mut self, rhs: E::ScalarField) -> Self::Output {
+        self *= rhs;
+        self
     }
 }

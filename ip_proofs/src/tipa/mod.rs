@@ -4,6 +4,7 @@ use ark_poly::polynomial::{univariate::DensePolynomial, DenseUVPolynomial};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::rand::Rng;
 use ark_std::{end_timer, start_timer};
+use derivative::Derivative;
 use digest::Digest;
 use itertools::Itertools;
 use std::marker::PhantomData;
@@ -13,21 +14,12 @@ use crate::{
     ip_commitment::{FinalIPCommKey, IPCommKey, IPCommitment, Scalar},
     Error,
 };
-use ark_dh_commitments::{
-    afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
-    pedersen::PedersenCommitment,
-    DoublyHomomorphicCommitment,
-};
 use ark_inner_products::{InnerProduct, MultiexponentiationInnerProduct};
 
 // pub mod structured_scalar_message;
 
 //TODO: Could generalize: Don't need TIPA over G1 and G2, would work with G1 and G1 or over different pairing engines
 pub trait TIPACompatibleSetup {}
-
-impl<G: CurveGroup> TIPACompatibleSetup for PedersenCommitment<G> {}
-impl<P: Pairing> TIPACompatibleSetup for AFGHOCommitmentG1<P> {}
-impl<P: Pairing> TIPACompatibleSetup for AFGHOCommitmentG2<P> {}
 
 //TODO: May need to add "reverse" MultiexponentiationInnerProduct to allow for MIP with G2 messages (because TIP hard-coded G1 left and G2 right)
 pub struct TIPA<IP, IPC, P, D> {
@@ -37,7 +29,8 @@ pub struct TIPA<IP, IPC, P, D> {
     _digest: PhantomData<D>,
 }
 
-#[derive(CanonicalSerialize, CanonicalDeserialize)]
+#[derive(CanonicalSerialize, CanonicalDeserialize, Derivative)]
+#[derivative(Clone)]
 pub struct TIPAProof<IP, IPC, P, D>
 where
     D: Digest,
@@ -49,23 +42,6 @@ where
     final_ck: FinalIPCommKey<IPC>,
     final_ck_proof: (P::G2, P::G1),
     _pair: PhantomData<P>,
-}
-
-impl<IP, IPC, P, D> Clone for TIPAProof<IP, IPC, P, D>
-where
-    D: Digest,
-    P: Pairing,
-    IP: InnerProduct,
-    IPC: IPCommitment<IP = IP>,
-{
-    fn clone(&self) -> Self {
-        Self {
-            gipa_proof: self.gipa_proof.clone(),
-            final_ck: self.final_ck.clone(),
-            final_ck_proof: self.final_ck_proof.clone(),
-            _pair: PhantomData,
-        }
-    }
 }
 
 #[derive(Clone)]
