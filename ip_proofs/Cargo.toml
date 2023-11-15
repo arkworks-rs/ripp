@@ -22,7 +22,7 @@ ark-std = "0.4"
 ark-groth16 = "0.4"
 digest = "0.9"
 num-traits = "0.2"
-itertools = "0.11"
+itertools = "0.12"
 rayon = { version = "1", optional = true }
 
 ark-inner-products = { path = "../inner_products" }
