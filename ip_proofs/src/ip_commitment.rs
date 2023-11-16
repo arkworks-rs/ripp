@@ -1,9 +1,10 @@
 use std::{
     convert::TryInto,
     marker::PhantomData,
-    ops::{AddAssign, Mul},
+    ops::{Mul},
 };
 
+use ark_ec::pairing::{Pairing, PairingOutput};
 use ark_dh_commitments::Error;
 use ark_std::{
     borrow::Cow,
@@ -12,8 +13,8 @@ use ark_std::{
     rand::Rng,
     start_timer,
 };
-
-use ark_inner_products::InnerProduct;
+use ark_ff::UniformRand;
+use ark_inner_products::{cfg_multi_pairing, InnerProduct, PairingInnerProduct};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 use derivative::Derivative;
@@ -36,48 +37,44 @@ pub trait IPCommitment: Sized {
     type IP: InnerProduct;
 
     type LeftKey: CanonicalSerialize
-        + CanonicalDeserialize
-        + Clone
-        + Default
-        + Eq
-        + Send
-        + Sync
-        + Add<Self::LeftKey, Output = Self::LeftKey>
-        + Mul<Scalar<Self>, Output = Self::LeftKey>
-        + MulAssign<Scalar<Self>>;
+    + CanonicalDeserialize
+    + Clone
+    + Default
+    + Eq
+    + Send
+    + Sync
+    + Add<Output=Self::LeftKey>
+    + Mul<Scalar<Self>, Output=Self::LeftKey>;
 
     type RightKey: CanonicalSerialize
-        + CanonicalDeserialize
-        + Clone
-        + Default
-        + Eq
-        + Send
-        + Sync
-        + Add<Self::RightKey, Output = Self::RightKey>
-        + Mul<Scalar<Self>, Output = Self::RightKey>
-        + MulAssign<Scalar<Self>>;
+    + CanonicalDeserialize
+    + Clone
+    + Default
+    + Eq
+    + Send
+    + Sync
+    + Add<Output=Self::RightKey>
+    + Mul<Scalar<Self>, Output=Self::RightKey>;
 
     type IPKey: CanonicalSerialize
-        + CanonicalDeserialize
-        + Clone
-        + Default
-        + Eq
-        + Send
-        + Sync
-        + Add<Self::IPKey, Output = Self::IPKey>
-        + Mul<Scalar<Self>, Output = Self::IPKey>
-        + MulAssign<Scalar<Self>>;
+    + CanonicalDeserialize
+    + Clone
+    + Default
+    + Eq
+    + Send
+    + Sync
+    + Add<Output=Self::IPKey>
+    + Mul<Scalar<Self>, Output=Self::IPKey>;
 
     type Commitment: CanonicalSerialize
-        + CanonicalDeserialize
-        + Default
-        + Eq
-        + Add<Self::Commitment, Output = Self::Commitment>
-        + AddAssign<Self::Commitment>
-        + Mul<Scalar<Self>, Output = Self::Commitment>
-        + MulAssign<Scalar<Self>>;
+    + CanonicalDeserialize
+    + Clone
+    + Default
+    + Eq
+    + Add<Output=Self::Commitment>
+    + Mul<Scalar<Self>, Output=Self::Commitment>;
 
-    fn setup(size: usize, r: &mut impl Rng) -> Result<IPCommKey<'_, Self>, Error>;
+    fn setup<'a>(size: usize, r: impl Rng) -> Result<IPCommKey<'a, Self>, Error>;
 
     fn commit<'a>(
         ck: &IPCommKey<'a, Self>,
@@ -115,9 +112,9 @@ impl<'a, IPC: IPCommitment> TryInto<FinalIPCommKey<IPC>> for IPCommKey<'a, IPC> 
             Err(())
         } else {
             Ok(FinalIPCommKey {
-                ck_a: self.ck_a.pop().unwrap(),
-                ck_b: self.ck_b.pop().unwrap(),
-                ck_t: self.ck_t.pop().unwrap(),
+                ck_a: self.ck_a.first().unwrap().clone(),
+                ck_b: self.ck_b.first().unwrap().clone(),
+                ck_t: self.ck_t.first().unwrap().clone(),
             })
         }
     }
@@ -126,9 +123,9 @@ impl<'a, IPC: IPCommitment> TryInto<FinalIPCommKey<IPC>> for IPCommKey<'a, IPC> 
 impl<'a, 'b, IPC: IPCommitment> Into<IPCommKey<'a, IPC>> for &'b FinalIPCommKey<IPC> {
     fn into(self) -> IPCommKey<'a, IPC> {
         IPCommKey {
-            ck_a: vec![self.ck_a].into(),
-            ck_b: vec![self.ck_b].into(),
-            ck_t: vec![self.ck_t].into(),
+            ck_a: vec![self.ck_a.clone()].into(),
+            ck_b: vec![self.ck_b.clone()].into(),
+            ck_t: vec![self.ck_t.clone()].into(),
         }
     }
 }
@@ -150,7 +147,15 @@ impl<'a, IPC: IPCommitment> IPCommKey<'a, IPC> {
         Self { ck_a, ck_b, ck_t }
     }
 
-    pub fn split(&self, split: usize) -> (Self, Self) {
+    pub fn to_owned<'b>(&self) -> IPCommKey<'b, IPC> {
+        IPCommKey {
+            ck_a: Cow::Owned(self.ck_a.to_vec()),
+            ck_b: Cow::Owned(self.ck_b.to_vec()),
+            ck_t: Cow::Owned(self.ck_t.to_vec()),
+        }
+    }
+
+    pub fn split(&'a self, split: usize) -> (Self, Self) {
         let ck_a_1 = &self.ck_a[..split];
         let ck_a_2 = &self.ck_a[split..];
 
@@ -170,13 +175,15 @@ impl<'a, IPC: IPCommitment> IPCommKey<'a, IPC> {
         (ck_1, ck_2)
     }
 
-    pub fn fold_into(
-        &mut self,
+    pub fn fold<'b: 'a>(
         ck_1: &Self,
         ck_2: &Self,
         c_inv: &Scalar<IPC>,
         c: &Scalar<IPC>,
-    ) -> Result<(), Error> {
+    ) -> Result<IPCommKey<'b, IPC>, Error> {
+        // We don't do anything to ck_t when folding. These should all have the same ck_t.
+        assert!(ck_1.ck_t == ck_2.ck_t);
+
         let rescale_a = start_timer!(|| "Rescale CK_B");
         let ck_a = cfg_iter!(ck_2.ck_a.as_ref())
             .map(|a| mul_helper(a, &c_inv))
@@ -192,9 +199,13 @@ impl<'a, IPC: IPCommitment> IPCommKey<'a, IPC> {
             .map(|(b_1, b_2)| b_1 + b_2.clone())
             .collect::<Vec<IPC::RightKey>>();
         end_timer!(rescale_b);
-        self.ck_a = Cow::Owned(ck_a);
-        self.ck_b = Cow::Owned(ck_b);
-        Ok(())
+
+        // TODO: Remove the into_owned here
+        Ok(IPCommKey {
+            ck_a: Cow::Owned(ck_a),
+            ck_b: Cow::Owned(ck_b),
+            ck_t: Cow::Owned(ck_1.ck_t.clone().into_owned()),
+        })
     }
 }
 
@@ -235,16 +246,17 @@ impl<T> MulAssign<T> for HomomorphicPlaceholderValue {
 pub struct IdentityOutput<IP: InnerProduct>(
     pub Vec<(IP::LeftMessage, IP::RightMessage, IP::Output)>,
 )
-where
-    IP::LeftMessage: Default + Eq,
-    IP::RightMessage: Default + Eq,
-    IP::Output: Default + Eq;
+    where
+        IP::LeftMessage: Default + Eq,
+        IP::RightMessage: Default + Eq,
+        IP::Output: Default + Eq + Add<Output=IP::Output> + Mul<IP::Scalar, Output=IP::Output>;
+
 
 impl<IP: InnerProduct> Add for IdentityOutput<IP>
-where
-    IP::LeftMessage: Default + Eq,
-    IP::RightMessage: Default + Eq,
-    IP::Output: Default + Eq,
+    where
+        IP::LeftMessage: Default + Eq,
+        IP::RightMessage: Default + Eq,
+        IP::Output: Default + Eq + Add<Output=IP::Output> + Mul<IP::Scalar, Output=IP::Output>,
 {
     type Output = Self;
 
@@ -253,43 +265,35 @@ where
             self.0
                 .iter()
                 .zip(&rhs.0)
-                .map(|((a, b, t), (aa, bb, tt))| (a + aa, b + bb, t + tt))
+                .map(|((a, b, t), (aa, bb, tt))| (a.clone() + aa.clone(), b.clone() + bb.clone(), t.clone() + tt.clone()))
                 .collect::<Vec<_>>(),
         )
     }
 }
 
-impl<IP: InnerProduct> AddAssign for IdentityOutput<IP>
-where
-    IP::LeftMessage: Default + Eq,
-    IP::RightMessage: Default + Eq,
-    IP::Output: Default + Eq,
+impl<IP: InnerProduct> Mul<IP::Scalar> for IdentityOutput<IP>
+    where
+        IP::LeftMessage: Default + Eq,
+        IP::RightMessage: Default + Eq,
+        IP::Output: Default + Eq + Add<Output=IP::Output> + Mul<IP::Scalar, Output=IP::Output>,
 {
-    fn add_assign(&mut self, other: Self) {
-        *self = self + other
-    }
-}
+    type Output = Self;
 
-impl<IP: InnerProduct> MulAssign<IP::Scalar> for IdentityOutput<IP>
-where
-    IP::LeftMessage: Default + Eq,
-    IP::RightMessage: Default + Eq,
-    IP::Output: Default + Eq,
-{
-    fn mul_assign(&mut self, rhs: IP::Scalar) {
-        self.0.iter_mut().for_each(|(a, b, t)| {
-            a.mul_assign(rhs.clone());
-            b.mul_assign(rhs.clone());
-            t.mul_assign(rhs.clone());
-        })
+    fn mul(self, rhs: IP::Scalar) -> Self::Output {
+        IdentityOutput(
+            self.0.into_iter().map(|(a, b, t)| {
+                (a * rhs,
+                 b * rhs,
+                 t * rhs)
+            }).collect())
     }
 }
 
 impl<IP: InnerProduct> IPCommitment for IdentityCommitment<IP>
-where
-    IP::LeftMessage: Default + Eq,
-    IP::RightMessage: Default + Eq,
-    IP::Output: Default + Eq,
+    where
+        IP::LeftMessage: Default + Eq,
+        IP::RightMessage: Default + Eq,
+        IP::Output: Default + Eq + Add<Output=IP::Output> + Mul<IP::Scalar, Output=IP::Output>,
 {
     type IP = IP;
 
@@ -299,7 +303,7 @@ where
 
     type Commitment = IdentityOutput<IP>;
 
-    fn setup(size: usize, _r: &mut impl Rng) -> Result<IPCommKey<'_, Self>, Error> {
+    fn setup<'a>(size: usize, _r: impl Rng) -> Result<IPCommKey<'a, Self>, Error> {
         Ok(IPCommKey {
             ck_a: vec![HomomorphicPlaceholderValue; size].into(),
             ck_b: vec![HomomorphicPlaceholderValue; size].into(),
@@ -314,7 +318,92 @@ where
         ip: &[OutputMessage<Self>],
     ) -> Result<Self::Commitment, Error> {
         Ok(IdentityOutput(
-            l.iter().zip(r.iter()).zip(ip.iter()).collect(),
+            l.iter().zip(r.iter()).zip(ip.iter()).map(|((a, b), c)| (a.clone(), b.clone(), c.clone())).collect(),
         ))
+    }
+}
+
+/// Represents a commitment scheme over (G1, G2) which does a pairing commitment on the LHS and a
+/// pairing commitment on the RHS, and an identity commitment on the inner product of the two.
+pub(crate) struct PairingCommitment<E: Pairing> {
+    _marker: PhantomData<E>,
+}
+
+#[derive(Clone, CanonicalSerialize, CanonicalDeserialize, PartialEq, Eq)]
+pub struct PairingCommOutput<E: Pairing> {
+    com_a: PairingOutput<E>,
+    com_b: PairingOutput<E>,
+    com_t: Vec<PairingOutput<E>>,
+}
+
+impl<E: Pairing> Default for PairingCommOutput<E> {
+    fn default() -> Self {
+        PairingCommOutput {
+            com_a: PairingOutput::default(),
+            com_b: PairingOutput::default(),
+            com_t: vec![PairingOutput::default()],
+        }
+    }
+}
+
+impl<E: Pairing> Add for PairingCommOutput<E> {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self::Output {
+        PairingCommOutput {
+            com_a: self.com_a + rhs.com_a,
+            com_b: self.com_b + rhs.com_b,
+            com_t: self.com_t.iter().zip(rhs.com_t.iter()).map(|(l, r)| l + r).collect(),
+        }
+    }
+}
+
+impl<E: Pairing> Mul<E::ScalarField> for PairingCommOutput<E> {
+    type Output = Self;
+
+    fn mul(self, rhs: E::ScalarField) -> Self::Output {
+        PairingCommOutput {
+            com_a: self.com_a * rhs,
+            com_b: self.com_b * rhs,
+            com_t: self.com_t.iter().map(|c| *c * rhs).collect(),
+        }
+    }
+}
+
+impl<E: Pairing> IPCommitment for PairingCommitment<E>
+{
+    type IP = PairingInnerProduct<E>;
+
+    type LeftKey = E::G2;
+    type RightKey = E::G1;
+    type IPKey = HomomorphicPlaceholderValue;
+
+    type Commitment = PairingCommOutput<E>;
+
+    fn setup<'a>(size: usize, mut rng: impl Rng) -> Result<IPCommKey<'a, Self>, Error> {
+        let random_left_key: Vec<E::G2> = (0..size).map(|_| E::G2::rand(&mut rng)).collect();
+        let random_right_key: Vec<E::G1> = (0..size).map(|_| E::G1::rand(&mut rng)).collect();
+
+        Ok(IPCommKey {
+            ck_a: random_left_key.into(),
+            ck_b: random_right_key.into(),
+            ck_t: vec![HomomorphicPlaceholderValue].into(),
+        })
+    }
+
+    fn commit<'a>(
+        ck: &IPCommKey<'a, Self>,
+        l: &[LeftMessage<Self>],
+        r: &[RightMessage<Self>],
+        ip: &[OutputMessage<Self>],
+    ) -> Result<Self::Commitment, Error> {
+        let com_a = cfg_multi_pairing(l, &ck.ck_a).ok_or("invalid pairing")?;
+        let com_b = cfg_multi_pairing(&ck.ck_b, r).ok_or("invalid pairing")?;
+        let com_t = ip.to_vec();
+
+        Ok(PairingCommOutput {
+            com_a,
+            com_b,
+            com_t,
+        })
     }
 }

@@ -8,7 +8,7 @@ use ark_std::cfg_iter;
 use std::{
     error::Error as ErrorTrait,
     fmt::{Display, Formatter, Result as FmtResult},
-    marker::PhantomData, ops::{Add, MulAssign},
+    marker::PhantomData, ops::{Add, Mul},
 };
 
 #[cfg(feature = "parallel")]
@@ -41,19 +41,19 @@ impl Display for InnerProductError {
 pub trait InnerProduct: Copy {
     type Scalar: Field;
     type LeftMessage: Clone
-        + Send
-        + Sync
-        + CanonicalSerialize
-        + CanonicalDeserialize
-        + Add<Output = Self::LeftMessage>
-        + MulAssign<Self::Scalar>;
+    + Send
+    + Sync
+    + CanonicalSerialize
+    + CanonicalDeserialize
+    + Add<Output=Self::LeftMessage>
+    + Mul<Self::Scalar, Output=Self::LeftMessage>;
     type RightMessage: Clone
-        + Send
-        + Sync
-        + CanonicalSerialize
-        + CanonicalDeserialize
-        + Add<Output = Self::RightMessage>
-        + MulAssign<Self::Scalar>;
+    + Send
+    + Sync
+    + CanonicalSerialize
+    + CanonicalDeserialize
+    + Add<Output=Self::RightMessage>
+    + Mul<Self::Scalar, Output=Self::RightMessage>;
     type Output: Eq + Clone + Send + Sync + CanonicalSerialize + CanonicalDeserialize;
 
     fn inner_product(
@@ -104,9 +104,9 @@ pub fn cfg_multi_pairing<P: Pairing>(left: &[P::G1], right: &[P::G2]) -> Option<
 
     // We want to process N chunks in parallel where N is the number of threads available
     #[cfg(feature = "parallel")]
-    let num_chunks = rayon::current_num_threads();
+        let num_chunks = rayon::current_num_threads();
     #[cfg(not(feature = "parallel"))]
-    let num_chunks = 1;
+        let num_chunks = 1;
 
     let chunk_size = if num_chunks <= left.len() {
         left.len() / num_chunks
@@ -116,9 +116,9 @@ pub fn cfg_multi_pairing<P: Pairing>(left: &[P::G1], right: &[P::G2]) -> Option<
     };
 
     #[cfg(feature = "parallel")]
-    let (left_chunks, right_chunks) = (left.par_chunks(chunk_size), right.par_chunks(chunk_size));
+        let (left_chunks, right_chunks) = (left.par_chunks(chunk_size), right.par_chunks(chunk_size));
     #[cfg(not(feature = "parallel"))]
-    let (left_chunks, right_chunks) = (left.chunks(chunk_size), right.chunks(chunk_size));
+        let (left_chunks, right_chunks) = (left.chunks(chunk_size), right.chunks(chunk_size));
 
     // Compute all the (partial) pairings and take the product. We have to take the product over
     // P::TargetField because MillerLoopOutput doesn't impl Product
