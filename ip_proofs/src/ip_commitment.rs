@@ -243,14 +243,16 @@ impl<T> MulAssign<T> for HomomorphicPlaceholderValue {
 #[derivative(PartialEq(bound = ""))]
 #[derivative(Eq(bound = ""))]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct IdentityOutput<IP: InnerProduct>(
-    pub Vec<(IP::LeftMessage, IP::RightMessage, IP::Output)>,
-)
+pub struct IdentityOutput<IP: InnerProduct>
     where
         IP::LeftMessage: Default + Eq,
         IP::RightMessage: Default + Eq,
-        IP::Output: Default + Eq + Add<Output=IP::Output> + Mul<IP::Scalar, Output=IP::Output>;
-
+        IP::Output: Default + Eq + Add<Output=IP::Output> + Mul<IP::Scalar, Output=IP::Output>
+{
+    left_msg: Vec<IP::LeftMessage>,
+    right_msg: Vec<IP::RightMessage>,
+    out: Vec<IP::Output>,
+}
 
 impl<IP: InnerProduct> Add for IdentityOutput<IP>
     where
@@ -261,13 +263,11 @@ impl<IP: InnerProduct> Add for IdentityOutput<IP>
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        IdentityOutput(
-            self.0
-                .iter()
-                .zip(&rhs.0)
-                .map(|((a, b, t), (aa, bb, tt))| (a.clone() + aa.clone(), b.clone() + bb.clone(), t.clone() + tt.clone()))
-                .collect::<Vec<_>>(),
-        )
+        IdentityOutput {
+            left_msg: self.left_msg.into_iter().zip(rhs.left_msg.into_iter()).map(|(l, r)| l + r).collect(),
+            right_msg: self.right_msg.into_iter().zip(rhs.right_msg.into_iter()).map(|(l, r)| l + r).collect(),
+            out: self.out.into_iter().zip(rhs.out.into_iter()).map(|(l, r)| l + r).collect(),
+        }
     }
 }
 
@@ -280,12 +280,11 @@ impl<IP: InnerProduct> Mul<IP::Scalar> for IdentityOutput<IP>
     type Output = Self;
 
     fn mul(self, rhs: IP::Scalar) -> Self::Output {
-        IdentityOutput(
-            self.0.into_iter().map(|(a, b, t)| {
-                (a * rhs,
-                 b * rhs,
-                 t * rhs)
-            }).collect())
+        IdentityOutput {
+            left_msg: self.left_msg.into_iter().map(|l| l * rhs).collect(),
+            right_msg: self.right_msg.into_iter().map(|l| l * rhs).collect(),
+            out: self.out.into_iter().map(|l| l * rhs).collect(),
+        }
     }
 }
 
@@ -307,7 +306,7 @@ impl<IP: InnerProduct> IPCommitment for IdentityCommitment<IP>
         Ok(IPCommKey {
             ck_a: vec![HomomorphicPlaceholderValue; size].into(),
             ck_b: vec![HomomorphicPlaceholderValue; size].into(),
-            ck_t: vec![HomomorphicPlaceholderValue; size].into(),
+            ck_t: vec![HomomorphicPlaceholderValue].into(),
         })
     }
 
@@ -317,9 +316,11 @@ impl<IP: InnerProduct> IPCommitment for IdentityCommitment<IP>
         r: &[RightMessage<Self>],
         ip: &[OutputMessage<Self>],
     ) -> Result<Self::Commitment, Error> {
-        Ok(IdentityOutput(
-            l.iter().zip(r.iter()).zip(ip.iter()).map(|((a, b), c)| (a.clone(), b.clone(), c.clone())).collect(),
-        ))
+        Ok(IdentityOutput {
+            left_msg: l.to_vec(),
+            right_msg: r.to_vec(),
+            out: ip.to_vec(),
+        })
     }
 }
 

@@ -51,8 +51,6 @@ pub struct GIPAAux<IP, IPC, D>
     _gipa: PhantomData<GIPA<IP, IPC, D>>,
 }
 
-//TODO: Can extend GIPA to support "identity commitments" in addition to "compact commitments", i.e. for SIPP
-
 impl<IP, IPC, D> GIPA<IP, IPC, D>
     where
         D: Digest,
@@ -389,39 +387,38 @@ mod tests {
             PairingGIPA::verify(&ck, &com, &proof).unwrap()
         );
     }
-    /*
 
     #[test]
     fn multiexponentiation_inner_product_test() {
         type IP = MultiexponentiationInnerProduct<<Bls12_381 as Pairing>::G1>;
-        type IPC =
-        IdentityCommitment<<Bls12_381 as Pairing>::G1, <Bls12_381 as Pairing>::ScalarField>;
+        type IPC = IdentityCommitment<IP>;
         type MultiExpGIPA = GIPA<IP, IPC, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
-        let (ck_a, ck_b, ck_t) = MultiExpGIPA::setup(&mut rng, TEST_SIZE).unwrap();
+        let ck = MultiExpGIPA::setup(TEST_SIZE, &mut rng).unwrap();
         let m_a = random_generators(&mut rng, TEST_SIZE);
         let mut m_b = Vec::new();
         for _ in 0..TEST_SIZE {
             m_b.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
         }
-        let com_a = GC1::commit(&ck_a, &m_a).unwrap();
-        let com_b = SC1::commit(&ck_b, &m_b).unwrap();
         let t = vec![IP::inner_product(&m_a, &m_b).unwrap()];
-        let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
+        let com = IPC::commit(&ck, &m_a, &m_b, &t).unwrap();
 
         let proof = MultiExpGIPA::prove(
-            (&m_a, &m_b, &t[0]),
-            (&ck_a, &ck_b, &ck_t),
-            (&com_a, &com_b, &com_t),
+            &ck,
+            &m_a,
+            &m_b,
+            &t[0],
+            &com,
         )
             .unwrap();
 
         assert!(
-            MultiExpGIPA::verify((&ck_a, &ck_b, &ck_t), (&com_a, &com_b, &com_t), &proof).unwrap()
+            MultiExpGIPA::verify(&ck, &com, &proof).unwrap()
         );
     }
 
+    /*
     #[test]
     fn scalar_inner_product_test() {
         type IP = ScalarInnerProduct<<Bls12_381 as Pairing>::ScalarField>;
