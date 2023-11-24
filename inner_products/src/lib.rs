@@ -1,4 +1,4 @@
-use std::ops::{MulAssign, AddAssign};
+use std::ops::{AddAssign, MulAssign};
 
 use ark_ec::{
     pairing::{MillerLoopOutput, Pairing, PairingOutput},

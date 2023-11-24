@@ -1,8 +1,9 @@
 use ark_std::{
     borrow::Cow,
+    cfg_iter_mut,
     marker::PhantomData,
     ops::{Add, Mul, MulAssign},
-    rand::Rng, cfg_iter_mut,
+    rand::Rng,
 };
 
 use ark_inner_products::InnerProduct;

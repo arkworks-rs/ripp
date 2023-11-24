@@ -4,8 +4,7 @@ use ark_std::{
     marker::PhantomData,
     ops::{Add, Mul},
     rand::Rng,
-    UniformRand,
-    One,
+    One, UniformRand,
 };
 
 use ark_ec::pairing::{Pairing, PairingOutput};

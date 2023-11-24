@@ -141,20 +141,14 @@ where
                 let (ck_l, ck_r) = ck.split(split);
 
                 let cl = start_timer!(|| "Commit L");
-                let com_1 = IPC::commit(
-                    &ck_l,
-                    &left_1,
-                    &right_1,
-                    || IP::inner_product(left_1, right_1).unwrap(),
-                )?;
+                let com_1 = IPC::commit(&ck_l, &left_1, &right_1, || {
+                    IP::inner_product(left_1, right_1).unwrap()
+                })?;
                 end_timer!(cl);
                 let cr = start_timer!(|| "Commit R");
-                let com_2 = IPC::commit(
-                    &ck_r,
-                    &left_2,
-                    &right_2,
-                    || IP::inner_product(left_2, right_2).unwrap(),
-                )?;
+                let com_2 = IPC::commit(&ck_r, &left_2, &right_2, || {
+                    IP::inner_product(left_2, right_2).unwrap()
+                })?;
                 end_timer!(cr);
 
                 // Fiat-Shamir challenge
@@ -247,7 +241,7 @@ where
         assert_eq!(ck_a_agg_challenge_exponents.len(), ck.ck_a.len());
         let ck_a_base = IPC::left_key_msm(&ck.ck_a, &ck_a_agg_challenge_exponents)?;
         let ck_b_base = IPC::right_key_msm(&ck.ck_b, &ck_b_agg_challenge_exponents)?;
-        
+
         Ok(IPCommKey::new(
             Cow::Owned(vec![ck_a_base]),
             Cow::Owned(vec![ck_b_base]),
