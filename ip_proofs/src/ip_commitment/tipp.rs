@@ -16,7 +16,7 @@ use ark_std::{rand::Rng, One};
 use derivative::Derivative;
 
 use super::{
-    HomomorphicPlaceholderValue, IPCommKey, IPCommitment, LeftMessage, OutputMessage, RightMessage,
+    identity::PlaceholderKey, IPCommKey, IPCommitment, LeftMessage, OutputMessage, RightMessage,
 };
 
 /// A generic and reusable powers-of-tau SRS for TIPP
@@ -165,7 +165,7 @@ impl<E: Pairing> GenericSRS<E> {
         IPCommKey {
             ck_a: ck_a.into(),
             ck_b: ck_b.into(),
-            ck_t: vec![HomomorphicPlaceholderValue].into(),
+            ck_t: vec![PlaceholderKey].into(),
         }
     }
 }
@@ -199,10 +199,10 @@ impl<E: Pairing> IPCommitment for TIPPCommitment<E> {
     type IP = PairingInnerProduct<E>;
     type LeftKey = LeftKey<E>;
     type RightKey = RightKey<E>;
-    type IPKey = HomomorphicPlaceholderValue;
+    type IPKey = PlaceholderKey;
     type Commitment = TIPPCommOutput<E>;
 
-    fn setup<'a>(size: usize, mut rng: impl Rng) -> Result<IPCommKey<'a, Self>, Error> {
+    fn setup<'a>(size: usize, rng: impl Rng) -> Result<IPCommKey<'a, Self>, Error> {
         let srs = setup_fake_srs(rng, size);
         Ok(srs.specialize(size))
     }
@@ -211,7 +211,7 @@ impl<E: Pairing> IPCommitment for TIPPCommitment<E> {
         ck: &IPCommKey<'a, Self>,
         l: &[LeftMessage<Self>],
         r: &[RightMessage<Self>],
-        ip: &[OutputMessage<Self>],
+        _ip: &[OutputMessage<Self>],
     ) -> Result<Self::Commitment, Error> {
         let (v1, v2): (Vec<_>, Vec<_>) = ck
             .ck_a
