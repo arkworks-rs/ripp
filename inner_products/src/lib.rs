@@ -1,3 +1,5 @@
+use std::ops::{MulAssign, AddAssign};
+
 use ark_ec::{
     pairing::{MillerLoopOutput, Pairing, PairingOutput},
     CurveGroup,
@@ -45,20 +47,26 @@ pub trait InnerProduct {
         + Send
         + Sync
         + Default
+        + Debug
         + Eq
         + CanonicalSerialize
         + CanonicalDeserialize
         + Add<Output = Self::LeftMessage>
-        + Mul<Self::Scalar, Output = Self::LeftMessage>;
+        + Mul<Self::Scalar, Output = Self::LeftMessage>
+        + AddAssign<Self::LeftMessage>
+        + MulAssign<Self::Scalar>;
     type RightMessage: Copy
         + Send
         + Sync
         + Default
+        + Debug
         + Eq
         + CanonicalSerialize
         + CanonicalDeserialize
         + Add<Output = Self::RightMessage>
-        + Mul<Self::Scalar, Output = Self::RightMessage>;
+        + Mul<Self::Scalar, Output = Self::RightMessage>
+        + AddAssign<Self::RightMessage>
+        + MulAssign<Self::Scalar>;
     type Output: Default
         + Eq
         + Copy
@@ -68,12 +76,46 @@ pub trait InnerProduct {
         + CanonicalSerialize
         + CanonicalDeserialize
         + Add<Output = Self::Output>
-        + Mul<Self::Scalar, Output = Self::Output>;
+        + Mul<Self::Scalar, Output = Self::Output>
+        + AddAssign<Self::Output>
+        + MulAssign<Self::Scalar>;
 
     fn inner_product(
         left: &[Self::LeftMessage],
         right: &[Self::RightMessage],
     ) -> Result<Self::Output, Error>;
+
+    fn left_msg_msm(
+        msg: &[Self::LeftMessage],
+        scalars: &[Self::Scalar],
+    ) -> Result<Self::LeftMessage, Error> {
+        #[cfg(feature = "parallel")]
+        let zero = Self::LeftMessage::default;
+
+        #[cfg(not(feature = "parallel"))]
+        let zero = Self::LeftMessage::default();
+
+        Ok(cfg_iter!(msg)
+            .zip(scalars)
+            .map(|(a, s)| *a * *s)
+            .reduce(zero, |a, b| a + b))
+    }
+
+    fn right_msg_msm<'a>(
+        msg: &[Self::RightMessage],
+        scalars: &[Self::Scalar],
+    ) -> Result<Self::RightMessage, Error> {
+        #[cfg(feature = "parallel")]
+        let zero = Self::RightMessage::default;
+
+        #[cfg(not(feature = "parallel"))]
+        let zero = Self::RightMessage::default();
+
+        Ok(cfg_iter!(msg)
+            .zip(scalars)
+            .map(|(a, s)| *a * *s)
+            .reduce(zero, |a, b| a + b))
+    }
 }
 
 #[derive(Copy, Clone)]

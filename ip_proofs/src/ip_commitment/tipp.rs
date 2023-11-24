@@ -98,7 +98,6 @@ pub(crate) fn structured_generators_scalar_power<G: CurveGroup>(
     let window_size = FixedBase::get_mul_window_size(num);
     let g_table = FixedBase::get_window_table::<G>(scalar_bits, window_size, g.clone());
     let powers_of_g = FixedBase::msm::<G>(
-        //let powers_of_g = msm::fixed_base::multi_scalar_mul::<G>(
         scalar_bits,
         window_size,
         &g_table,
@@ -173,7 +172,7 @@ impl<E: Pairing> GenericSRS<E> {
 
 pub(crate) struct TIPPCommitment<E: Pairing>(PhantomData<E>);
 
-#[derive(Clone, Copy, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
 pub(crate) struct TIPPCommOutput<E: Pairing>(PairingOutput<E>, PairingOutput<E>);
 
 impl<E: Pairing> Add for TIPPCommOutput<E> {

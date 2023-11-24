@@ -1,9 +1,8 @@
 use ark_std::{
     borrow::Cow,
-    cfg_into_iter,
     marker::PhantomData,
     ops::{Add, Mul, MulAssign},
-    rand::Rng,
+    rand::Rng, cfg_iter_mut,
 };
 
 use ark_inner_products::InnerProduct;
@@ -18,9 +17,7 @@ use crate::Error;
 use super::{IPCommKey, IPCommitment, LeftMessage, OutputMessage, RightMessage};
 
 #[derive(Copy, Clone)]
-pub struct IdentityCommitment<IP: InnerProduct> {
-    _ip: PhantomData<IP>,
-}
+pub struct IdentityCommitment<IP: InnerProduct>(PhantomData<IP>);
 
 #[derive(CanonicalSerialize, CanonicalDeserialize, Debug, Clone, Copy, Default, Eq, PartialEq)]
 pub struct PlaceholderKey;
@@ -47,6 +44,7 @@ impl<T> MulAssign<T> for PlaceholderKey {
 
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""))]
+#[derivative(Debug(bound = ""))]
 #[derivative(Default(bound = ""))]
 #[derivative(PartialEq(bound = ""))]
 #[derivative(Eq(bound = ""))]
@@ -60,37 +58,26 @@ pub struct IdentityComm<IP: InnerProduct> {
 impl<IP: InnerProduct> Add for IdentityComm<IP> {
     type Output = Self;
 
-    fn add(self, rhs: Self) -> Self::Output {
-        let left_msg = cfg_into_iter!(self.left_msg)
+    fn add(mut self, rhs: Self) -> Self::Output {
+        cfg_iter_mut!(self.left_msg)
             .zip(rhs.left_msg)
-            .map(|(l, r)| l + r)
-            .collect();
-        let right_msg = cfg_into_iter!(self.right_msg)
+            .for_each(|(l, r)| *l += r);
+        cfg_iter_mut!(self.right_msg)
             .zip(rhs.right_msg)
-            .map(|(l, r)| l + r)
-            .collect();
-        let out = self.out + rhs.out;
-
-        IdentityComm {
-            left_msg,
-            right_msg,
-            out,
-        }
+            .for_each(|(l, r)| *l += r);
+        self.out += rhs.out;
+        self
     }
 }
 
 impl<IP: InnerProduct> Mul<IP::Scalar> for IdentityComm<IP> {
     type Output = Self;
 
-    fn mul(self, rhs: IP::Scalar) -> Self::Output {
-        let left_msg = cfg_into_iter!(self.left_msg).map(|l| l * rhs).collect();
-        let right_msg = cfg_into_iter!(self.right_msg).map(|l| l * rhs).collect();
-        let out = self.out * rhs;
-        IdentityComm {
-            left_msg,
-            right_msg,
-            out,
-        }
+    fn mul(mut self, rhs: IP::Scalar) -> Self::Output {
+        cfg_iter_mut!(self.left_msg).for_each(|l| *l *= rhs);
+        cfg_iter_mut!(self.right_msg).for_each(|l| *l *= rhs);
+        self.out *= rhs;
+        self
     }
 }
 

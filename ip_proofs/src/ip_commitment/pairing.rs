@@ -5,6 +5,7 @@ use ark_std::{
     ops::{Add, Mul},
     rand::Rng,
     UniformRand,
+    One,
 };
 
 use ark_ec::pairing::{Pairing, PairingOutput};
@@ -22,7 +23,7 @@ pub(crate) struct PairingCommitment<E: Pairing> {
     _marker: PhantomData<E>,
 }
 
-#[derive(Clone, CanonicalSerialize, CanonicalDeserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize, PartialEq, Eq)]
 pub struct PairingCommOutput<E: Pairing> {
     com_a: PairingOutput<E>,
     com_b: PairingOutput<E>,
@@ -32,9 +33,9 @@ pub struct PairingCommOutput<E: Pairing> {
 impl<E: Pairing> Default for PairingCommOutput<E> {
     fn default() -> Self {
         PairingCommOutput {
-            com_a: PairingOutput::default(),
-            com_b: PairingOutput::default(),
-            com_t: PairingOutput::default(),
+            com_a: PairingOutput(E::TargetField::one()),
+            com_b: PairingOutput(E::TargetField::one()),
+            com_t: PairingOutput(E::TargetField::one()),
         }
     }
 }

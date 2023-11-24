@@ -67,6 +67,7 @@ pub trait IPCommitment: Sized {
     type Commitment: CanonicalSerialize
         + CanonicalDeserialize
         + Clone
+        + Debug
         + Default
         + Eq
         + Add<Output = Self::Commitment>
@@ -88,7 +89,7 @@ pub trait IPCommitment: Sized {
         ip: &OutputMessage<Self>,
         com: &Self::Commitment,
     ) -> Result<bool, Error> {
-        Ok(Self::commit(ck, l, r, || ip.clone())? == *com)
+        Ok(dbg!(Self::commit(ck, l, r, || ip.clone())?) == *com)
     }
 
     fn left_key_msm<'a>(
