@@ -3,7 +3,6 @@
 use std::{
     error::Error as ErrorTrait,
     fmt::{Display, Formatter, Result as FmtResult},
-    ops::Mul,
 };
 
 // pub mod applications;
@@ -12,11 +11,6 @@ pub mod ip_commitment;
 //pub mod tipa;
 
 pub type Error = Box<dyn ErrorTrait>;
-
-//TODO: helper function for mul because relying on MulAssign
-pub(crate) fn mul_helper<T: Mul<F, Output = T> + Clone, F: Clone>(t: &T, f: &F) -> T {
-    t.clone() * f.clone()
-}
 
 #[derive(Debug)]
 pub enum InnerProductArgumentError {

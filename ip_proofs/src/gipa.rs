@@ -7,7 +7,7 @@ use digest::Digest;
 
 use crate::{
     ip_commitment::{FinalIPCommKey, IPCommKey, IPCommitment, Scalar},
-    mul_helper, Error, InnerProductArgumentError,
+    Error, InnerProductArgumentError,
 };
 use ark_inner_products::InnerProduct;
 
@@ -57,7 +57,7 @@ where
     IP: InnerProduct,
     IPC: IPCommitment<IP = IP>,
 {
-    pub fn setup<'a>(size: usize, mut rng: impl Rng) -> Result<IPCommKey<'a, IPC>, Error> {
+    pub fn setup<'a>(size: usize, rng: impl Rng) -> Result<IPCommKey<'a, IPC>, Error> {
         IPC::setup(size, rng)
     }
 
@@ -68,17 +68,16 @@ where
         output: &IP::Output,
         com: &IPC::Commitment,
     ) -> Result<GIPAProof<IP, IPC, D>, Error> {
-        if &IP::inner_product(left, right)? != output {
-            return Err(Box::new(InnerProductArgumentError::InnerProductInvalid));
-        }
-        if left.len().count_ones() != 1 {
+        debug_assert_eq!(left.len(), right.len());
+        debug_assert_eq!(&IP::inner_product(left, right)?, output);
+        if !left.len().is_power_of_two() {
             // Power of 2 length
             return Err(Box::new(InnerProductArgumentError::MessageLengthInvalid(
                 left.len(),
                 right.len(),
             )));
         }
-        if !IPC::verify(ck, left, right, core::slice::from_ref(output), com)? {
+        if !IPC::verify(ck, left, right, &output, com)? {
             return Err(Box::new(InnerProductArgumentError::InnerProductInvalid));
         }
 
@@ -139,63 +138,38 @@ where
                 let right_1 = &right[..split];
                 let right_2 = &right[split..];
 
-                // TODO: Remove the clone here
-                let ck_copy = ck.to_owned();
-                let (ck_l, ck_r) = ck_copy.split(split);
+                let (ck_l, ck_r) = ck.split(split);
 
                 let cl = start_timer!(|| "Commit L");
-                let com_1 = IPC::commit(
-                    &ck_l,
-                    &left_1,
-                    &right_1,
-                    &[IP::inner_product(left_1, right_1)?],
-                )?;
+                let com_1 = IPC::commit(&ck_l, &left_1, &right_1, || {
+                    IP::inner_product(left_1, right_1).unwrap()
+                })?;
                 end_timer!(cl);
                 let cr = start_timer!(|| "Commit R");
-                let com_2 = IPC::commit(
-                    &ck_r,
-                    &left_2,
-                    &right_2,
-                    &[IP::inner_product(left_2, right_2)?],
-                )?;
+                let com_2 = IPC::commit(&ck_r, &left_2, &right_2, || {
+                    IP::inner_product(left_2, right_2).unwrap()
+                })?;
                 end_timer!(cr);
 
                 // Fiat-Shamir challenge
-                let mut counter_nonce: usize = 0;
                 let default_transcript = Default::default();
                 let transcript = r_transcript.last().unwrap_or(&default_transcript);
-                let (c, c_inv) = 'challenge: loop {
-                    let mut hash_input = Vec::new();
-                    hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
-                    transcript.serialize_uncompressed(&mut hash_input)?;
-                    com_1.serialize_uncompressed(&mut hash_input)?;
-                    com_2.serialize_uncompressed(&mut hash_input)?;
-                    let c: Scalar<IPC> = u128::from_be_bytes(
-                        D::digest(&hash_input).as_slice()[0..16].try_into().unwrap(),
-                    )
-                    .into();
-                    if let Some(c_inv) = c.inverse() {
-                        // Optimization for multiexponentiation to rescale G2 elements with 128-bit challenge
-                        // Swap 'c' and 'c_inv' since can't control bit size of c_inv
-                        break 'challenge (c_inv, c);
-                    }
-                    counter_nonce += 1;
-                };
+                let (c, c_inv) = Self::compute_challenge(transcript, &com_1, &com_2)?;
 
                 // Set up values for next step of recursion
                 let rescale_m1 = start_timer!(|| "Rescale M1");
                 left = cfg_iter!(left_1)
-                    .map(|a| mul_helper(a, &c))
+                    .map(|a| *a * c)
                     .zip(left_2)
-                    .map(|(a_1, a_2)| a_1 + a_2.clone())
+                    .map(|(a_1, a_2)| a_1 + *a_2)
                     .collect::<Vec<IP::LeftMessage>>();
                 end_timer!(rescale_m1);
 
                 let rescale_m2 = start_timer!(|| "Rescale M2");
                 right = cfg_iter!(right_2)
-                    .map(|b| mul_helper(b, &c_inv))
+                    .map(|b| *b * c_inv)
                     .zip(right_1)
-                    .map(|(b_1, b_2)| b_1 + b_2.clone())
+                    .map(|(b_1, b_2)| b_1 + *b_2)
                     .collect::<Vec<IP::RightMessage>>();
                 end_timer!(rescale_m2);
 
@@ -236,29 +210,11 @@ where
     ) -> Result<(IPC::Commitment, Vec<Scalar<IPC>>), Error> {
         let mut com = com.clone();
         let mut r_transcript: Vec<Scalar<IPC>> = Vec::new();
+        let default_transcript_entry = Default::default();
         for (com_1, com_2) in proof.r_commitment_steps.iter().rev() {
             // Fiat-Shamir challenge
-            let mut counter_nonce: usize = 0;
-            let default_transcript = Default::default();
-            let transcript = r_transcript.last().unwrap_or(&default_transcript);
-            let (c, c_inv) = 'challenge: loop {
-                let mut hash_input = Vec::new();
-                hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
-                transcript.serialize_uncompressed(&mut hash_input)?;
-                com_1.serialize_uncompressed(&mut hash_input)?;
-                com_2.serialize_uncompressed(&mut hash_input)?;
-                let c: Scalar<IPC> = u128::from_be_bytes(
-                    D::digest(&hash_input).as_slice()[0..16].try_into().unwrap(),
-                )
-                .into();
-                if let Some(c_inv) = c.inverse() {
-                    // Optimization for multiexponentiation to rescale G2 elements with 128-bit challenge
-                    // Swap 'c' and 'c_inv' since can't control bit size of c_inv
-                    break 'challenge (c_inv, c);
-                }
-                counter_nonce += 1;
-            };
-
+            let transcript = r_transcript.last().unwrap_or(&default_transcript_entry);
+            let (c, c_inv) = Self::compute_challenge(transcript, com_1, com_2)?;
             com = com + (com_1.clone() * c + com_2.clone() * c_inv);
             r_transcript.push(c);
         }
@@ -268,7 +224,7 @@ where
 
     pub(crate) fn _compute_final_commitment_keys<'a>(
         ck: &IPCommKey<'a, IPC>,
-        transcript: &Vec<Scalar<IPC>>,
+        transcript: &[Scalar<IPC>],
     ) -> Result<IPCommKey<'a, IPC>, Error> {
         // Calculate base commitment keys
         assert!(ck.ck_a.len().is_power_of_two());
@@ -283,25 +239,13 @@ where
             }
         }
         assert_eq!(ck_a_agg_challenge_exponents.len(), ck.ck_a.len());
-        //TODO: Optimization: Use VariableMSM multiexponentiation
-        let ck_a_base_init = mul_helper(&ck.ck_a[0], &ck_a_agg_challenge_exponents[0]);
-        let ck_a_base = ck.ck_a[1..]
-            .iter()
-            .zip(&ck_a_agg_challenge_exponents[1..])
-            .map(|(g, x)| mul_helper(g, &x))
-            .fold(ck_a_base_init, |sum, x| sum + x);
-        //.reduce(|| ck_a_base_init.clone(), |sum, x| sum + x);
-        let ck_b_base_init = mul_helper(&ck.ck_b[0], &ck_b_agg_challenge_exponents[0]);
-        let ck_b_base = ck.ck_b[1..]
-            .iter()
-            .zip(&ck_b_agg_challenge_exponents[1..])
-            .map(|(g, x)| mul_helper(g, &x))
-            .fold(ck_b_base_init, |sum, x| sum + x);
-        //.reduce(|| ck_b_base_init.clone(), |sum, x| sum + x);
+        let ck_a_base = IPC::left_key_msm(&ck.ck_a, &ck_a_agg_challenge_exponents)?;
+        let ck_b_base = IPC::right_key_msm(&ck.ck_b, &ck_b_agg_challenge_exponents)?;
+
         Ok(IPCommKey::new(
             Cow::Owned(vec![ck_a_base]),
             Cow::Owned(vec![ck_b_base]),
-            Cow::Owned(ck.ck_t.as_ref().to_vec()),
+            ck.ck_t.clone(),
         ))
     }
 
@@ -312,9 +256,37 @@ where
     ) -> Result<bool, Error> {
         let a_base = [proof.r_base.0.clone()];
         let b_base = [proof.r_base.1.clone()];
-        let t_base = [IP::inner_product(&a_base, &b_base)?];
+        let t_base = IP::inner_product(&a_base, &b_base)?;
 
         Ok(IPC::verify(&base_ck, &a_base, &b_base, &t_base, &base_com)?)
+    }
+
+    fn compute_challenge(
+        transcript: &Scalar<IPC>,
+        com_1: &IPC::Commitment,
+        com_2: &IPC::Commitment,
+    ) -> Result<(Scalar<IPC>, Scalar<IPC>), Error> {
+        let mut counter_nonce = 0u32;
+        let mut bytes = Vec::new();
+        transcript.serialize_uncompressed(&mut bytes)?;
+        com_1.serialize_uncompressed(&mut bytes)?;
+        com_2.serialize_uncompressed(&mut bytes)?;
+        let (c, c_inv) = 'challenge: loop {
+            let mut hash_input = Vec::new();
+            hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
+            hash_input.extend_from_slice(&bytes);
+
+            let c = D::digest(&hash_input).as_slice()[..16].try_into().unwrap();
+            let c: Scalar<IPC> = u128::from_be_bytes(c).into();
+            if let Some(c_inv) = c.inverse() {
+                // Optimization for multiexponentiation to rescale G2 elements with 128-bit challenge
+                // Swap 'c' and 'c_inv' since can't control bit size of c_inv
+                break 'challenge (c_inv, c);
+            }
+            counter_nonce += 1;
+        };
+
+        Ok((c, c_inv))
     }
 }
 
@@ -341,22 +313,10 @@ mod tests {
     use ark_bls12_381::Bls12_381;
     use ark_ec::pairing::Pairing;
     use ark_ff::UniformRand;
-    use ark_std::rand::{rngs::StdRng, SeedableRng};
     use blake2::Blake2b;
 
-    use ark_dh_commitments::{
-        afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
-        pedersen::PedersenCommitment,
-        random_generators, DoublyHomomorphicCommitment,
-    };
-    use ark_inner_products::{
-        InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct, ScalarInnerProduct,
-    };
-
-    type GC1 = AFGHOCommitmentG1<Bls12_381>;
-    type GC2 = AFGHOCommitmentG2<Bls12_381>;
-    type SC1 = PedersenCommitment<<Bls12_381 as Pairing>::G1>;
-    type SC2 = PedersenCommitment<<Bls12_381 as Pairing>::G2>;
+    use ark_dh_commitments::random_generators;
+    use ark_inner_products::{InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct};
 
     const TEST_SIZE: usize = 8;
 
@@ -366,14 +326,14 @@ mod tests {
         type IPC = PairingCommitment<Bls12_381>;
         type PairingGIPA = GIPA<IP, IPC, Blake2b>;
 
-        let mut rng = StdRng::seed_from_u64(0u64);
+        let mut rng = ark_std::test_rng();
         let ck = PairingGIPA::setup(TEST_SIZE, &mut rng).unwrap();
         let m_a = random_generators(&mut rng, TEST_SIZE);
         let m_b = random_generators(&mut rng, TEST_SIZE);
-        let t = vec![IP::inner_product(&m_a, &m_b).unwrap()];
-        let com = IPC::commit(&ck, &m_a, &m_b, &t).unwrap();
+        let t = IP::inner_product(&m_a, &m_b).unwrap();
+        let com = IPC::commit(&ck, &m_a, &m_b, || t).unwrap();
 
-        let proof = PairingGIPA::prove(&ck, &m_a, &m_b, &t[0], &com).unwrap();
+        let proof = PairingGIPA::prove(&ck, &m_a, &m_b, &t, &com).unwrap();
 
         assert!(PairingGIPA::verify(&ck, &com, &proof).unwrap());
     }
@@ -384,17 +344,17 @@ mod tests {
         type IPC = IdentityCommitment<IP>;
         type MultiExpGIPA = GIPA<IP, IPC, Blake2b>;
 
-        let mut rng = StdRng::seed_from_u64(0u64);
+        let mut rng = ark_std::test_rng();
         let ck = MultiExpGIPA::setup(TEST_SIZE, &mut rng).unwrap();
         let m_a = random_generators(&mut rng, TEST_SIZE);
         let mut m_b = Vec::new();
         for _ in 0..TEST_SIZE {
             m_b.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
         }
-        let t = vec![IP::inner_product(&m_a, &m_b).unwrap()];
-        let com = IPC::commit(&ck, &m_a, &m_b, &t).unwrap();
+        let t = IP::inner_product(&m_a, &m_b).unwrap();
+        let com = IPC::commit(&ck, &m_a, &m_b, || t).unwrap();
 
-        let proof = MultiExpGIPA::prove(&ck, &m_a, &m_b, &t[0], &com).unwrap();
+        let proof = MultiExpGIPA::prove(&ck, &m_a, &m_b, &t, &com).unwrap();
 
         assert!(MultiExpGIPA::verify(&ck, &com, &proof).unwrap());
     }

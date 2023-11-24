@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     marker::PhantomData,
     ops::{Add, Mul, MulAssign},
 };
@@ -165,14 +166,14 @@ impl<E: Pairing> GenericSRS<E> {
         IPCommKey {
             ck_a: ck_a.into(),
             ck_b: ck_b.into(),
-            ck_t: vec![PlaceholderKey].into(),
+            ck_t: Cow::Owned(PlaceholderKey),
         }
     }
 }
 
 pub(crate) struct TIPPCommitment<E: Pairing>(PhantomData<E>);
 
-#[derive(Clone, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
 pub(crate) struct TIPPCommOutput<E: Pairing>(PairingOutput<E>, PairingOutput<E>);
 
 impl<E: Pairing> Add for TIPPCommOutput<E> {
@@ -211,7 +212,7 @@ impl<E: Pairing> IPCommitment for TIPPCommitment<E> {
         ck: &IPCommKey<'a, Self>,
         l: &[LeftMessage<Self>],
         r: &[RightMessage<Self>],
-        _ip: &[OutputMessage<Self>],
+        _ip: impl Fn() -> OutputMessage<Self>,
     ) -> Result<Self::Commitment, Error> {
         let (v1, v2): (Vec<_>, Vec<_>) = ck
             .ck_a

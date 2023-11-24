@@ -16,8 +16,6 @@ use derivative::Derivative;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-use crate::mul_helper;
-
 pub mod identity;
 pub mod mipp;
 pub mod pairing;
@@ -35,7 +33,7 @@ pub trait IPCommitment: Sized {
 
     type LeftKey: CanonicalSerialize
         + CanonicalDeserialize
-        + Clone
+        + Copy
         + Default
         + Debug
         + Eq
@@ -46,7 +44,7 @@ pub trait IPCommitment: Sized {
 
     type RightKey: CanonicalSerialize
         + CanonicalDeserialize
-        + Clone
+        + Copy
         + Default
         + Debug
         + Eq
@@ -57,7 +55,7 @@ pub trait IPCommitment: Sized {
 
     type IPKey: CanonicalSerialize
         + CanonicalDeserialize
-        + Clone
+        + Copy
         + Default
         + Debug
         + Eq
@@ -80,17 +78,49 @@ pub trait IPCommitment: Sized {
         ck: &IPCommKey<'a, Self>,
         l: &[LeftMessage<Self>],
         r: &[RightMessage<Self>],
-        ip: &[OutputMessage<Self>],
+        ip: impl Fn() -> OutputMessage<Self>,
     ) -> Result<Self::Commitment, Error>;
 
     fn verify<'a>(
         ck: &IPCommKey<'a, Self>,
         l: &[LeftMessage<Self>],
         r: &[RightMessage<Self>],
-        ip: &[OutputMessage<Self>],
+        ip: &OutputMessage<Self>,
         com: &Self::Commitment,
     ) -> Result<bool, Error> {
-        Ok(Self::commit(ck, l, r, ip)? == *com)
+        Ok(Self::commit(ck, l, r, || ip.clone())? == *com)
+    }
+
+    fn left_key_msm<'a>(
+        ck: &[Self::LeftKey],
+        scalars: &[Scalar<Self>],
+    ) -> Result<Self::LeftKey, Error> {
+        #[cfg(feature = "parallel")]
+        let zero = Self::LeftKey::default;
+
+        #[cfg(not(feature = "parallel"))]
+        let zero = Self::LeftKey::default();
+
+        Ok(cfg_iter!(ck)
+            .zip(scalars)
+            .map(|(a, s)| *a * *s)
+            .reduce(zero, |a, b| a + b))
+    }
+
+    fn right_key_msm<'a>(
+        ck: &[Self::RightKey],
+        scalars: &[Scalar<Self>],
+    ) -> Result<Self::RightKey, Error> {
+        #[cfg(feature = "parallel")]
+        let zero = Self::RightKey::default;
+
+        #[cfg(not(feature = "parallel"))]
+        let zero = Self::RightKey::default();
+
+        Ok(cfg_iter!(ck)
+            .zip(scalars)
+            .map(|(a, s)| *a * *s)
+            .reduce(zero, |a, b| a + b))
     }
 }
 
@@ -108,13 +138,13 @@ impl<'a, IPC: IPCommitment> TryInto<FinalIPCommKey<IPC>> for IPCommKey<'a, IPC> 
     type Error = ();
 
     fn try_into(self) -> Result<FinalIPCommKey<IPC>, ()> {
-        if self.ck_a.len() != 1 || self.ck_b.len() != 1 || self.ck_t.len() != 1 {
+        if self.ck_a.len() != 1 || self.ck_b.len() != 1 {
             Err(())
         } else {
             Ok(FinalIPCommKey {
                 ck_a: self.ck_a.first().unwrap().clone(),
                 ck_b: self.ck_b.first().unwrap().clone(),
-                ck_t: self.ck_t.first().unwrap().clone(),
+                ck_t: self.ck_t.into_owned(),
             })
         }
     }
@@ -125,7 +155,7 @@ impl<'a, 'b, IPC: IPCommitment> Into<IPCommKey<'a, IPC>> for &'b FinalIPCommKey<
         IPCommKey {
             ck_a: vec![self.ck_a.clone()].into(),
             ck_b: vec![self.ck_b.clone()].into(),
-            ck_t: vec![self.ck_t.clone()].into(),
+            ck_t: Cow::Owned(self.ck_t.clone()),
         }
     }
 }
@@ -135,14 +165,14 @@ impl<'a, 'b, IPC: IPCommitment> Into<IPCommKey<'a, IPC>> for &'b FinalIPCommKey<
 pub struct IPCommKey<'a, IPC: IPCommitment> {
     pub ck_a: Cow<'a, [IPC::LeftKey]>,
     pub ck_b: Cow<'a, [IPC::RightKey]>,
-    pub ck_t: Cow<'a, [IPC::IPKey]>,
+    pub ck_t: Cow<'a, IPC::IPKey>,
 }
 
 impl<'a, IPC: IPCommitment> IPCommKey<'a, IPC> {
     pub fn new(
         ck_a: Cow<'a, [IPC::LeftKey]>,
         ck_b: Cow<'a, [IPC::RightKey]>,
-        ck_t: Cow<'a, [IPC::IPKey]>,
+        ck_t: Cow<'a, IPC::IPKey>,
     ) -> Self {
         Self { ck_a, ck_b, ck_t }
     }
@@ -151,7 +181,7 @@ impl<'a, IPC: IPCommitment> IPCommKey<'a, IPC> {
         IPCommKey {
             ck_a: Cow::Owned(self.ck_a.to_vec()),
             ck_b: Cow::Owned(self.ck_b.to_vec()),
-            ck_t: Cow::Owned(self.ck_t.to_vec()),
+            ck_t: Cow::Owned(self.ck_t.clone().into_owned()),
         }
     }
 
@@ -164,13 +194,13 @@ impl<'a, IPC: IPCommitment> IPCommKey<'a, IPC> {
         let ck_1 = IPCommKey::new(
             Cow::Borrowed(ck_a_1),
             Cow::Borrowed(ck_b_1),
-            Cow::Borrowed(&self.ck_t[..]),
+            Cow::Borrowed(self.ck_t.as_ref()),
         );
 
         let ck_2 = IPCommKey::new(
             Cow::Borrowed(ck_a_2),
             Cow::Borrowed(ck_b_2),
-            Cow::Borrowed(&self.ck_t[..]),
+            Cow::Borrowed(self.ck_t.as_ref()),
         );
         (ck_1, ck_2)
     }
@@ -186,7 +216,7 @@ impl<'a, IPC: IPCommitment> IPCommKey<'a, IPC> {
 
         let rescale_a = start_timer!(|| "Rescale CK_B");
         let ck_a = cfg_iter!(ck_2.ck_a.as_ref())
-            .map(|a| mul_helper(a, &c_inv))
+            .map(|a| *a * *c_inv)
             .zip(ck_1.ck_a.as_ref())
             .map(|(a_1, a_2)| a_1 + a_2.clone())
             .collect::<Vec<IPC::LeftKey>>();
@@ -194,7 +224,7 @@ impl<'a, IPC: IPCommitment> IPCommKey<'a, IPC> {
 
         let rescale_b = start_timer!(|| "Rescale CK_A");
         let ck_b = cfg_iter!(ck_1.ck_b.as_ref())
-            .map(|b| mul_helper(b, &c))
+            .map(|b| *b * *c)
             .zip(ck_2.ck_b.as_ref())
             .map(|(b_1, b_2)| b_1 + b_2.clone())
             .collect::<Vec<IPC::RightKey>>();

@@ -1,12 +1,17 @@
-use std::{
+use ark_std::{
+    borrow::Cow,
+    cfg_into_iter,
     marker::PhantomData,
     ops::{Add, Mul, MulAssign},
+    rand::Rng,
 };
 
 use ark_inner_products::InnerProduct;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use ark_std::rand::Rng;
 use derivative::Derivative;
+
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 use crate::Error;
 
@@ -17,19 +22,19 @@ pub struct IdentityCommitment<IP: InnerProduct> {
     _ip: PhantomData<IP>,
 }
 
-#[derive(CanonicalSerialize, CanonicalDeserialize, Debug, Clone, Default, Eq, PartialEq)]
+#[derive(CanonicalSerialize, CanonicalDeserialize, Debug, Clone, Copy, Default, Eq, PartialEq)]
 pub struct PlaceholderKey;
 
 impl Add for PlaceholderKey {
     type Output = Self;
 
-    fn add(self, _rhs: Self) -> Self::Output {
-        PlaceholderKey {}
+    fn add(self, _rhs: Self) -> Self {
+        self
     }
 }
 
 impl<T> Mul<T> for PlaceholderKey {
-    type Output = PlaceholderKey;
+    type Output = Self;
 
     fn mul(self, _other: T) -> Self {
         self
@@ -46,77 +51,63 @@ impl<T> MulAssign<T> for PlaceholderKey {
 #[derivative(PartialEq(bound = ""))]
 #[derivative(Eq(bound = ""))]
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
-pub struct IdentityOutput<IP: InnerProduct>
-where
-    IP::Output: Default + Eq + Add<Output = IP::Output> + Mul<IP::Scalar, Output = IP::Output>,
-{
+pub struct IdentityComm<IP: InnerProduct> {
     left_msg: Vec<IP::LeftMessage>,
     right_msg: Vec<IP::RightMessage>,
-    out: Vec<IP::Output>,
+    out: IP::Output,
 }
 
-impl<IP: InnerProduct> Add for IdentityOutput<IP>
-where
-    IP::Output: Default + Eq + Add<Output = IP::Output> + Mul<IP::Scalar, Output = IP::Output>,
-{
+impl<IP: InnerProduct> Add for IdentityComm<IP> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        IdentityOutput {
-            left_msg: self
-                .left_msg
-                .into_iter()
-                .zip(rhs.left_msg.into_iter())
-                .map(|(l, r)| l + r)
-                .collect(),
-            right_msg: self
-                .right_msg
-                .into_iter()
-                .zip(rhs.right_msg.into_iter())
-                .map(|(l, r)| l + r)
-                .collect(),
-            out: self
-                .out
-                .into_iter()
-                .zip(rhs.out.into_iter())
-                .map(|(l, r)| l + r)
-                .collect(),
+        let left_msg = cfg_into_iter!(self.left_msg)
+            .zip(rhs.left_msg)
+            .map(|(l, r)| l + r)
+            .collect();
+        let right_msg = cfg_into_iter!(self.right_msg)
+            .zip(rhs.right_msg)
+            .map(|(l, r)| l + r)
+            .collect();
+        let out = self.out + rhs.out;
+
+        IdentityComm {
+            left_msg,
+            right_msg,
+            out,
         }
     }
 }
 
-impl<IP: InnerProduct> Mul<IP::Scalar> for IdentityOutput<IP>
-where
-    IP::Output: Default + Eq + Add<Output = IP::Output> + Mul<IP::Scalar, Output = IP::Output>,
-{
+impl<IP: InnerProduct> Mul<IP::Scalar> for IdentityComm<IP> {
     type Output = Self;
 
     fn mul(self, rhs: IP::Scalar) -> Self::Output {
-        IdentityOutput {
-            left_msg: self.left_msg.into_iter().map(|l| l * rhs).collect(),
-            right_msg: self.right_msg.into_iter().map(|l| l * rhs).collect(),
-            out: self.out.into_iter().map(|l| l * rhs).collect(),
+        let left_msg = cfg_into_iter!(self.left_msg).map(|l| l * rhs).collect();
+        let right_msg = cfg_into_iter!(self.right_msg).map(|l| l * rhs).collect();
+        let out = self.out * rhs;
+        IdentityComm {
+            left_msg,
+            right_msg,
+            out,
         }
     }
 }
 
-impl<IP: InnerProduct> IPCommitment for IdentityCommitment<IP>
-where
-    IP::Output: Default + Eq + Add<Output = IP::Output> + Mul<IP::Scalar, Output = IP::Output>,
-{
+impl<IP: InnerProduct> IPCommitment for IdentityCommitment<IP> {
     type IP = IP;
 
     type LeftKey = PlaceholderKey;
     type RightKey = PlaceholderKey;
     type IPKey = PlaceholderKey;
 
-    type Commitment = IdentityOutput<IP>;
+    type Commitment = IdentityComm<IP>;
 
     fn setup<'a>(size: usize, _r: impl Rng) -> Result<IPCommKey<'a, Self>, Error> {
         Ok(IPCommKey {
             ck_a: vec![PlaceholderKey; size].into(),
             ck_b: vec![PlaceholderKey; size].into(),
-            ck_t: vec![PlaceholderKey].into(),
+            ck_t: Cow::Owned(PlaceholderKey),
         })
     }
 
@@ -124,12 +115,12 @@ where
         _ck: &IPCommKey<'a, Self>,
         l: &[LeftMessage<Self>],
         r: &[RightMessage<Self>],
-        ip: &[OutputMessage<Self>],
+        ip: impl Fn() -> OutputMessage<Self>,
     ) -> Result<Self::Commitment, Error> {
-        Ok(IdentityOutput {
+        Ok(IdentityComm {
             left_msg: l.to_vec(),
             right_msg: r.to_vec(),
-            out: ip.to_vec(),
+            out: ip(),
         })
     }
 }

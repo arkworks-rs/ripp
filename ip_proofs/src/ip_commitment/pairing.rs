@@ -1,6 +1,11 @@
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use ark_std::ops::{Add, Mul};
-use ark_std::{marker::PhantomData, rand::Rng, UniformRand};
+use ark_std::{
+    borrow::Cow,
+    marker::PhantomData,
+    ops::{Add, Mul},
+    rand::Rng,
+    UniformRand,
+};
 
 use ark_ec::pairing::{Pairing, PairingOutput};
 use ark_inner_products::{multi_pairing, PairingInnerProduct};
@@ -21,7 +26,7 @@ pub(crate) struct PairingCommitment<E: Pairing> {
 pub struct PairingCommOutput<E: Pairing> {
     com_a: PairingOutput<E>,
     com_b: PairingOutput<E>,
-    com_t: Vec<PairingOutput<E>>,
+    com_t: PairingOutput<E>,
 }
 
 impl<E: Pairing> Default for PairingCommOutput<E> {
@@ -29,7 +34,7 @@ impl<E: Pairing> Default for PairingCommOutput<E> {
         PairingCommOutput {
             com_a: PairingOutput::default(),
             com_b: PairingOutput::default(),
-            com_t: vec![PairingOutput::default()],
+            com_t: PairingOutput::default(),
         }
     }
 }
@@ -40,12 +45,7 @@ impl<E: Pairing> Add for PairingCommOutput<E> {
         PairingCommOutput {
             com_a: self.com_a + rhs.com_a,
             com_b: self.com_b + rhs.com_b,
-            com_t: self
-                .com_t
-                .iter()
-                .zip(rhs.com_t.iter())
-                .map(|(l, r)| l + r)
-                .collect(),
+            com_t: self.com_t + rhs.com_t,
         }
     }
 }
@@ -57,7 +57,7 @@ impl<E: Pairing> Mul<E::ScalarField> for PairingCommOutput<E> {
         PairingCommOutput {
             com_a: self.com_a * rhs,
             com_b: self.com_b * rhs,
-            com_t: self.com_t.iter().map(|c| *c * rhs).collect(),
+            com_t: self.com_t * rhs,
         }
     }
 }
@@ -78,7 +78,7 @@ impl<E: Pairing> IPCommitment for PairingCommitment<E> {
         Ok(IPCommKey {
             ck_a: random_left_key.into(),
             ck_b: random_right_key.into(),
-            ck_t: vec![PlaceholderKey].into(),
+            ck_t: Cow::Owned(PlaceholderKey),
         })
     }
 
@@ -86,11 +86,11 @@ impl<E: Pairing> IPCommitment for PairingCommitment<E> {
         ck: &IPCommKey<'a, Self>,
         l: &[LeftMessage<Self>],
         r: &[RightMessage<Self>],
-        ip: &[OutputMessage<Self>],
+        ip: impl Fn() -> OutputMessage<Self>,
     ) -> Result<Self::Commitment, Error> {
         let com_a = multi_pairing(l, &ck.ck_a).ok_or("invalid pairing")?;
         let com_b = multi_pairing(&ck.ck_b, r).ok_or("invalid pairing")?;
-        let com_t = ip.to_vec();
+        let com_t = ip();
 
         Ok(PairingCommOutput {
             com_a,
