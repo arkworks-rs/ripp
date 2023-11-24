@@ -15,10 +15,10 @@ use ark_inner_products::InnerProduct;
 use rayon::prelude::*;
 
 pub struct GIPA<IP, IPC, D>
-    where
-        D: Digest,
-        IP: InnerProduct,
-        IPC: IPCommitment<IP=IP>,
+where
+    D: Digest,
+    IP: InnerProduct,
+    IPC: IPCommitment<IP = IP>,
 {
     _inner_product: PhantomData<IP>,
     _inner_product_commitment: PhantomData<IPC>,
@@ -27,10 +27,10 @@ pub struct GIPA<IP, IPC, D>
 
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct GIPAProof<IP, IPC, D>
-    where
-        D: Digest,
-        IP: InnerProduct,
-        IPC: IPCommitment<IP=IP>,
+where
+    D: Digest,
+    IP: InnerProduct,
+    IPC: IPCommitment<IP = IP>,
 {
     pub(crate) r_commitment_steps: Vec<(IPC::Commitment, IPC::Commitment)>,
     pub(crate) r_base: (IP::LeftMessage, IP::RightMessage),
@@ -41,10 +41,10 @@ pub struct GIPAProof<IP, IPC, D>
 
 #[derive(Clone)]
 pub struct GIPAAux<IP, IPC, D>
-    where
-        D: Digest,
-        IP: InnerProduct,
-        IPC: IPCommitment<IP=IP>,
+where
+    D: Digest,
+    IP: InnerProduct,
+    IPC: IPCommitment<IP = IP>,
 {
     pub(crate) r_transcript: Vec<Scalar<IPC>>,
     pub(crate) ck_base: FinalIPCommKey<IPC>,
@@ -52,10 +52,10 @@ pub struct GIPAAux<IP, IPC, D>
 }
 
 impl<IP, IPC, D> GIPA<IP, IPC, D>
-    where
-        D: Digest,
-        IP: InnerProduct,
-        IPC: IPCommitment<IP=IP>,
+where
+    D: Digest,
+    IP: InnerProduct,
+    IPC: IPCommitment<IP = IP>,
 {
     pub fn setup<'a>(size: usize, mut rng: impl Rng) -> Result<IPCommKey<'a, IPC>, Error> {
         IPC::setup(size, rng)
@@ -173,7 +173,7 @@ impl<IP, IPC, D> GIPA<IP, IPC, D>
                     let c: Scalar<IPC> = u128::from_be_bytes(
                         D::digest(&hash_input).as_slice()[0..16].try_into().unwrap(),
                     )
-                        .into();
+                    .into();
                     if let Some(c_inv) = c.inverse() {
                         // Optimization for multiexponentiation to rescale G2 elements with 128-bit challenge
                         // Swap 'c' and 'c_inv' since can't control bit size of c_inv
@@ -250,7 +250,7 @@ impl<IP, IPC, D> GIPA<IP, IPC, D>
                 let c: Scalar<IPC> = u128::from_be_bytes(
                     D::digest(&hash_input).as_slice()[0..16].try_into().unwrap(),
                 )
-                    .into();
+                .into();
                 if let Some(c_inv) = c.inverse() {
                     // Optimization for multiexponentiation to rescale G2 elements with 128-bit challenge
                     // Swap 'c' and 'c_inv' since can't control bit size of c_inv
@@ -319,10 +319,10 @@ impl<IP, IPC, D> GIPA<IP, IPC, D>
 }
 
 impl<IP, IPC, D> Clone for GIPAProof<IP, IPC, D>
-    where
-        D: Digest,
-        IP: InnerProduct,
-        IPC: IPCommitment<IP=IP>,
+where
+    D: Digest,
+    IP: InnerProduct,
+    IPC: IPCommitment<IP = IP>,
 {
     fn clone(&self) -> Self {
         GIPAProof {
@@ -336,10 +336,10 @@ impl<IP, IPC, D> Clone for GIPAProof<IP, IPC, D>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ip_commitment::{IdentityCommitment, PairingCommitment};
+    use crate::ip_commitment::{identity::IdentityCommitment, pairing::PairingCommitment};
 
     use ark_bls12_381::Bls12_381;
-    use ark_ec::pairing::{Pairing};
+    use ark_ec::pairing::Pairing;
     use ark_ff::UniformRand;
     use ark_std::rand::{rngs::StdRng, SeedableRng};
     use blake2::Blake2b;
@@ -347,8 +347,7 @@ mod tests {
     use ark_dh_commitments::{
         afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
         pedersen::PedersenCommitment,
-        DoublyHomomorphicCommitment,
-        random_generators,
+        random_generators, DoublyHomomorphicCommitment,
     };
     use ark_inner_products::{
         InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct, ScalarInnerProduct,
@@ -374,18 +373,9 @@ mod tests {
         let t = vec![IP::inner_product(&m_a, &m_b).unwrap()];
         let com = IPC::commit(&ck, &m_a, &m_b, &t).unwrap();
 
-        let proof = PairingGIPA::prove(
-            &ck,
-            &m_a,
-            &m_b,
-            &t[0],
-            &com,
-        )
-            .unwrap();
+        let proof = PairingGIPA::prove(&ck, &m_a, &m_b, &t[0], &com).unwrap();
 
-        assert!(
-            PairingGIPA::verify(&ck, &com, &proof).unwrap()
-        );
+        assert!(PairingGIPA::verify(&ck, &com, &proof).unwrap());
     }
 
     #[test]
@@ -404,18 +394,9 @@ mod tests {
         let t = vec![IP::inner_product(&m_a, &m_b).unwrap()];
         let com = IPC::commit(&ck, &m_a, &m_b, &t).unwrap();
 
-        let proof = MultiExpGIPA::prove(
-            &ck,
-            &m_a,
-            &m_b,
-            &t[0],
-            &com,
-        )
-            .unwrap();
+        let proof = MultiExpGIPA::prove(&ck, &m_a, &m_b, &t[0], &com).unwrap();
 
-        assert!(
-            MultiExpGIPA::verify(&ck, &com, &proof).unwrap()
-        );
+        assert!(MultiExpGIPA::verify(&ck, &com, &proof).unwrap());
     }
 
     /*

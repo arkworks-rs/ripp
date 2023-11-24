@@ -14,7 +14,7 @@ pub mod ip_commitment;
 pub type Error = Box<dyn ErrorTrait>;
 
 //TODO: helper function for mul because relying on MulAssign
-pub(crate) fn mul_helper<T: Mul<F, Output=T> + Clone, F: Clone>(t: &T, f: &F) -> T {
+pub(crate) fn mul_helper<T: Mul<F, Output = T> + Clone, F: Clone>(t: &T, f: &F) -> T {
     t.clone() * f.clone()
 }
 

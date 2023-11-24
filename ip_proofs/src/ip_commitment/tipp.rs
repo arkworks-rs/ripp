@@ -4,15 +4,20 @@ use std::{
 };
 
 use ark_dh_commitments::Error;
-use ark_ec::{AffineRepr, CurveGroup, Group, pairing::{Pairing, PairingOutput}};
 use ark_ec::scalar_mul::fixed_base::FixedBase;
+use ark_ec::{
+    pairing::{Pairing, PairingOutput},
+    AffineRepr, CurveGroup, Group,
+};
 use ark_ff::{Field, PrimeField, UniformRand};
-use ark_inner_products::{PairingInnerProduct, cfg_multi_pairing};
+use ark_inner_products::{multi_pairing, PairingInnerProduct};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use ark_std::{One, rand::Rng};
+use ark_std::{rand::Rng, One};
 use derivative::Derivative;
 
-use super::{IPCommKey, IPCommitment, LeftMessage, OutputMessage, RightMessage, HomomorphicPlaceholderValue};
+use super::{
+    HomomorphicPlaceholderValue, IPCommKey, IPCommitment, LeftMessage, OutputMessage, RightMessage,
+};
 
 /// A generic and reusable powers-of-tau SRS for TIPP
 #[derive(Clone, Debug)]
@@ -135,13 +140,27 @@ impl<E: Pairing> GenericSRS<E> {
 
         let v1 = self.h_alpha_powers[h_low..h_up].to_vec();
         let v2 = self.h_beta_powers[h_low..h_up].to_vec();
-        let ck_a: Vec<_> = v1.into_iter().zip(v2.into_iter()).map(|(v_1, v_2)| LeftKey { v_1: v_1.into(), v_2: v_2.into() }).collect();
+        let ck_a: Vec<_> = v1
+            .into_iter()
+            .zip(v2.into_iter())
+            .map(|(v_1, v_2)| LeftKey {
+                v_1: v_1.into(),
+                v_2: v_2.into(),
+            })
+            .collect();
 
         // however, here we only need the "right" shifted bases for the
         // commitment scheme.
         let w1 = self.g_alpha_powers[n..g_up].to_vec();
         let w2 = self.g_beta_powers[n..g_up].to_vec();
-        let ck_b: Vec<_> = w1.into_iter().zip(w2.into_iter()).map(|(w_1, w_2)| RightKey { w_1: w_1.into(), w_2: w_2.into() }).collect();
+        let ck_b: Vec<_> = w1
+            .into_iter()
+            .zip(w2.into_iter())
+            .map(|(w_1, w_2)| RightKey {
+                w_1: w_1.into(),
+                w_2: w_2.into(),
+            })
+            .collect();
 
         IPCommKey {
             ck_a: ck_a.into(),
@@ -194,17 +213,24 @@ impl<E: Pairing> IPCommitment for TIPPCommitment<E> {
         r: &[RightMessage<Self>],
         ip: &[OutputMessage<Self>],
     ) -> Result<Self::Commitment, Error> {
-        let (v1, v2): (Vec<_>, Vec<_>) = ck.ck_a.iter().map(|LeftKey { v_1, v_2 }| (v_1, v_2)).unzip();
-        let (w1, w2): (Vec<_>, Vec<_>) = ck.ck_b.iter().map(|RightKey { w_1, w_2 }| (w_1, w_2)).unzip();
-        let com_l1 = cfg_multi_pairing(l, &v1).ok_or("cfg_multi_pairing failed")?;
-        let com_l2 = cfg_multi_pairing(l, &v2).ok_or("cfg_multi_pairing failed")?;
-        let com_r1 = cfg_multi_pairing(&w1, r).ok_or("cfg_multi_pairing failed")?;
-        let com_r2 = cfg_multi_pairing(&w2, r).ok_or("cfg_multi_pairing failed")?;
+        let (v1, v2): (Vec<_>, Vec<_>) = ck
+            .ck_a
+            .iter()
+            .map(|LeftKey { v_1, v_2 }| (v_1, v_2))
+            .unzip();
+        let (w1, w2): (Vec<_>, Vec<_>) = ck
+            .ck_b
+            .iter()
+            .map(|RightKey { w_1, w_2 }| (w_1, w_2))
+            .unzip();
+        let com_l1 = multi_pairing(l, &v1).ok_or("cfg_multi_pairing failed")?;
+        let com_l2 = multi_pairing(l, &v2).ok_or("cfg_multi_pairing failed")?;
+        let com_r1 = multi_pairing(&w1, r).ok_or("cfg_multi_pairing failed")?;
+        let com_r2 = multi_pairing(&w2, r).ok_or("cfg_multi_pairing failed")?;
 
         Ok(TIPPCommOutput(com_l1 + com_r1, com_l2 + com_r2))
     }
 }
-
 
 pub fn structured_scalar_power<F: Field>(num: usize, s: &F) -> Vec<F> {
     let mut powers = vec![F::one()];
