@@ -1,11 +1,14 @@
+use std::ops::Mul;
+
 use ark_ec::Group;
 use ark_ff::fields::PrimeField;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use ark_std::rand::Rng;
-use std::{
+use ark_std::{
     cmp::Eq,
     error::Error as ErrorTrait,
+    fmt::Debug,
     ops::{Add, MulAssign},
+    rand::Rng,
 };
 
 pub mod afgho16;
@@ -21,31 +24,38 @@ pub trait DoublyHomomorphicCommitment: Clone {
     type Scalar: PrimeField;
     type Message: CanonicalSerialize
         + CanonicalDeserialize
-        + Clone
+        + Copy
+        + Debug
         + Default
         + Eq
         + Send
         + Sync
         + Add<Self::Message, Output = Self::Message>
-        + MulAssign<Self::Scalar>;
+        + MulAssign<Self::Scalar>
+        + Mul<Self::Scalar, Output = Self::Message>;
+
     type Key: CanonicalSerialize
         + CanonicalDeserialize
-        + Clone
+        + Copy
+        + Debug
         + Default
         + Eq
         + Send
         + Sync
         + Add<Self::Key, Output = Self::Key>
-        + MulAssign<Self::Scalar>;
+        + MulAssign<Self::Scalar>
+        + Mul<Self::Scalar, Output = Self::Key>;
     type Output: CanonicalSerialize
         + CanonicalDeserialize
         + Clone
+        + Debug
         + Default
         + Eq
         + Add<Self::Output, Output = Self::Output>
-        + MulAssign<Self::Scalar>;
+        + MulAssign<Self::Scalar>
+        + Mul<Self::Scalar, Output = Self::Output>;
 
-    fn setup<R: Rng>(r: &mut R, size: usize) -> Result<Vec<Self::Key>, Error>;
+    fn setup(size: usize, r: impl Rng) -> Result<Vec<Self::Key>, Error>;
 
     fn commit(k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error>;
 

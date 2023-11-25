@@ -309,7 +309,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ip_commitment::{identity::IdentityCommitment, pairing::PairingCommitment};
+    use crate::ip_commitment::{
+        mipp::MSMCommitment, pairing::PairingCommitment, scalar::ScalarCommitment,
+    };
 
     use ark_bls12_381::Bls12_381;
     use ark_ec::pairing::Pairing;
@@ -317,7 +319,9 @@ mod tests {
     use blake2::Blake2b;
 
     use ark_dh_commitments::random_generators;
-    use ark_inner_products::{InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct};
+    use ark_inner_products::{
+        InnerProduct, MSMInnerProduct, PairingInnerProduct, ScalarInnerProduct,
+    };
 
     const TEST_SIZE: usize = 8;
 
@@ -341,8 +345,8 @@ mod tests {
 
     #[test]
     fn multiexponentiation_inner_product_test() {
-        type IP = MultiexponentiationInnerProduct<<Bls12_381 as Pairing>::G1>;
-        type IPC = IdentityCommitment<IP>;
+        type IP = MSMInnerProduct<<Bls12_381 as Pairing>::G1>;
+        type IPC = MSMCommitment<Bls12_381>;
         type MultiExpGIPA = GIPA<IP, IPC, Blake2b>;
 
         let mut rng = ark_std::test_rng();
@@ -360,39 +364,26 @@ mod tests {
         assert!(MultiExpGIPA::verify(&ck, &com, &proof).unwrap());
     }
 
-    /*
     #[test]
     fn scalar_inner_product_test() {
         type IP = ScalarInnerProduct<<Bls12_381 as Pairing>::ScalarField>;
-        type IPC = IdentityCommitment<
-            <Bls12_381 as Pairing>::ScalarField,
-            <Bls12_381 as Pairing>::ScalarField,
-        >;
+        type IPC = ScalarCommitment<Bls12_381>;
         type ScalarGIPA = GIPA<IP, IPC, Blake2b>;
 
-        let mut rng = StdRng::seed_from_u64(0u64);
-        let (ck_a, ck_b, ck_t) = ScalarGIPA::setup(&mut rng, TEST_SIZE).unwrap();
+        let mut rng = ark_std::test_rng();
+        let ck = ScalarGIPA::setup(TEST_SIZE, &mut rng).unwrap();
         let mut m_a = Vec::new();
         let mut m_b = Vec::new();
         for _ in 0..TEST_SIZE {
             m_a.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
             m_b.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
         }
-        let com_a = SC2::commit(&ck_a, &m_a).unwrap();
-        let com_b = SC2::commit(&ck_b, &m_b).unwrap();
-        let t = vec![IP::inner_product(&m_a, &m_b).unwrap()];
-        let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
 
-        let proof = ScalarGIPA::prove(
-            (&m_a, &m_b, &t[0]),
-            (&ck_a, &ck_b, &ck_t),
-            (&com_a, &com_b, &com_t),
-        )
-            .unwrap();
+        let t = IP::inner_product(&m_a, &m_b).unwrap();
+        let com = IPC::commit(&ck, &m_a, &m_b, || t).unwrap();
 
-        assert!(
-            ScalarGIPA::verify((&ck_a, &ck_b, &ck_t), (&com_a, &com_b, &com_t), &proof).unwrap()
-        );
+        let proof = ScalarGIPA::prove(&ck, &m_a, &m_b, &t, &com).unwrap();
+
+        assert!(ScalarGIPA::verify(&ck, &com, &proof).unwrap());
     }
-     */
 }

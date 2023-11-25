@@ -23,8 +23,8 @@ impl<P: Pairing> DoublyHomomorphicCommitment for AFGHOCommitmentG1<P> {
     type Key = P::G2;
     type Output = PairingOutput<P>;
 
-    fn setup<R: Rng>(rng: &mut R, size: usize) -> Result<Vec<Self::Key>, Error> {
-        Ok(random_generators(rng, size))
+    fn setup(size: usize, mut rng: impl Rng) -> Result<Vec<Self::Key>, Error> {
+        Ok(random_generators(&mut rng, size))
     }
 
     fn commit(k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {
@@ -38,8 +38,8 @@ impl<P: Pairing> DoublyHomomorphicCommitment for AFGHOCommitmentG2<P> {
     type Key = P::G1;
     type Output = PairingOutput<P>;
 
-    fn setup<R: Rng>(rng: &mut R, size: usize) -> Result<Vec<Self::Key>, Error> {
-        Ok(random_generators(rng, size))
+    fn setup(size: usize, mut rng: impl Rng) -> Result<Vec<Self::Key>, Error> {
+        Ok(random_generators(&mut rng, size))
     }
 
     fn commit(k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {
@@ -52,7 +52,6 @@ mod tests {
     use super::*;
     use ark_bls12_381::Bls12_381;
     use ark_ff::UniformRand;
-    use ark_std::rand::{rngs::StdRng, SeedableRng};
 
     type C1 = AFGHOCommitmentG1<Bls12_381>;
     type C2 = AFGHOCommitmentG2<Bls12_381>;
@@ -60,8 +59,8 @@ mod tests {
 
     #[test]
     fn afgho_g1_test() {
-        let mut rng = StdRng::seed_from_u64(0u64);
-        let commit_keys = C1::setup(&mut rng, TEST_SIZE).unwrap();
+        let mut rng = ark_std::test_rng();
+        let commit_keys = C1::setup(TEST_SIZE, &mut rng).unwrap();
         let mut message = Vec::new();
         let mut wrong_message = Vec::new();
         for _ in 0..TEST_SIZE {
@@ -77,8 +76,8 @@ mod tests {
 
     #[test]
     fn afgho_g2_test() {
-        let mut rng = StdRng::seed_from_u64(0u64);
-        let commit_keys = C2::setup(&mut rng, TEST_SIZE).unwrap();
+        let mut rng = ark_std::test_rng();
+        let commit_keys = C2::setup(TEST_SIZE, &mut rng).unwrap();
         let mut message = Vec::new();
         let mut wrong_message = Vec::new();
         for _ in 0..TEST_SIZE {

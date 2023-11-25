@@ -1,35 +1,41 @@
 use ark_ff::fields::PrimeField;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use ark_std::rand::Rng;
-use std::{
+use ark_std::{
+    fmt::Debug,
     marker::PhantomData,
+    ops::Mul,
     ops::{Add, MulAssign},
+    rand::Rng,
 };
 
 use crate::{DoublyHomomorphicCommitment, Error};
 
 #[derive(Clone)]
-pub struct IdentityCommitment<T, F: PrimeField> {
-    _t: PhantomData<T>,
-    _field: PhantomData<F>,
-}
+pub struct IdentityCommitment<T, F: PrimeField>(PhantomData<(T, F)>);
 
-#[derive(CanonicalSerialize, CanonicalDeserialize, Clone, Default, Eq, PartialEq)]
-pub struct HomomorphicPlaceholderValue;
+#[derive(CanonicalSerialize, CanonicalDeserialize, Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PlaceholderKey;
 
-impl Add for HomomorphicPlaceholderValue {
+impl Add for PlaceholderKey {
     type Output = Self;
 
     fn add(self, _rhs: Self) -> Self::Output {
-        HomomorphicPlaceholderValue {}
+        PlaceholderKey {}
     }
 }
 
-impl<T> MulAssign<T> for HomomorphicPlaceholderValue {
+impl<T> MulAssign<T> for PlaceholderKey {
     fn mul_assign(&mut self, _rhs: T) {}
 }
 
-#[derive(CanonicalSerialize, CanonicalDeserialize, Clone, Default, Eq, PartialEq)]
+impl<T> Mul<T> for PlaceholderKey {
+    type Output = Self;
+    fn mul(self, _rhs: T) -> Self {
+        Self
+    }
+}
+
+#[derive(CanonicalSerialize, CanonicalDeserialize, Clone, Default, Eq, PartialEq, Debug)]
 pub struct IdentityOutput<T>(pub Vec<T>)
 where
     T: CanonicalSerialize + CanonicalDeserialize + Clone + Default + Eq;
@@ -61,26 +67,40 @@ where
     }
 }
 
+impl<T, F> Mul<F> for IdentityOutput<T>
+where
+    T: MulAssign<F> + CanonicalSerialize + CanonicalDeserialize + Clone + Default + Eq,
+    F: Clone,
+{
+    type Output = Self;
+    fn mul(mut self, rhs: F) -> Self {
+        self *= rhs;
+        self
+    }
+}
+
 impl<T, F> DoublyHomomorphicCommitment for IdentityCommitment<T, F>
 where
     T: CanonicalSerialize
         + CanonicalDeserialize
-        + Clone
+        + Copy
         + Default
         + Eq
         + Add<T, Output = T>
+        + Mul<F, Output = T>
         + MulAssign<F>
         + Send
-        + Sync,
+        + Sync
+        + Debug,
     F: PrimeField,
 {
     type Scalar = F;
     type Message = T;
-    type Key = HomomorphicPlaceholderValue;
+    type Key = PlaceholderKey;
     type Output = IdentityOutput<T>;
 
-    fn setup<R: Rng>(_rng: &mut R, size: usize) -> Result<Vec<Self::Key>, Error> {
-        Ok(vec![HomomorphicPlaceholderValue {}; size])
+    fn setup(size: usize, _: impl Rng) -> Result<Vec<Self::Key>, Error> {
+        Ok(vec![PlaceholderKey {}; size])
     }
 
     fn commit(_k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {

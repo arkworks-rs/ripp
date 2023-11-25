@@ -4,7 +4,7 @@ use std::{
     ops::{Add, Mul, MulAssign},
 };
 
-use ark_dh_commitments::Error;
+use ark_dh_commitments::{identity::PlaceholderKey, Error};
 use ark_ec::scalar_mul::fixed_base::FixedBase;
 use ark_ec::{
     pairing::{Pairing, PairingOutput},
@@ -16,9 +16,7 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{rand::Rng, One};
 use derivative::Derivative;
 
-use super::{
-    identity::PlaceholderKey, IPCommKey, IPCommitment, LeftMessage, OutputMessage, RightMessage,
-};
+use super::{IPCommKey, IPCommitment, LeftMessage, OutputMessage, RightMessage};
 
 /// A generic and reusable powers-of-tau SRS for TIPP
 #[derive(Clone, Debug)]

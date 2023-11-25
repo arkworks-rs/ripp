@@ -186,9 +186,9 @@ pub fn multi_pairing<P: Pairing>(left: &[P::G1], right: &[P::G2]) -> Option<Pair
 }
 
 #[derive(Copy, Clone)]
-pub struct MultiexponentiationInnerProduct<G: CurveGroup>(PhantomData<G>);
+pub struct MSMInnerProduct<G: CurveGroup>(PhantomData<G>);
 
-impl<G: CurveGroup> InnerProduct for MultiexponentiationInnerProduct<G> {
+impl<G: CurveGroup> InnerProduct for MSMInnerProduct<G> {
     type LeftMessage = G;
     type RightMessage = G::ScalarField;
     type Output = G;

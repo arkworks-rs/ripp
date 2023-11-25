@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 
 use crate::{random_generators, DoublyHomomorphicCommitment, Error};
 
-use ark_inner_products::{InnerProduct, MultiexponentiationInnerProduct};
+use ark_inner_products::{InnerProduct, MSMInnerProduct};
 
 #[derive(Clone)]
 pub struct PedersenCommitment<G: CurveGroup> {
@@ -17,12 +17,12 @@ impl<G: CurveGroup> DoublyHomomorphicCommitment for PedersenCommitment<G> {
     type Key = G;
     type Output = G;
 
-    fn setup<R: Rng>(rng: &mut R, size: usize) -> Result<Vec<Self::Key>, Error> {
-        Ok(random_generators(rng, size))
+    fn setup(size: usize, mut rng: impl Rng) -> Result<Vec<Self::Key>, Error> {
+        Ok(random_generators(&mut rng, size))
     }
 
     fn commit(k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {
-        Ok(MultiexponentiationInnerProduct::<G>::inner_product(k, m)?)
+        Ok(MSMInnerProduct::<G>::inner_product(k, m)?)
     }
 }
 
@@ -31,15 +31,14 @@ mod tests {
     use super::*;
     use ark_ed_on_bls12_381::{EdwardsProjective as JubJub, Fr};
     use ark_ff::UniformRand;
-    use ark_std::rand::{rngs::StdRng, SeedableRng};
 
     type C = PedersenCommitment<JubJub>;
     const TEST_SIZE: usize = 8;
 
     #[test]
     fn pedersen_test() {
-        let mut rng = StdRng::seed_from_u64(0u64);
-        let commit_keys = C::setup(&mut rng, TEST_SIZE).unwrap();
+        let mut rng = ark_std::test_rng();
+        let commit_keys = C::setup(TEST_SIZE, &mut rng).unwrap();
         let mut message = Vec::new();
         let mut wrong_message = Vec::new();
         for _ in 0..TEST_SIZE {

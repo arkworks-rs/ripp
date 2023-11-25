@@ -16,10 +16,14 @@ use derivative::Derivative;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-pub mod identity;
+pub mod generic;
+
 pub mod mipp;
 pub mod pairing;
+pub mod scalar;
+
 pub mod snarkpack;
+
 pub mod ssm;
 pub mod tipp;
 
