@@ -22,11 +22,6 @@ pub mod mipp;
 pub mod pairing;
 pub mod scalar;
 
-pub mod snarkpack;
-
-pub mod ssm;
-pub mod tipp;
-
 pub type LeftMessage<IPC> = <<IPC as IPCommitment>::IP as InnerProduct>::LeftMessage;
 pub type RightMessage<IPC> = <<IPC as IPCommitment>::IP as InnerProduct>::RightMessage;
 pub type OutputMessage<IPC> = <<IPC as IPCommitment>::IP as InnerProduct>::Output;

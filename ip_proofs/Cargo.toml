@@ -8,7 +8,7 @@ authors = [
     "Nirvan Tyagi",
     "Psi Vesely",
 ]
-edition = "2018"
+edition = "2021"
 homepage = "https://github.com/arkworks-rs/ripp"
 repository = "https://github.com/arkworks-rs/ripp"
 documentation = "https://docs.rs/ark-ip-proofs/"

@@ -1,136 +1,86 @@
-use ark_ec::{pairing::Pairing, scalar_mul::fixed_base::FixedBase, CurveGroup, Group};
+use ark_ec::{pairing::Pairing, scalar_mul::fixed_base::FixedBase, AffineRepr, CurveGroup, Group};
 use ark_ff::{Field, One, PrimeField, UniformRand, Zero};
 use ark_poly::polynomial::{univariate::DensePolynomial, DenseUVPolynomial};
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use ark_serialize::CanonicalSerialize;
 use ark_std::rand::Rng;
 use ark_std::{end_timer, start_timer};
-use derivative::Derivative;
 use digest::Digest;
 use itertools::Itertools;
 use std::marker::PhantomData;
 
 use crate::{
-    gipa::{GIPAProof, GIPA},
-    ip_commitment::{FinalIPCommKey, IPCommKey, IPCommitment, Scalar},
+    gipa::GIPA,
+    ip_commitment::{IPCommKey, IPCommitment, Scalar},
     Error,
 };
-use ark_inner_products::{InnerProduct, MultiexponentiationInnerProduct};
+use ark_inner_products::{InnerProduct, PairingInnerProduct};
 
 // pub mod structured_scalar_message;
+pub mod data_structures;
+pub mod kzg;
+pub mod tipp;
+
+use data_structures::{Proof, ProverKey, VerifierKey};
+use tipp::TIPPCommitment;
+
+use self::data_structures::GenericSRS;
+
+type IP<P> = PairingInnerProduct<P>;
+type IPC<P> = TIPPCommitment<P>;
+type LeftMessage<P> = <IP<P> as InnerProduct>::LeftMessage;
+type RightMessage<P> = <IP<P> as InnerProduct>::RightMessage;
+type Commitment<P> = <IPC<P> as IPCommitment>::Commitment;
 
 //TODO: Could generalize: Don't need TIPA over G1 and G2, would work with G1 and G1 or over different pairing engines
 pub trait TIPACompatibleSetup {}
 
-//TODO: May need to add "reverse" MultiexponentiationInnerProduct to allow for MIP with G2 messages (because TIP hard-coded G1 left and G2 right)
-pub struct TIPA<IP, IPC, P, D> {
-    _inner_product: PhantomData<IP>,
-    _inner_product_commitment: PhantomData<IPC>,
+//TODO: May need to add "reverse" MSMInnerProduct to allow for MIP with G2 messages (because TIP hard-coded G1 left and G2 right)
+pub struct TIPA<P, D> {
     _pair: PhantomData<P>,
     _digest: PhantomData<D>,
 }
 
-#[derive(CanonicalSerialize, CanonicalDeserialize, Derivative)]
-#[derivative(Clone)]
-pub struct TIPAProof<IP, IPC, P, D>
+impl<P, D> TIPA<P, D>
 where
     D: Digest,
     P: Pairing,
-    IP: InnerProduct,
-    IPC: IPCommitment<IP = IP>,
-{
-    gipa_proof: GIPAProof<IP, IPC, D>,
-    final_ck: FinalIPCommKey<IPC>,
-    final_ck_proof: (P::G2, P::G1),
-    _pair: PhantomData<P>,
-}
-
-#[derive(Clone)]
-pub struct SRS<P: Pairing> {
-    pub g_alpha_powers: Vec<P::G1>,
-    pub h_beta_powers: Vec<P::G2>,
-    pub g_beta: P::G1,
-    pub h_alpha: P::G2,
-}
-
-#[derive(Clone)]
-pub struct VerifierSRS<P: Pairing> {
-    pub g: P::G1,
-    pub h: P::G2,
-    pub g_beta: P::G1,
-    pub h_alpha: P::G2,
-}
-
-//TODO: Change SRS to return reference iterator - requires changes to TIPA and GIPA signatures
-impl<P: Pairing> SRS<P> {
-    pub fn get_commitment_keys(&self) -> (Vec<P::G2>, Vec<P::G1>) {
-        let ck_1 = self.h_beta_powers.iter().step_by(2).cloned().collect();
-        let ck_2 = self.g_alpha_powers.iter().step_by(2).cloned().collect();
-        (ck_1, ck_2)
-    }
-
-    pub fn get_verifier_key(&self) -> VerifierSRS<P> {
-        VerifierSRS {
-            g: self.g_alpha_powers[0].clone(),
-            h: self.h_beta_powers[0].clone(),
-            g_beta: self.g_beta.clone(),
-            h_alpha: self.h_alpha.clone(),
-        }
-    }
-}
-
-impl<IP, IPC, P, D> TIPA<IP, IPC, P, D>
-where
-    D: Digest,
-    P: Pairing,
-    IP: InnerProduct,
-    IPC: IPCommitment<LeftKey = P::G2, RightKey = P::G1, IP = IP>,
 {
     pub fn setup<'a>(
-        rng: &mut impl Rng,
         size: usize,
-    ) -> Result<(SRS<P>, IPCommKey<'a, IPC>), Error> {
-        let alpha = <P::ScalarField>::rand(rng);
-        let beta = <P::ScalarField>::rand(rng);
-        let g = <P::G1>::generator();
-        let h = <P::G2>::generator();
-        Ok((
-            SRS {
-                g_alpha_powers: structured_generators_scalar_power(2 * size - 1, &g, &alpha),
-                h_beta_powers: structured_generators_scalar_power(2 * size - 1, &h, &beta),
-                g_beta: g * beta,
-                h_alpha: h * alpha,
-            },
-            IPC::setup(1, rng)?,
-        ))
+        rng: &mut impl Rng,
+    ) -> Result<(ProverKey<P>, VerifierKey<P>), Error> {
+        let srs = GenericSRS::sample(size, rng);
+        Ok(srs.specialize(size))
     }
 
     pub fn prove<'a>(
-        srs: &SRS<P>,
-        ck: &IPCommKey<'a, IPC>,
-        left: &[IP::LeftMessage],
-        right: &[IP::RightMessage],
-    ) -> Result<TIPAProof<IP, IPC, P, D>, Error> {
-        Self::prove_with_srs_shift(srs, ck, left, right, &<P::ScalarField>::one())
+        pk: &ProverKey<P>,
+        left: &[LeftMessage<P>],
+        right: &[RightMessage<P>],
+    ) -> Result<Proof<P, D>, Error> {
+        Self::prove_with_srs_shift(pk, left, right, &P::ScalarField::one())
     }
 
     // Shifts KZG proof for left message by scalar r (used for efficient composition with aggregation protocols)
     // LMC commitment key should already be shifted before being passed as input
     pub fn prove_with_srs_shift<'a>(
-        srs: &SRS<P>,
-        ck: &IPCommKey<'a, IPC>,
-        left: &[IP::LeftMessage],
-        right: &[IP::RightMessage],
+        pk: &ProverKey<P>,
+        left: &[LeftMessage<P>],
+        right: &[RightMessage<P>],
         r_shift: &P::ScalarField,
-    ) -> Result<TIPAProof<IP, IPC, P, D>, Error> {
+    ) -> Result<Proof<P, D>, Error> {
         // Run GIPA
-        let (proof, aux) = <GIPA<IP, IPC, D>>::prove_with_aux(ck, left, right)?;
+        let (proof, aux) = <GIPA<IP<P>, IPC<P>, D>>::prove_with_aux(&pk.ck, left, right)?;
 
         // Unpack the final commitment key. Make sure it's len 1
         let ck_base = aux.ck_base;
 
         // Prove final commitment keys are wellformed
         let transcript = aux.r_transcript;
-        let transcript_inverse = transcript.iter().map(|x| x.inverse().unwrap()).collect();
+        let transcript_inverse = transcript
+            .iter()
+            .map(|x| x.inverse().unwrap())
+            .collect::<Vec<_>>();
         let r_inverse = r_shift.inverse().unwrap();
 
         // KZG challenge point
@@ -144,27 +94,23 @@ where
                 .serialize_uncompressed(&mut hash_input)?;
             ck_base.ck_a.serialize_uncompressed(&mut hash_input)?;
             ck_base.ck_b.serialize_uncompressed(&mut hash_input)?;
-            if let Some(c) = Scalar::<IPC>::from_random_bytes(&D::digest(&hash_input)) {
+            if let Some(c) = Scalar::<IPC<P>>::from_random_bytes(&D::digest(&hash_input)) {
                 break c;
             };
             counter_nonce += 1;
         };
 
         // Complete KZG proofs
-        let ck_a_kzg_opening = prove_commitment_key_kzg_opening(
-            &srs.h_beta_powers,
-            &transcript_inverse,
-            &r_inverse,
-            &c,
-        )?;
+        let ck_a_kzg_opening =
+            prove_commitment_key_kzg_opening(&pk.h_beta_powers, &transcript_inverse, r_inverse, c)?;
         let ck_b_kzg_opening = prove_commitment_key_kzg_opening(
-            &srs.g_alpha_powers,
+            &pk.g_alpha_powers,
             &transcript,
-            &<P::ScalarField>::one(),
-            &c,
+            <P::ScalarField>::one(),
+            c,
         )?;
 
-        Ok(TIPAProof {
+        Ok(Proof {
             gipa_proof: proof,
             final_ck: ck_base.into(),
             final_ck_proof: (ck_a_kzg_opening, ck_b_kzg_opening),
@@ -173,24 +119,27 @@ where
     }
 
     pub fn verify<'a>(
-        v_srs: &VerifierSRS<P>,
-        ck: &IPCommKey<'a, IPC>,
-        com: &IPC::Commitment,
-        proof: &TIPAProof<IP, IPC, P, D>,
+        v_srs: &VerifierKey<P>,
+        ck: &IPCommKey<'a, IPC<P>>,
+        com: &Commitment<P>,
+        proof: &Proof<P, D>,
     ) -> Result<bool, Error> {
-        Self::verify_with_srs_shift(v_srs, ck, com, proof, &<P::ScalarField>::one())
+        Self::verify_with_srs_shift(v_srs, ck, com, proof, P::ScalarField::one())
     }
 
     pub fn verify_with_srs_shift<'a>(
-        v_srs: &VerifierSRS<P>,
-        ck: &IPCommKey<'a, IPC>,
-        com: &IPC::Commitment,
-        proof: &TIPAProof<IP, IPC, P, D>,
-        r_shift: &P::ScalarField,
+        v_srs: &VerifierKey<P>,
+        ck: &IPCommKey<'a, IPC<P>>,
+        com: &Commitment<P>,
+        proof: &Proof<P, D>,
+        r_shift: P::ScalarField,
     ) -> Result<bool, Error> {
         let (base_com, transcript) =
             GIPA::verify_recursive_challenge_transcript(com, &proof.gipa_proof)?;
-        let transcript_inverse = transcript.iter().map(|x| x.inverse().unwrap()).collect();
+        let transcript_inverse = transcript
+            .iter()
+            .map(|x| x.inverse().unwrap())
+            .collect::<Vec<_>>();
 
         // Verify commitment keys wellformed
         let ck_final = &proof.final_ck;
@@ -206,7 +155,7 @@ where
                 .unwrap()
                 .serialize_uncompressed(&mut hash_input)?;
             ck_final.serialize_uncompressed(&mut hash_input)?;
-            if let Some(c) = Scalar::<IPC>::from_random_bytes(&D::digest(&hash_input)) {
+            if let Some(c) = Scalar::<IPC<P>>::from_random_bytes(&D::digest(&hash_input)) {
                 break c;
             };
             counter_nonce += 1;
@@ -217,23 +166,23 @@ where
             &ck_final.ck_a,
             &ck_a_proof,
             &transcript_inverse,
-            &r_shift.inverse().unwrap(),
-            &c,
+            r_shift.inverse().unwrap(),
+            c,
         )?;
         let ck_b_valid = verify_commitment_key_g1_kzg_opening(
             v_srs,
             &ck_final.ck_b,
             &ck_b_proof,
             &transcript,
-            &<P::ScalarField>::one(),
-            &c,
+            <P::ScalarField>::one(),
+            c,
         )?;
 
         // Verify base inner product commitment
         let (com_a, com_b, com_t) = base_com;
         let a_base = vec![proof.gipa_proof.r_base.0.clone()];
         let b_base = vec![proof.gipa_proof.r_base.1.clone()];
-        let t_base = vec![IP::inner_product(&a_base, &b_base)?];
+        let t_base = IP::inner_product(&a_base, &b_base)?;
         let base_valid = IPC::verify(&ck_final.into(), &a_base, &b_base, &t_base, com)?;
 
         Ok(ck_a_valid && ck_b_valid && base_valid)
@@ -241,10 +190,10 @@ where
 }
 
 pub fn prove_commitment_key_kzg_opening<G: CurveGroup>(
-    srs_powers: &Vec<G>,
-    transcript: &Vec<G::ScalarField>,
-    r_shift: &G::ScalarField,
-    kzg_challenge: &G::ScalarField,
+    srs_powers: &[G::Affine],
+    transcript: &[G::ScalarField],
+    r_shift: G::ScalarField,
+    kzg_challenge: G::ScalarField,
 ) -> Result<G, Error> {
     let ck_polynomial = DensePolynomial::from_coefficients_slice(
         &polynomial_coefficients_from_transcript(transcript, r_shift),
@@ -253,58 +202,59 @@ pub fn prove_commitment_key_kzg_opening<G: CurveGroup>(
 
     let eval = start_timer!(|| "polynomial eval");
     let ck_polynomial_c_eval =
-        polynomial_evaluation_product_form_from_transcript(&transcript, kzg_challenge, &r_shift);
+        polynomial_evaluation_product_form_from_transcript(&transcript, kzg_challenge, r_shift);
     end_timer!(eval);
 
     let quotient = start_timer!(|| "polynomial quotient");
-    let quotient_polynomial = &(&ck_polynomial
-        - &DensePolynomial::from_coefficients_vec(vec![ck_polynomial_c_eval]))
-        / &(DensePolynomial::from_coefficients_vec(vec![
-            -kzg_challenge.clone(),
-            <G::ScalarField>::one(),
-        ]));
+    let quotient_polynomial = &ck_polynomial
+        / &(DensePolynomial::from_coefficients_vec(vec![-kzg_challenge, G::ScalarField::one()]));
     end_timer!(quotient);
 
     let mut quotient_polynomial_coeffs = quotient_polynomial.coeffs;
     quotient_polynomial_coeffs.resize(srs_powers.len(), <G::ScalarField>::zero());
 
     let multiexp = start_timer!(|| "opening multiexp");
-    let opening =
-        MultiexponentiationInnerProduct::inner_product(srs_powers, &quotient_polynomial_coeffs);
+    let opening = G::msm(srs_powers, &quotient_polynomial_coeffs).unwrap();
     end_timer!(multiexp);
-    opening
+    Ok(opening)
 }
 
 //TODO: Figure out how to avoid needing two separate methods for verification of opposite groups
 pub fn verify_commitment_key_g2_kzg_opening<P: Pairing>(
-    v_srs: &VerifierSRS<P>,
+    v_srs: &VerifierKey<P>,
     ck_final: &P::G2,
     ck_opening: &P::G2,
-    transcript: &Vec<P::ScalarField>,
-    r_shift: &P::ScalarField,
-    kzg_challenge: &P::ScalarField,
+    transcript: &[P::ScalarField],
+    r_shift: P::ScalarField,
+    kzg_challenge: P::ScalarField,
 ) -> Result<bool, Error> {
     let ck_polynomial_c_eval =
         polynomial_evaluation_product_form_from_transcript(transcript, kzg_challenge, r_shift);
     Ok(
         P::pairing(v_srs.g, *ck_final - v_srs.h * ck_polynomial_c_eval)
-            == P::pairing(v_srs.g_beta - v_srs.g * kzg_challenge, *ck_opening),
+            == P::pairing(
+                v_srs.g_beta.into_group() - v_srs.g * kzg_challenge,
+                *ck_opening,
+            ),
     )
 }
 
 pub fn verify_commitment_key_g1_kzg_opening<P: Pairing>(
-    v_srs: &VerifierSRS<P>,
+    v_srs: &VerifierKey<P>,
     ck_final: &P::G1,
     ck_opening: &P::G1,
-    transcript: &Vec<P::ScalarField>,
-    r_shift: &P::ScalarField,
-    kzg_challenge: &P::ScalarField,
+    transcript: &[P::ScalarField],
+    r_shift: P::ScalarField,
+    kzg_challenge: P::ScalarField,
 ) -> Result<bool, Error> {
     let ck_polynomial_c_eval =
         polynomial_evaluation_product_form_from_transcript(transcript, kzg_challenge, r_shift);
     Ok(
         P::pairing(*ck_final - v_srs.g * ck_polynomial_c_eval, v_srs.h)
-            == P::pairing(*ck_opening, v_srs.h_alpha - v_srs.h * kzg_challenge),
+            == P::pairing(
+                *ck_opening,
+                v_srs.h_alpha.into_group() - v_srs.h * kzg_challenge,
+            ),
     )
 }
 
@@ -330,9 +280,9 @@ pub fn structured_generators_scalar_power<G: CurveGroup>(
 }
 
 fn polynomial_evaluation_product_form_from_transcript<F: Field>(
-    transcript: &Vec<F>,
-    z: &F,
-    r_shift: &F,
+    transcript: &[F],
+    z: F,
+    r_shift: F,
 ) -> F {
     let mut power_2_zr = (z.clone() * z) * r_shift;
     let mut product_form = Vec::new();
@@ -343,7 +293,9 @@ fn polynomial_evaluation_product_form_from_transcript<F: Field>(
     product_form.iter().product()
 }
 
-fn polynomial_coefficients_from_transcript<F: Field>(transcript: &Vec<F>, r_shift: &F) -> Vec<F> {
+fn polynomial_coefficients_from_transcript<F: Field>(transcript: &[F], r_shift: F) -> Vec<F> {
+    let mut coefficients = Vec::with_capacity(2usize.pow((transcript.len() + 1) as u32));
+    coefficients.push(F::one());
     let mut coefficients = vec![F::one()];
     let mut power_2_r = r_shift.clone();
     for (i, x) in transcript.iter().enumerate() {
@@ -354,14 +306,15 @@ fn polynomial_coefficients_from_transcript<F: Field>(transcript: &Vec<F>, r_shif
     }
     // Interleave with 0 coefficients
     coefficients
-        .iter()
-        .interleave(vec![F::zero()].iter().cycle().take(coefficients.len() - 1))
-        .cloned()
+        .into_iter()
+        .interleave([F::zero()].into_iter().cycle().take(coefficients.len() - 1))
         .collect()
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::ip_commitment::pairing::PairingCommitment;
+
     use super::*;
     use ark_bls12_381::Bls12_381;
     use ark_ec::pairing::PairingOutput;
@@ -375,7 +328,7 @@ mod tests {
         random_generators,
     };
     use ark_inner_products::{
-        InnerProduct, MultiexponentiationInnerProduct, PairingInnerProduct, ScalarInnerProduct,
+        InnerProduct, MSMInnerProduct, PairingInnerProduct, ScalarInnerProduct,
     };
 
     pub fn structured_scalar_power<F: Field>(num: usize, s: &F) -> Vec<F> {
@@ -396,18 +349,17 @@ mod tests {
     #[test]
     fn pairing_inner_product_test() {
         type IP = PairingInnerProduct<Bls12_381>;
-        type IPC =
-            IdentityCommitment<PairingOutput<Bls12_381>, <Bls12_381 as Pairing>::ScalarField>;
-        type PairingTIPA = TIPA<IP, IPC, Bls12_381, Blake2b>;
+        type IPC = PairingCommitment<Bls12_381>;
+        type PairingTIPA = TIPA<Bls12_381, Blake2b>;
 
-        let mut rng = StdRng::seed_from_u64(0u64);
-        let (srs, ck_t) = PairingTIPA::setup(&mut rng, TEST_SIZE).unwrap();
+        let mut rng = ark_std::test_rng();
+        let (srs, ck_t) = PairingTIPA::setup(TEST_SIZE, &mut rng).unwrap();
+        let ck = srs.ck();
         let (ck_a, ck_b) = srs.get_commitment_keys();
         let v_srs = srs.get_verifier_key();
         let m_a = random_generators(&mut rng, TEST_SIZE);
         let m_b = random_generators(&mut rng, TEST_SIZE);
-        let com_a = GC1::commit(&ck_a, &m_a).unwrap();
-        let com_b = GC2::commit(&ck_b, &m_b).unwrap();
+        let com = IPC::commit();
         let t = vec![IP::inner_product(&m_a, &m_b).unwrap()];
         let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
 
@@ -418,13 +370,13 @@ mod tests {
 
     #[test]
     fn multiexponentiation_inner_product_test() {
-        type IP = MultiexponentiationInnerProduct<<Bls12_381 as Pairing>::G1>;
+        type IP = MSMInnerProduct<<Bls12_381 as Pairing>::G1>;
         type IPC =
             IdentityCommitment<<Bls12_381 as Pairing>::G1, <Bls12_381 as Pairing>::ScalarField>;
-        type MultiExpTIPA = TIPA<IP, IPC, Bls12_381, Blake2b>;
+        type MultiExpTIPA = TIPA<Bls12_381, Blake2b>;
 
-        let mut rng = StdRng::seed_from_u64(0u64);
-        let (srs, ck_t) = MultiExpTIPA::setup(&mut rng, TEST_SIZE).unwrap();
+        let mut rng = ark_std::test_rng();
+        let (srs, ck_t) = MultiExpTIPA::setup(TEST_SIZE, &mut rng).unwrap();
         let (ck_a, ck_b) = srs.get_commitment_keys();
         let v_srs = srs.get_verifier_key();
         let m_a = random_generators(&mut rng, TEST_SIZE);
@@ -449,10 +401,10 @@ mod tests {
             <Bls12_381 as Pairing>::ScalarField,
             <Bls12_381 as Pairing>::ScalarField,
         >;
-        type ScalarTIPA = TIPA<IP, IPC, Bls12_381, Blake2b>;
+        type ScalarTIPA = TIPA<Bls12_381, Blake2b>;
 
         let mut rng = StdRng::seed_from_u64(0u64);
-        let (srs, ck_t) = ScalarTIPA::setup(&mut rng, TEST_SIZE).unwrap();
+        let (srs, ck_t) = ScalarTIPA::setup(TEST_SIZE, &mut rng).unwrap();
         let (ck_a, ck_b) = srs.get_commitment_keys();
         let v_srs = srs.get_verifier_key();
         let mut m_a = Vec::new();
@@ -476,10 +428,10 @@ mod tests {
         type IP = PairingInnerProduct<Bls12_381>;
         type IPC =
             IdentityCommitment<PairingOutput<Bls12_381>, <Bls12_381 as Pairing>::ScalarField>;
-        type PairingTIPA = TIPA<IP, IPC, Bls12_381, Blake2b>;
+        type PairingTIPA = TIPA<Bls12_381, Blake2b>;
 
-        let mut rng = StdRng::seed_from_u64(0u64);
-        let (srs, ck_t) = PairingTIPA::setup(&mut rng, TEST_SIZE).unwrap();
+        let mut rng = ark_std::test_rng();
+        let (srs, ck_t) = PairingTIPA::setup(TEST_SIZE, &mut rng).unwrap();
         let (ck_a, ck_b) = srs.get_commitment_keys();
         let v_srs = srs.get_verifier_key();
 
