@@ -13,3 +13,9 @@ impl<G: AffineRepr> EvaluationProof<G> {
         EvaluationProof(s[0], s[1])
     }
 }
+
+/// KZG verifier key for an SRS with secret `tau`.
+pub struct VerifierKey<G: AffineRepr> {
+    pub base: G,
+    pub tau_times_base: G,
+}

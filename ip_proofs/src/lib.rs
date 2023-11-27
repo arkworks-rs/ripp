@@ -28,7 +28,7 @@ impl Display for InnerProductArgumentError {
     fn fmt(self: &Self, f: &mut Formatter<'_>) -> FmtResult {
         let msg = match self {
             InnerProductArgumentError::MessageLengthInvalid(left, right) => {
-                format!("left length, right length: {}, {}", left, right)
+                format!("left length, right length: {left}, {right}")
             }
             InnerProductArgumentError::InnerProductInvalid => "inner product not sound".to_string(),
         };

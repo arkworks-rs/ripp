@@ -1,14 +1,12 @@
 // Adapted from https://github.com/nikkolasg/snarkpack
 use ark_ff::Field;
+use ark_poly::{univariate::DensePolynomial, DenseUVPolynomial};
 
 mod data_structures;
-mod prove;
-mod verify;
+pub(crate) mod prove;
+pub(crate) mod verify;
 
-use ark_poly::{univariate::DensePolynomial, DenseUVPolynomial};
 pub use data_structures::*;
-pub(crate) use prove::*;
-pub(crate) use verify::*;
 
 /// It returns the evaluation of the polynomial $\prod (1 + x_{l-j}(rX)^{2j}$ at
 /// the point z, where transcript contains the reversed order of all challenges (the x).

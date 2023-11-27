@@ -7,7 +7,7 @@ use derivative::Derivative;
 use digest::Digest;
 
 use crate::{
-    gipa::GIPAProof,
+    gipa::Proof as GIPAProof,
     ip_commitment::{FinalIPCommKey, IPCommKey},
     tipa::tipp::{LeftKey, RightKey},
 };
@@ -83,6 +83,7 @@ impl<E: Pairing> GenericSRS<E> {
     /// * If the number of proofs is more than half the SRS size.
     pub(crate) fn specialize<'b>(&self, num_proofs: usize) -> (ProverKey<'b, E>, VerifierKey<E>) {
         assert!(num_proofs.is_power_of_two());
+        let supported_size = num_proofs;
         let tn = 2 * num_proofs; // size of the CRS we need
         assert!(self.g_alpha_powers.len() >= tn);
         assert!(self.h_alpha_powers.len() >= tn);
@@ -133,6 +134,7 @@ impl<E: Pairing> GenericSRS<E> {
             .collect();
 
         let pk = ProverKey {
+            supported_size,
             ck: IPCommKey::new(
                 Cow::Owned(ck_a),
                 Cow::Owned(ck_b),
@@ -174,6 +176,7 @@ pub(crate) fn structured_generators_scalar_power<G: CurveGroup>(
 
 #[derive(Clone)]
 pub struct ProverKey<'a, P: Pairing> {
+    pub supported_size: usize,
     pub ck: IPCommKey<'a, IPC<P>>,
     pub g_alpha_powers: Vec<P::G1Affine>,
     pub g_beta_powers: Vec<P::G1Affine>,
@@ -187,8 +190,11 @@ pub struct ProverKey<'a, P: Pairing> {
 
 #[derive(Clone)]
 pub struct VerifierKey<P: Pairing> {
+    pub supported_size: usize,
     pub g: P::G1Affine,
     pub h: P::G2Affine,
+    pub neg_g: P::G1Affine,
+    pub neg_h: P::G2Affine,
     pub g_alpha: P::G1Affine,
     pub g_beta: P::G1Affine,
     pub h_alpha: P::G2Affine,
@@ -198,9 +204,17 @@ pub struct VerifierKey<P: Pairing> {
 //TODO: Change SRS to return reference iterator - requires changes to TIPA and GIPA signatures
 impl<P: Pairing> ProverKey<'_, P> {
     pub fn vk(&self) -> VerifierKey<P> {
+        use core::ops::Neg;
+        let g = self.g_alpha_powers[0].clone();
+        let h = self.h_alpha_powers[0].clone();
+        let neg_g = g.into_group().neg().into_affine();
+        let neg_h = h.into_group().neg().into_affine();
         VerifierKey {
-            g: self.g_alpha_powers[0].clone(),
-            h: self.h_beta_powers[0].clone(),
+            supported_size: self.supported_size,
+            g,
+            h,
+            neg_g,
+            neg_h,
             g_alpha: self.g_alpha,
             g_beta: self.g_beta,
             h_alpha: self.h_alpha,

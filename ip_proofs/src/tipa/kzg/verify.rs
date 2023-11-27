@@ -1,151 +1,99 @@
-use ark_ec::{
-    pairing::{Pairing, PairingOutput},
-    AffineRepr, CurveGroup,
-};
-use ark_ff::Field;
-use crossbeam_channel::Sender;
+use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup};
+use ark_ff::{Field, Zero};
 
-use crate::{pairing_check::PairingCheck, srs::VerifierKey};
+use crate::tipa::VerifierKey;
 
 use super::{evaluate_ipa_polynomial, EvaluationProof};
 
 /// verify_kzg_opening_g2 takes a KZG opening, the final commitment key, SRS and
 /// any shift (in TIPP we shift the v commitment by r^-1) and returns a pairing
 /// tuple to check if the opening is correct or not.
+#[must_use]
 pub fn verify_kzg_v<E: Pairing>(
-    v_srs: &VerifierKey<E>,
+    vk: &VerifierKey<E>,
+    // These are the KZG commitments that arise from the final commitment key
     final_vkey: &(E::G2Affine, E::G2Affine),
     proof: &EvaluationProof<E::G2Affine>,
     challenges: &[E::ScalarField],
     point: E::ScalarField,
-    checks: Sender<Option<PairingCheck<E>>>,
-) {
+) -> bool {
     // f_v(z)
-    let v_poly_at_z = evaluate_ipa_polynomial(challenges, point, E::ScalarField::ONE);
-    // -g such that when we test a pairing equation we only need to check if
-    // it's equal 1 at the end:
-    // e(a,b) = e(c,d) <=> e(a,b)e(-c,d) = 1
-    // e(A,B) = e(C,D) <=> e(A,B)e(-C,D) == 1 <=> e(A,B)e(C,D)^-1 == 1
+    let v_poly_at_point = evaluate_ipa_polynomial(challenges, point, E::ScalarField::ONE);
 
-    let v1 = checks.clone();
-    let v2 = checks.clone();
+    let (v1, v2) = *final_vkey;
+    let EvaluationProof(proof_1, proof_2) = *proof;
+    // e(g, C_f * h^{-y}) == e(v1 * g^{-x}, \pi) = 1
+    let check1 = kzg_check_v::<E>(vk, vk.g_alpha, point, v_poly_at_point, v1, proof_1);
 
-    par! {
-        // e(g, C_f * h^{-y}) == e(v1 * g^{-x}, \pi) = 1
-        let _check1 = kzg_check_v::<E>(
-            v_srs,
-            point,
-            v_poly_at_z,
-            final_vkey.0,
-            v_srs.g_alpha,
-            proof.0,
-            v1,
-        ),
-
-        // e(g, C_f * h^{-y}) == e(v2 * g^{-x}, \pi) = 1
-        let _check2 = kzg_check_v::<E>(
-            v_srs,
-            point,
-            v_poly_at_z,
-            final_vkey.1,
-            v_srs.g_beta,
-            proof.1,
-            v2,
-        )
-    };
+    // e(g, C_f * h^{-y}) == e(v2 * g^{-x}, \pi) = 1
+    let check2 = kzg_check_v::<E>(vk, vk.g_beta, point, v_poly_at_point, v2, proof_2);
+    check1 & check2
 }
 
+/// Here `tau` is the SRS secret.
+#[must_use]
 fn kzg_check_v<E: Pairing>(
-    v_srs: &VerifierKey<E>,
-    x: E::ScalarField,
-    y: E::ScalarField,
-    cf: E::G2Affine,
-    vk: E::G1Affine,
-    pi: E::G2Affine,
-    checks: Sender<Option<PairingCheck<E>>>,
-) {
-    // KZG Check: e(g, C_f * h^{-y}) = e(vk * g^{-x}, \pi)
-    // Transformed, such that
-    // e(-g, C_f * h^{-y}) * e(vk * g^{-x}, \pi) = 1
-
-    // C_f - (y * h)
-    let b = (cf.into_group() - v_srs.h * y).into();
-
-    // vk - (g * x)
-    let c = (vk.into_group() - v_srs.g * x).into_affine();
-    let p = PairingCheck::rand(
-        &[(v_srs.neg_g, b), (c, pi)],
-        PairingOutput(E::TargetField::ONE),
-    );
-    checks.send(Some(p)).unwrap();
+    vk: &VerifierKey<E>,
+    tau_g: E::G1Affine,
+    point: E::ScalarField,
+    eval: E::ScalarField,
+    commitment: E::G2Affine,
+    evaluation_proof: E::G2Affine,
+) -> bool {
+    // Let tau be the SRS secret. Then the KZG Verifier check in G2 looks like:
+    // e(G, C - eval * H) == e(tau * G - point * G, W)
+    // We rewrite this as a multi-pairing:
+    // e(-G, C - eval * H) == e(tau * G - point * G, W)
+    let lhs_g2 = (commitment.into_group() - vk.h * eval).into_affine();
+    let rhs_g1 = (tau_g.into_group() - vk.g * point).into_affine();
+    E::multi_pairing([vk.neg_g, rhs_g1], [lhs_g2, evaluation_proof]).is_zero()
 }
 
 /// Similar to verify_kzg_opening_g2 but for g1.
+#[must_use]
 pub fn verify_kzg_w<E: Pairing>(
-    v_srs: &VerifierKey<E>,
+    vk: &VerifierKey<E>,
+    // These are the KZG commitments that arise from the final commitment key
     final_wkey: &(E::G1Affine, E::G1Affine),
-    wkey_opening: &EvaluationProof<E::G1Affine>,
+    proof: &EvaluationProof<E::G1Affine>,
     challenges: &[E::ScalarField],
+    point: E::ScalarField,
     r_shift: E::ScalarField,
-    kzg_challenge: E::ScalarField,
-    checks: Sender<Option<PairingCheck<E>>>,
-) {
-    // compute in parallel f(z) and z^n and then combine into f_w(z) = z^n * f(z)
-    par! {
-        let fz = evaluate_ipa_polynomial(challenges, kzg_challenge, r_shift),
-        let zn = kzg_challenge.pow(&[v_srs.n as u64])
-    };
+) -> bool {
+    // compute f(z) and z^n and then combine into f_w(z) = z^n * f(z)
+    let fz = evaluate_ipa_polynomial(challenges, point, r_shift);
+    let zn = point.pow(&[vk.supported_size as u64]);
+    let w_poly_at_point = fz * zn;
 
-    let w_poly_at_z = fz * zn;
+    // f_v(z)
+    let v_poly_at_point = evaluate_ipa_polynomial(challenges, point, E::ScalarField::ONE);
 
-    let w1 = checks.clone();
-    let w2 = checks.clone();
-    par! {
-        // e(C_f * g^{-y}, h) = e(\pi, w1 * h^{-x})
-        let _check1 = kzg_check_w::<E>(
-            v_srs,
-            kzg_challenge,
-            w_poly_at_z,
-            final_wkey.0,
-            v_srs.h_alpha,
-            wkey_opening.0,
-            w1,
-        ),
+    let (w1, w2) = *final_wkey;
+    let EvaluationProof(proof_1, proof_2) = *proof;
 
-        // e(C_f * g^{-y}, h) = e(\pi, w2 * h^{-x})
-        let _check2 = kzg_check_w::<E>(
-            v_srs,
-            kzg_challenge,
-            w_poly_at_z,
-            final_wkey.1,
-            v_srs.h_beta,
-            wkey_opening.1,
-            w2,
-        )
-    };
+    // e(C_f * g^{-y}, h) = e(\pi, w1 * h^{-x})
+    let check1 = kzg_check_w::<E>(vk, vk.h_alpha, point, w_poly_at_point, w1, proof_1);
+
+    // e(C_f * g^{-y}, h) = e(\pi, w2 * h^{-x})
+    let check2 = kzg_check_w::<E>(vk, vk.h_beta, point, w_poly_at_point, w2, proof_2);
+    check1 & check2
 }
 
+/// Here `tau` is the SRS secret.
+#[must_use]
 fn kzg_check_w<E: Pairing>(
-    v_srs: &VerifierKey<E>,
-    x: E::ScalarField,
-    y: E::ScalarField,
-    cf: E::G1Affine,
-    wk: E::G2Affine,
-    pi: E::G1Affine,
-    checks: Sender<Option<PairingCheck<E>>>,
-) {
-    // KZG Check: e(C_f * g^{-y}, h) = e(\pi, wk * h^{-x})
-    // Transformed, such that
-    // e(C_f * g^{-y}, -h) * e(\pi, wk * h^{-x}) = 1
-
-    // C_f - (y * g)
-    let a = (cf.into_group() - v_srs.g * y).into();
-
-    // wk - (x * h)
-    let d = (wk.into_group() - v_srs.h * x).into();
-    let p = PairingCheck::rand(
-        &[(a, v_srs.neg_h), (pi, d)],
-        PairingOutput(E::TargetField::ONE),
-    );
-    checks.send(Some(p)).unwrap();
+    vk: &VerifierKey<E>,
+    tau_h: E::G2Affine,
+    point: E::ScalarField,
+    eval: E::ScalarField,
+    commitment: E::G1Affine,
+    evaluation_proof: E::G1Affine,
+) -> bool {
+    // Let tau be the SRS secret. Then the KZG Verifier check in G1 looks like:
+    // e(C - eval * G, H) == e(W, tau * H - point * H)
+    // We rewrite this as a multi-pairing:
+    // e(-G, C - eval * H) == e(tau * G - point * G, W)
+    let lhs_g1 = (commitment.into_group() - vk.g * eval).into_affine();
+    let rhs_g2 = (tau_h.into_group() - vk.h * point).into_affine();
+    E::multi_pairing([lhs_g1, evaluation_proof], [vk.neg_h, rhs_g2]).is_zero()
 }
