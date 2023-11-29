@@ -36,9 +36,13 @@ where
     RC: DoublyHomomorphicCommitment<Scalar = IP::Scalar, Message = IP::RightMessage>,
     OC: DoublyHomomorphicCommitment<Scalar = IP::Scalar, Message = IP::Output>,
 {
+    #[derivative(Debug(format_with = "ark_std::fmt::Display::fmt"))]
     com_a: LC::Output,
+    #[derivative(Debug(format_with = "ark_std::fmt::Display::fmt"))]
     com_b: RC::Output,
+    #[derivative(Debug(format_with = "ark_std::fmt::Display::fmt"))]
     com_t: OC::Output,
+    #[derivative(Debug = "ignore")]
     ip: PhantomData<fn(IP) -> IP>,
 }
 

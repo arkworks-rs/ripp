@@ -1,11 +1,13 @@
-use ark_std::{cfg_iter, convert::TryInto, end_timer, start_timer};
+use ark_ff::Field;
+use ark_std::{cfg_iter, cfg_iter_mut, convert::TryInto, end_timer, start_timer};
 use digest::Digest;
+use num_traits::One;
 
 use crate::{
     ip_commitment::{IPCommKey, IPCommitment, Scalar},
     Error, InnerProductArgumentError,
 };
-use ark_inner_products::InnerProduct;
+use ark_inner_products::{compute_powers, InnerProduct};
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -23,15 +25,14 @@ where
         instance: &Instance<IPC>,
         witness: &Witness<IP>,
     ) -> Result<Proof<IP, IPC, D>, Error> {
+        let Witness { left, right } = witness;
         let Instance {
             size,
             output,
             commitment: com,
             random_challenge: c,
         } = instance;
-        let Witness { left, right } = witness;
-        debug_assert_eq!(left.len(), right.len());
-        debug_assert_eq!(&IP::inner_product(left, right)?, output);
+
         if !left.len().is_power_of_two() {
             // Power of 2 length
             return Err(Box::new(InnerProductArgumentError::MessageLengthInvalid(
@@ -39,11 +40,33 @@ where
                 right.len(),
             )));
         }
-        if !IPC::verify(ck, left, right, &output, com)? {
-            return Err(Box::new(InnerProductArgumentError::InnerProductInvalid));
+
+        debug_assert_eq!(
+            left.len(),
+            right.len(),
+            "left and right vectors are of unequal length"
+        );
+        debug_assert_eq!(
+            &IP::twisted_inner_product(left, right, *c)?,
+            output,
+            "invalid witness"
+        );
+
+        let mut left = left.to_vec();
+        let mut ck = ck.clone();
+        if !c.is_one() {
+            let powers_of_c = compute_powers(*size, *c);
+            cfg_iter_mut!(left)
+                .zip(&powers_of_c)
+                .for_each(|(l, c)| *l *= *c);
+            ck.twist_in_place(c.inverse().unwrap());
         }
 
-        let (proof, _) = Self::prove_with_aux(ck, left, right)?;
+        // if !IPC::verify(&ck, &left, right, &output, com)? {
+        //     return Err(Box::new(InnerProductArgumentError::InnerProductInvalid));
+        // }
+
+        let (proof, _) = Self::prove_with_aux(&ck, &left, right)?;
         Ok(proof)
     }
 

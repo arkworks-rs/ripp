@@ -1,13 +1,13 @@
 use ark_dh_commitments::Error;
-use ark_inner_products::InnerProduct;
+use ark_inner_products::{compute_powers, InnerProduct};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{
     borrow::Cow,
-    cfg_iter,
+    cfg_iter, cfg_iter_mut,
     convert::TryInto,
     end_timer,
     fmt::Debug,
-    ops::{Add, Mul},
+    ops::{Add, Mul, MulAssign},
     rand::Rng,
     start_timer,
 };
@@ -39,7 +39,8 @@ pub trait IPCommitment: Sized {
         + Send
         + Sync
         + Add<Output = Self::LeftKey>
-        + Mul<Scalar<Self>, Output = Self::LeftKey>;
+        + Mul<Scalar<Self>, Output = Self::LeftKey>
+        + MulAssign<Scalar<Self>>;
 
     type RightKey: CanonicalSerialize
         + CanonicalDeserialize
@@ -50,7 +51,8 @@ pub trait IPCommitment: Sized {
         + Send
         + Sync
         + Add<Output = Self::RightKey>
-        + Mul<Scalar<Self>, Output = Self::RightKey>;
+        + Mul<Scalar<Self>, Output = Self::RightKey>
+        + MulAssign<Scalar<Self>>;
 
     type IPKey: CanonicalSerialize
         + CanonicalDeserialize
@@ -61,7 +63,8 @@ pub trait IPCommitment: Sized {
         + Send
         + Sync
         + Add<Output = Self::IPKey>
-        + Mul<Scalar<Self>, Output = Self::IPKey>;
+        + Mul<Scalar<Self>, Output = Self::IPKey>
+        + MulAssign<Scalar<Self>>;
 
     type Commitment: CanonicalSerialize
         + CanonicalDeserialize
@@ -88,7 +91,9 @@ pub trait IPCommitment: Sized {
         ip: &OutputMessage<Self>,
         com: &Self::Commitment,
     ) -> Result<bool, Error> {
-        Ok(dbg!(Self::commit(ck, l, r, || ip.clone())?) == *com)
+        use pretty_assertions::assert_eq;
+        assert_eq!(Self::commit(ck, l, r, || ip.clone())?, *com);
+        Ok(dbg!(Self::commit(ck, l, r, || ip.clone())?) == *dbg!(com))
     }
 
     fn left_key_msm<'a>(
@@ -183,6 +188,15 @@ impl<'a, IPC: IPCommitment> IPCommKey<'a, IPC> {
             ck_b: Cow::Owned(self.ck_b.to_vec()),
             ck_t: Cow::Owned(self.ck_t.clone().into_owned()),
         }
+    }
+
+    /// Returns a new key which has the right key multiplied by powers
+    /// of `c`.
+    pub fn twist_in_place(&mut self, c: Scalar<IPC>) {
+        let len = self.ck_b.len();
+        cfg_iter_mut!(self.ck_b.to_mut())
+            .zip(compute_powers(len, c))
+            .for_each(|(b, c)| *b *= c);
     }
 
     pub fn split(&'a self, split: usize) -> (Self, Self) {

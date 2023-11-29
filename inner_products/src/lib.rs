@@ -47,6 +47,7 @@ pub trait InnerProduct {
         + Send
         + Sync
         + Default
+        + Display
         + Debug
         + Eq
         + CanonicalSerialize
@@ -59,6 +60,7 @@ pub trait InnerProduct {
         + Send
         + Sync
         + Default
+        + Display
         + Debug
         + Eq
         + CanonicalSerialize
@@ -70,6 +72,7 @@ pub trait InnerProduct {
     type Output: Default
         + Eq
         + Copy
+        + Display
         + Debug
         + Send
         + Sync
@@ -80,10 +83,25 @@ pub trait InnerProduct {
         + AddAssign<Self::Output>
         + MulAssign<Self::Scalar>;
 
+    /// An inner product ⟨left, right⟩
     fn inner_product(
         left: &[Self::LeftMessage],
         right: &[Self::RightMessage],
     ) -> Result<Self::Output, Error>;
+
+    /// A twisted inner product ⟨left', right⟩, where
+    /// left'[i] = left[i] * twist^i
+    fn twisted_inner_product(
+        left: &[Self::LeftMessage],
+        right: &[Self::RightMessage],
+        twist: Self::Scalar,
+    ) -> Result<Self::Output, Error> {
+        let left = cfg_iter!(left)
+            .zip(compute_powers(left.len(), twist))
+            .map(|(l, twist)| *l * twist)
+            .collect::<Vec<_>>();
+        Self::inner_product(&left, right)
+    }
 
     fn left_msg_msm(
         msg: &[Self::LeftMessage],
@@ -233,4 +251,70 @@ impl<F: Field> InnerProduct for ScalarInnerProduct<F> {
         };
         Ok(cfg_iter!(left).zip(right).map(|(x, y)| *x * y).sum())
     }
+}
+
+pub(crate) fn compute_powers_serial<F: Field>(size: usize, root: F) -> Vec<F> {
+    compute_powers_and_mul_by_const_serial(size, root, F::one())
+}
+
+pub(crate) fn compute_powers_and_mul_by_const_serial<F: Field>(
+    size: usize,
+    root: F,
+    c: F,
+) -> Vec<F> {
+    let mut value = c;
+    (0..size)
+        .map(|_| {
+            let old_value = value;
+            value *= root;
+            old_value
+        })
+        .collect()
+}
+
+#[cfg(not(feature = "parallel"))]
+pub fn compute_powers<F: Field>(size: usize, g: F) -> Vec<F> {
+    compute_powers_serial(size, g)
+}
+
+#[cfg(feature = "parallel")]
+const MIN_PARALLEL_CHUNK_SIZE: usize = 1 << 7;
+
+#[cfg(feature = "parallel")]
+pub fn compute_powers<F: Field>(size: usize, g: F) -> Vec<F> {
+    if size < MIN_PARALLEL_CHUNK_SIZE {
+        return compute_powers_serial(size, g);
+    }
+    // compute the number of threads we will be using.
+    use ark_std::cmp::{max, min};
+    let num_cpus_available = rayon::current_num_threads();
+    let num_elem_per_thread = max(size / num_cpus_available, MIN_PARALLEL_CHUNK_SIZE);
+    let num_cpus_used = size / num_elem_per_thread;
+
+    // Split up the powers to compute across each thread evenly.
+    let res: Vec<F> = (0..num_cpus_used)
+        .into_par_iter()
+        .flat_map(|i| {
+            let offset = g.pow(&[(i * num_elem_per_thread) as u64]);
+            // Compute the size that this chunks' output should be
+            // (num_elem_per_thread, unless there are less than num_elem_per_thread elements remaining)
+            let num_elements_to_compute = min(size - i * num_elem_per_thread, num_elem_per_thread);
+            let res = compute_powers_and_mul_by_const_serial(num_elements_to_compute, g, offset);
+            res
+        })
+        .collect();
+    res
+}
+
+#[test]
+fn test_compute_powers() {
+    use ark_ff::UniformRand;
+    use ark_std::test_rng;
+
+    let mut rng = test_rng();
+    let g = <ark_bls12_381::Fr as UniformRand>::rand(&mut rng);
+    let size = 1 << 10;
+    let powers = compute_powers(size, g);
+    let expected = (0..size).map(|i| g.pow(&[i as u64])).collect::<Vec<_>>();
+    assert_eq!(powers, expected);
 }

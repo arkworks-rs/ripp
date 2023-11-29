@@ -8,6 +8,8 @@ use digest::Digest;
 use super::GIPA;
 use crate::ip_commitment::{FinalIPCommKey, IPCommitment, Scalar};
 
+#[derive(Derivative, CanonicalSerialize, CanonicalDeserialize)]
+#[derivative(Clone, Debug, PartialEq, Eq)]
 /// A "Twisted" GIPA instance
 pub struct Instance<IPC: IPCommitment> {
     /// Size of input vectors.
@@ -20,6 +22,8 @@ pub struct Instance<IPC: IPCommitment> {
     pub random_challenge: Scalar<IPC>,
 }
 
+#[derive(Derivative, CanonicalSerialize, CanonicalDeserialize)]
+#[derivative(Clone, Debug, PartialEq, Eq)]
 /// A GIPA witness
 pub struct Witness<IP: InnerProduct> {
     /// The left input vector.
@@ -38,9 +42,10 @@ where
 {
     pub(crate) r_commitment_steps: Vec<(IPC::Commitment, IPC::Commitment)>,
     pub(crate) r_base: (IP::LeftMessage, IP::RightMessage),
-    // The fn() is here because PhantomData<T> is Sync iff T is Sync, and these types are not all
-    // Sync
-    _gipa: PhantomData<fn() -> GIPA<IP, IPC, D>>,
+    // The fn() is here because PhantomData<T>
+    // is Sync iff T is Sync, and these types are not all Sync
+    #[derivative(Debug = "ignore")]
+    _gipa: PhantomData<fn() -> (IP, IPC, D)>,
 }
 
 impl<IP, IPC, D> Proof<IP, IPC, D>

@@ -72,10 +72,10 @@ mod tests {
         mipp::MSMCommitment, pairing::PairingCommitment, scalar::ScalarCommitment,
     };
 
-    use ark_bls12_381::Bls12_381;
+    use ark_bls12_381::{Bls12_381, Fr};
     use ark_ec::pairing::Pairing;
-    use ark_ff::UniformRand;
-    use blake2::Blake2b;
+    use ark_ff::{One, UniformRand};
+    use blake2::Blake2b512;
 
     use ark_dh_commitments::random_generators;
     use ark_inner_products::{
@@ -88,19 +88,21 @@ mod tests {
     fn pairing_inner_product_test() {
         type IP = PairingInnerProduct<Bls12_381>;
         type IPC = PairingCommitment<Bls12_381>;
-        type PairingGIPA = GIPA<IP, IPC, Blake2b>;
+        type PairingGIPA = GIPA<IP, IPC, Blake2b512>;
 
         let mut rng = ark_std::test_rng();
         let ck = PairingGIPA::setup(TEST_SIZE, &mut rng).unwrap();
         let m_a = random_generators(&mut rng, TEST_SIZE);
         let m_b = random_generators(&mut rng, TEST_SIZE);
-        let t = IP::inner_product(&m_a, &m_b).unwrap();
+        // let random_challenge = Fr::one();
+        let random_challenge = Fr::rand(&mut rng);
+        let t = IP::twisted_inner_product(&m_a, &m_b, random_challenge).unwrap();
         let com = IPC::commit(&ck, &m_a, &m_b, || t).unwrap();
         let instance = Instance {
             size: TEST_SIZE,
             output: t,
             commitment: com.clone(),
-            random_challenge: <Bls12_381 as Pairing>::ScalarField::rand(&mut rng),
+            random_challenge,
         };
         let witness = Witness {
             left: m_a,
@@ -116,7 +118,7 @@ mod tests {
     fn multiexponentiation_inner_product_test() {
         type IP = MSMInnerProduct<<Bls12_381 as Pairing>::G1>;
         type IPC = MSMCommitment<Bls12_381>;
-        type MultiExpGIPA = GIPA<IP, IPC, Blake2b>;
+        type MultiExpGIPA = GIPA<IP, IPC, Blake2b512>;
 
         let mut rng = ark_std::test_rng();
         let ck = MultiExpGIPA::setup(TEST_SIZE, &mut rng).unwrap();
@@ -125,13 +127,16 @@ mod tests {
         for _ in 0..TEST_SIZE {
             m_b.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
         }
-        let t = IP::inner_product(&m_a, &m_b).unwrap();
+
+        // let random_challenge = Fr::one();
+        let random_challenge = Fr::rand(&mut rng);
+        let t = IP::twisted_inner_product(&m_a, &m_b, random_challenge).unwrap();
         let com = IPC::commit(&ck, &m_a, &m_b, || t).unwrap();
         let instance = Instance {
             size: TEST_SIZE,
             output: t,
             commitment: com.clone(),
-            random_challenge: <Bls12_381 as Pairing>::ScalarField::rand(&mut rng),
+            random_challenge,
         };
         let witness = Witness {
             left: m_a,
@@ -147,7 +152,7 @@ mod tests {
     fn scalar_inner_product_test() {
         type IP = ScalarInnerProduct<<Bls12_381 as Pairing>::ScalarField>;
         type IPC = ScalarCommitment<Bls12_381>;
-        type ScalarGIPA = GIPA<IP, IPC, Blake2b>;
+        type ScalarGIPA = GIPA<IP, IPC, Blake2b512>;
 
         let mut rng = ark_std::test_rng();
         let ck = ScalarGIPA::setup(TEST_SIZE, &mut rng).unwrap();
@@ -157,14 +162,15 @@ mod tests {
             m_a.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
             m_b.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
         }
-
-        let t = IP::inner_product(&m_a, &m_b).unwrap();
+        // let random_challenge = Fr::one();
+        let random_challenge = Fr::rand(&mut rng);
+        let t = IP::twisted_inner_product(&m_a, &m_b, random_challenge).unwrap();
         let com = IPC::commit(&ck, &m_a, &m_b, || t).unwrap();
         let instance = Instance {
             size: TEST_SIZE,
             output: t,
             commitment: com.clone(),
-            random_challenge: <Bls12_381 as Pairing>::ScalarField::rand(&mut rng),
+            random_challenge,
         };
         let witness = Witness {
             left: m_a,

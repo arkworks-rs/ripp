@@ -22,6 +22,9 @@ ark-std = "0.4"
 ark-serialize = { version = "0.4", features = [ "derive" ] }
 rayon = { version = "1", optional = true }
 
+[dev-dependencies]
+ark-bls12-381 = { version = "0.4", features = [ "curve" ] }
+
 [features]
 default = [ "parallel" ]
 parallel = [ "rayon", "ark-ff/parallel", "ark-ec/parallel", "ark-std/parallel" ]

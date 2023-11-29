@@ -6,7 +6,7 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{
     cmp::Eq,
     error::Error as ErrorTrait,
-    fmt::Debug,
+    fmt::{Debug, Display},
     ops::{Add, MulAssign},
     rand::Rng,
 };
@@ -26,6 +26,7 @@ pub trait DoublyHomomorphicCommitment: Clone {
         + CanonicalDeserialize
         + Copy
         + Debug
+        + Display
         + Default
         + Eq
         + Send
@@ -37,6 +38,7 @@ pub trait DoublyHomomorphicCommitment: Clone {
     type Key: CanonicalSerialize
         + CanonicalDeserialize
         + Copy
+        + Display
         + Debug
         + Default
         + Eq
@@ -47,6 +49,7 @@ pub trait DoublyHomomorphicCommitment: Clone {
         + Mul<Self::Scalar, Output = Self::Key>;
     type Output: CanonicalSerialize
         + CanonicalDeserialize
+        + Display
         + Clone
         + Debug
         + Default

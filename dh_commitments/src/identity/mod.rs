@@ -1,7 +1,7 @@
 use ark_ff::fields::PrimeField;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{
-    fmt::Debug,
+    fmt::{Debug, Display},
     marker::PhantomData,
     ops::Mul,
     ops::{Add, MulAssign},
@@ -15,6 +15,12 @@ pub struct IdentityCommitment<T, F: PrimeField>(PhantomData<(T, F)>);
 
 #[derive(CanonicalSerialize, CanonicalDeserialize, Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct PlaceholderKey;
+
+impl Display for PlaceholderKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "PlaceholderKey")
+    }
+}
 
 impl Add for PlaceholderKey {
     type Output = Self;
@@ -39,6 +45,22 @@ impl<T> Mul<T> for PlaceholderKey {
 pub struct IdentityOutput<T>(pub Vec<T>)
 where
     T: CanonicalSerialize + CanonicalDeserialize + Clone + Default + Eq;
+
+impl<T: Display> Display for IdentityOutput<T>
+where
+    T: CanonicalSerialize + CanonicalDeserialize + Clone + Default + Eq,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[")?;
+        for (i, t) in self.0.iter().enumerate() {
+            write!(f, "{}", t)?;
+            if i != self.0.len() - 1 {
+                write!(f, ", ")?;
+            }
+        }
+        write!(f, "]")
+    }
+}
 
 impl<T> Add for IdentityOutput<T>
 where
@@ -91,6 +113,7 @@ where
         + MulAssign<F>
         + Send
         + Sync
+        + Display
         + Debug,
     F: PrimeField,
 {

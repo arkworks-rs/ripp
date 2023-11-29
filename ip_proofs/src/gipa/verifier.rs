@@ -21,11 +21,12 @@ where
         instance: &Instance<IPC>,
         proof: &Proof<IP, IPC, D>,
     ) -> Result<bool, Error> {
+        // TODO: output should appear in checks somewhere...
         let Instance {
             size,
             output,
             commitment: com,
-            random_challenge: c,
+            random_challenge,
         } = instance;
         if !ck.ck_a.len().is_power_of_two() || ck.ck_a.len() != ck.ck_b.len() {
             // Power of 2 length
@@ -37,7 +38,7 @@ where
         // Calculate base commitment and transcript
         let (base_com, transcript) = Self::_compute_recursive_challenges(com, proof)?;
         // Calculate base commitment keys
-        let ck_base = Self::_compute_final_commitment_keys(ck, &transcript)?;
+        let ck_base = Self::_compute_final_commitment_keys(ck, &transcript, random_challenge)?;
         // Verify base commitment
         Self::_verify_base_commitment(&ck_base, &base_com, proof)
     }
@@ -71,22 +72,26 @@ where
     pub(crate) fn _compute_final_commitment_keys<'a>(
         ck: &IPCommKey<'a, IPC>,
         transcript: &[Scalar<IPC>],
+        &random_challenge: &Scalar<IPC>,
     ) -> Result<IPCommKey<'a, IPC>, Error> {
         // Calculate base commitment keys
         assert!(ck.ck_a.len().is_power_of_two());
 
-        let mut ck_a_agg_challenge_exponents = vec![Scalar::<IPC>::one()];
-        let mut ck_b_agg_challenge_exponents = vec![Scalar::<IPC>::one()];
+        let mut ck_a_poly_coeffs = vec![Scalar::<IPC>::one()];
+        let mut ck_b_poly_coeffs = vec![Scalar::<IPC>::one()];
+        let random_challenge = random_challenge.inverse().unwrap();
         for (i, c) in transcript.iter().enumerate() {
             let c_inv = c.inverse().unwrap();
-            for j in 0..(2_usize).pow(i as u32) {
-                ck_a_agg_challenge_exponents.push(ck_a_agg_challenge_exponents[j] * &c_inv);
-                ck_b_agg_challenge_exponents.push(ck_b_agg_challenge_exponents[j] * c);
+            let r = random_challenge.pow([(2_u64).pow(i as u32)]);
+            let c = r * c;
+            for j in 0..((2_usize).pow(i as u32)) {
+                ck_a_poly_coeffs.push(ck_a_poly_coeffs[j] * &c_inv);
+                ck_b_poly_coeffs.push(ck_b_poly_coeffs[j] * c);
             }
         }
-        assert_eq!(ck_a_agg_challenge_exponents.len(), ck.ck_a.len());
-        let ck_a_base = IPC::left_key_msm(&ck.ck_a, &ck_a_agg_challenge_exponents)?;
-        let ck_b_base = IPC::right_key_msm(&ck.ck_b, &ck_b_agg_challenge_exponents)?;
+        assert_eq!(ck_a_poly_coeffs.len(), ck.ck_a.len());
+        let ck_a_base = IPC::left_key_msm(&ck.ck_a, &ck_a_poly_coeffs)?;
+        let ck_b_base = IPC::right_key_msm(&ck.ck_b, &ck_b_poly_coeffs)?;
 
         Ok(IPCommKey::new(
             Cow::Owned(vec![ck_a_base]),
@@ -103,7 +108,6 @@ where
         let a_base = [proof.r_base.0.clone()];
         let b_base = [proof.r_base.1.clone()];
         let t_base = IP::inner_product(&a_base, &b_base)?;
-        dbg!(&base_com);
 
         Ok(IPC::verify(&base_ck, &a_base, &b_base, &t_base, &base_com)?)
     }
