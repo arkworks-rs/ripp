@@ -1,5 +1,3 @@
-use std::ops::Mul;
-
 use ark_ec::Group;
 use ark_ff::fields::PrimeField;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
@@ -7,7 +5,7 @@ use ark_std::{
     cmp::Eq,
     error::Error as ErrorTrait,
     fmt::{Debug, Display},
-    ops::{Add, MulAssign},
+    ops::{Add, AddAssign, Mul, MulAssign},
     rand::Rng,
 };
 
@@ -47,13 +45,15 @@ pub trait DoublyHomomorphicCommitment: Clone {
         + Add<Self::Key, Output = Self::Key>
         + MulAssign<Self::Scalar>
         + Mul<Self::Scalar, Output = Self::Key>;
+
     type Output: CanonicalSerialize
         + CanonicalDeserialize
         + Display
-        + Clone
+        + Copy
         + Debug
         + Default
         + Eq
+        + AddAssign<Self::Output>
         + Add<Self::Output, Output = Self::Output>
         + MulAssign<Self::Scalar>
         + Mul<Self::Scalar, Output = Self::Output>;

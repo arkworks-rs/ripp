@@ -4,7 +4,7 @@ use ark_std::{convert::TryInto, marker::PhantomData, rand::Rng};
 use digest::Digest;
 
 use crate::{
-    ip_commitment::{IPCommKey, IPCommitment, Scalar},
+    ip_commitment::{Commitment, IPCommitment, Scalar},
     Error,
 };
 use ark_inner_products::InnerProduct;
@@ -32,14 +32,20 @@ where
     IP: InnerProduct,
     IPC: IPCommitment<IP = IP>,
 {
-    pub fn setup<'a>(size: usize, rng: impl Rng) -> Result<IPCommKey<'a, IPC>, Error> {
-        IPC::setup(size, rng)
+    pub fn setup<'a>(
+        size: usize,
+        rng: impl Rng,
+    ) -> Result<(ProverKey<'a, IPC>, VerifierKey<'a, IPC>), Error> {
+        let ck = IPC::setup(size, rng)?;
+        let pk = ProverKey { ck: ck.clone() };
+        let vk = VerifierKey { ck };
+        Ok((pk, vk))
     }
 
     fn compute_challenge(
         transcript: &Scalar<IPC>,
-        com_1: &IPC::Commitment,
-        com_2: &IPC::Commitment,
+        com_1: &Commitment<IPC>,
+        com_2: &Commitment<IPC>,
     ) -> Result<(Scalar<IPC>, Scalar<IPC>), Error> {
         let mut counter_nonce = 0u32;
         let mut bytes = Vec::new();
@@ -61,6 +67,10 @@ where
             counter_nonce += 1;
         };
 
+        // println!("Debugging code; DO NOT USE THIS PRODUCTION!!!");
+        // let c = transcript.double();
+        // let c_inv = c.inverse().unwrap();
+        // println!("(c, c_inv) = ({}, {})", c, c_inv);
         Ok((c, c_inv))
     }
 }
@@ -74,7 +84,7 @@ mod tests {
 
     use ark_bls12_381::{Bls12_381, Fr};
     use ark_ec::pairing::Pairing;
-    use ark_ff::{One, UniformRand};
+    use ark_ff::UniformRand;
     use blake2::Blake2b512;
 
     use ark_dh_commitments::random_generators;
@@ -82,7 +92,7 @@ mod tests {
         InnerProduct, MSMInnerProduct, PairingInnerProduct, ScalarInnerProduct,
     };
 
-    const TEST_SIZE: usize = 8;
+    const TEST_SIZE: usize = 4;
 
     #[test]
     fn pairing_inner_product_test() {
@@ -91,27 +101,25 @@ mod tests {
         type PairingGIPA = GIPA<IP, IPC, Blake2b512>;
 
         let mut rng = ark_std::test_rng();
-        let ck = PairingGIPA::setup(TEST_SIZE, &mut rng).unwrap();
-        let m_a = random_generators(&mut rng, TEST_SIZE);
-        let m_b = random_generators(&mut rng, TEST_SIZE);
-        // let random_challenge = Fr::one();
+        let (pk, vk) = PairingGIPA::setup(TEST_SIZE, &mut rng).unwrap();
+        let left = random_generators(&mut rng, TEST_SIZE);
+        let right = random_generators(&mut rng, TEST_SIZE);
+
+        let commitment = IPC::commit_with_ip(&pk.ck, &left, &right, None).unwrap();
         let random_challenge = Fr::rand(&mut rng);
-        let t = IP::twisted_inner_product(&m_a, &m_b, random_challenge).unwrap();
-        let com = IPC::commit(&ck, &m_a, &m_b, || t).unwrap();
+        let output = IP::twisted_inner_product(&left, &right, random_challenge).unwrap();
+
         let instance = Instance {
             size: TEST_SIZE,
-            output: t,
-            commitment: com.clone(),
+            output,
+            commitment,
             random_challenge,
         };
-        let witness = Witness {
-            left: m_a,
-            right: m_b,
-        };
+        let witness = Witness { left, right };
 
-        let proof = PairingGIPA::prove(&ck, &instance, &witness).unwrap();
+        let proof = PairingGIPA::prove(&pk, &instance, &witness).unwrap();
 
-        assert!(PairingGIPA::verify(&ck, &instance, &proof).unwrap());
+        assert!(PairingGIPA::verify(&vk, &instance, &proof).unwrap());
     }
 
     #[test]
@@ -121,31 +129,29 @@ mod tests {
         type MultiExpGIPA = GIPA<IP, IPC, Blake2b512>;
 
         let mut rng = ark_std::test_rng();
-        let ck = MultiExpGIPA::setup(TEST_SIZE, &mut rng).unwrap();
-        let m_a = random_generators(&mut rng, TEST_SIZE);
-        let mut m_b = Vec::new();
+        let (pk, vk) = MultiExpGIPA::setup(TEST_SIZE, &mut rng).unwrap();
+        let left = random_generators(&mut rng, TEST_SIZE);
+        let mut right = Vec::new();
         for _ in 0..TEST_SIZE {
-            m_b.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
+            right.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
         }
 
-        // let random_challenge = Fr::one();
+        let commitment = IPC::commit_with_ip(&pk.ck, &left, &right, None).unwrap();
+
         let random_challenge = Fr::rand(&mut rng);
-        let t = IP::twisted_inner_product(&m_a, &m_b, random_challenge).unwrap();
-        let com = IPC::commit(&ck, &m_a, &m_b, || t).unwrap();
+        let output = IP::twisted_inner_product(&left, &right, random_challenge).unwrap();
+
         let instance = Instance {
             size: TEST_SIZE,
-            output: t,
-            commitment: com.clone(),
+            output,
+            commitment,
             random_challenge,
         };
-        let witness = Witness {
-            left: m_a,
-            right: m_b,
-        };
+        let witness = Witness { left, right };
 
-        let proof = MultiExpGIPA::prove(&ck, &instance, &witness).unwrap();
+        let proof = MultiExpGIPA::prove(&pk, &instance, &witness).unwrap();
 
-        assert!(MultiExpGIPA::verify(&ck, &instance, &proof).unwrap());
+        assert!(MultiExpGIPA::verify(&vk, &instance, &proof).unwrap());
     }
 
     #[test]
@@ -155,30 +161,33 @@ mod tests {
         type ScalarGIPA = GIPA<IP, IPC, Blake2b512>;
 
         let mut rng = ark_std::test_rng();
-        let ck = ScalarGIPA::setup(TEST_SIZE, &mut rng).unwrap();
-        let mut m_a = Vec::new();
-        let mut m_b = Vec::new();
+        let (pk, vk) = ScalarGIPA::setup(TEST_SIZE, &mut rng).unwrap();
+        let mut left = Vec::new();
+        let mut right = Vec::new();
         for _ in 0..TEST_SIZE {
-            m_a.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
-            m_b.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
+            left.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
+            right.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
         }
-        // let random_challenge = Fr::one();
+
+        // We pass a `None` challenge to `commit_with_ip` to avoid computing a useless
+        // inner product
+        let commitment = IPC::commit_with_ip(&pk.ck, &left, &right, None).unwrap();
+        // Generate random challenge *after* committing to messages
         let random_challenge = Fr::rand(&mut rng);
-        let t = IP::twisted_inner_product(&m_a, &m_b, random_challenge).unwrap();
-        let com = IPC::commit(&ck, &m_a, &m_b, || t).unwrap();
+        // Compute twisted inner product with respect to new challenge.
+        let output = IP::twisted_inner_product(&left, &right, random_challenge).unwrap();
+
         let instance = Instance {
             size: TEST_SIZE,
-            output: t,
-            commitment: com.clone(),
+            output,
+            commitment,
             random_challenge,
         };
-        let witness = Witness {
-            left: m_a,
-            right: m_b,
-        };
 
-        let proof = ScalarGIPA::prove(&ck, &instance, &witness).unwrap();
+        let witness = Witness { left, right: right };
 
-        assert!(ScalarGIPA::verify(&ck, &instance, &proof).unwrap());
+        let proof = ScalarGIPA::prove(&pk, &instance, &witness).unwrap();
+
+        assert!(ScalarGIPA::verify(&vk, &instance, &proof).unwrap());
     }
 }

@@ -6,7 +6,7 @@ use derivative::Derivative;
 use digest::Digest;
 
 use super::GIPA;
-use crate::ip_commitment::{FinalIPCommKey, IPCommitment, Scalar};
+use crate::ip_commitment::{Commitment, FinalIPCommKey, IPCommKey, IPCommitment, Scalar};
 
 #[derive(Derivative, CanonicalSerialize, CanonicalDeserialize)]
 #[derivative(Clone, Debug, PartialEq, Eq)]
@@ -17,7 +17,7 @@ pub struct Instance<IPC: IPCommitment> {
     /// The output of the inner product.
     pub output: <IPC::IP as InnerProduct>::Output,
     /// The commitment to the foregoing.
-    pub commitment: IPC::Commitment,
+    pub commitment: Commitment<IPC>,
     /// The challenge used for performing the twist.
     pub random_challenge: Scalar<IPC>,
 }
@@ -40,7 +40,7 @@ where
     IP: InnerProduct,
     IPC: IPCommitment<IP = IP>,
 {
-    pub(crate) r_commitment_steps: Vec<(IPC::Commitment, IPC::Commitment)>,
+    pub(crate) r_commitment_steps: Vec<(Commitment<IPC>, Commitment<IPC>)>,
     pub(crate) r_base: (IP::LeftMessage, IP::RightMessage),
     // The fn() is here because PhantomData<T>
     // is Sync iff T is Sync, and these types are not all Sync
@@ -55,7 +55,7 @@ where
     IPC: IPCommitment<IP = IP>,
 {
     pub fn new(
-        r_commitment_steps: Vec<(IPC::Commitment, IPC::Commitment)>,
+        r_commitment_steps: Vec<(Commitment<IPC>, Commitment<IPC>)>,
         r_base: (IP::LeftMessage, IP::RightMessage),
     ) -> Self {
         Self {
@@ -91,4 +91,12 @@ where
             _gipa: PhantomData,
         }
     }
+}
+
+pub struct ProverKey<'a, IPC: IPCommitment> {
+    pub ck: IPCommKey<'a, IPC>,
+}
+
+pub struct VerifierKey<'a, IPC: IPCommitment> {
+    pub ck: IPCommKey<'a, IPC>,
 }

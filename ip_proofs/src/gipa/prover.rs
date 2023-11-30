@@ -21,7 +21,7 @@ where
     IPC: IPCommitment<IP = IP>,
 {
     pub fn prove<'a>(
-        ck: &IPCommKey<'a, IPC>,
+        pk: &ProverKey<'a, IPC>,
         instance: &Instance<IPC>,
         witness: &Witness<IP>,
     ) -> Result<Proof<IP, IPC, D>, Error> {
@@ -29,7 +29,7 @@ where
         let Instance {
             size,
             output,
-            commitment: com,
+            commitment: mut com,
             random_challenge: c,
         } = instance;
 
@@ -51,9 +51,10 @@ where
             output,
             "invalid witness"
         );
+        debug_assert!(com.cm_ip.is_none());
 
         let mut left = left.to_vec();
-        let mut ck = ck.clone();
+        let mut ck = pk.ck.clone();
         if !c.is_one() {
             let powers_of_c = compute_powers(*size, *c);
             cfg_iter_mut!(left)
@@ -62,9 +63,11 @@ where
             ck.twist_in_place(c.inverse().unwrap());
         }
 
-        // if !IPC::verify(&ck, &left, right, &output, com)? {
-        //     return Err(Box::new(InnerProductArgumentError::InnerProductInvalid));
-        // }
+        com += IPC::commit_only_ip(&ck, *output)?;
+
+        if !IPC::verify(&ck, &left, right, &com)? {
+            return Err(Box::new(InnerProductArgumentError::InnerProductInvalid));
+        }
 
         let (proof, _) = Self::prove_with_aux(&ck, &left, right)?;
         Ok(proof)
@@ -106,35 +109,29 @@ where
                 let (ck_l, ck_r) = ck.split(split);
 
                 let cl = start_timer!(|| "Commit L");
-                let com_1 = IPC::commit(&ck_l, &left_1, &right_1, || {
-                    IP::inner_product(left_1, right_1).unwrap()
-                })?;
+                let com_1 = IPC::commit(&ck_l, &left_1, &right_1)?;
                 end_timer!(cl);
                 let cr = start_timer!(|| "Commit R");
-                let com_2 = IPC::commit(&ck_r, &left_2, &right_2, || {
-                    IP::inner_product(left_2, right_2).unwrap()
-                })?;
+                let com_2 = IPC::commit(&ck_r, &left_2, &right_2)?;
                 end_timer!(cr);
 
                 // Fiat-Shamir challenge
-                let default_transcript = Default::default();
+                let default_transcript = Scalar::<IPC>::one();
                 let transcript = r_transcript.last().unwrap_or(&default_transcript);
                 let (c, c_inv) = Self::compute_challenge(transcript, &com_1, &com_2)?;
 
                 // Set up values for next step of recursion
                 let rescale_m1 = start_timer!(|| "Rescale M1");
                 left = cfg_iter!(left_1)
-                    .map(|a| *a * c)
                     .zip(left_2)
-                    .map(|(a_1, a_2)| a_1 + *a_2)
+                    .map(|(a_1, a_2)| *a_1 * c + *a_2)
                     .collect::<Vec<IP::LeftMessage>>();
                 end_timer!(rescale_m1);
 
                 let rescale_m2 = start_timer!(|| "Rescale M2");
                 right = cfg_iter!(right_2)
-                    .map(|b| *b * c_inv)
                     .zip(right_1)
-                    .map(|(b_1, b_2)| b_1 + *b_2)
+                    .map(|(b_1, b_2)| *b_1 * c_inv + *b_2)
                     .collect::<Vec<IP::RightMessage>>();
                 end_timer!(rescale_m2);
 

@@ -1,6 +1,7 @@
 use ark_ec::pairing::{Pairing, PairingOutput};
+use ark_std::marker::PhantomData;
 use ark_std::rand::Rng;
-use std::marker::PhantomData;
+use ark_std::One;
 
 use crate::{random_generators, DoublyHomomorphicCommitment, Error};
 
@@ -28,7 +29,11 @@ impl<P: Pairing> DoublyHomomorphicCommitment for AFGHOCommitmentG1<P> {
     }
 
     fn commit(k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {
-        Ok(PairingInnerProduct::<P>::inner_product(m, k)?)
+        if m.is_empty() {
+            Ok(PairingOutput(P::TargetField::one()))
+        } else {
+            Ok(PairingInnerProduct::<P>::inner_product(m, k)?)
+        }
     }
 }
 
@@ -43,7 +48,11 @@ impl<P: Pairing> DoublyHomomorphicCommitment for AFGHOCommitmentG2<P> {
     }
 
     fn commit(k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {
-        Ok(PairingInnerProduct::<P>::inner_product(k, m)?)
+        if m.is_empty() {
+            Ok(PairingOutput(P::TargetField::one()))
+        } else {
+            Ok(PairingInnerProduct::<P>::inner_product(k, m)?)
+        }
     }
 }
 

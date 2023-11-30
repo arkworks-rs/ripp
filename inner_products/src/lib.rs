@@ -4,7 +4,7 @@ use ark_ec::{
     pairing::{MillerLoopOutput, Pairing, PairingOutput},
     CurveGroup,
 };
-use ark_ff::Field;
+use ark_ff::{Field, PrimeField};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{
     cfg_chunks, cfg_iter,
@@ -42,7 +42,7 @@ impl Display for InnerProductError {
 }
 
 pub trait InnerProduct {
-    type Scalar: Field;
+    type Scalar: PrimeField;
     type LeftMessage: Copy
         + Send
         + Sync
@@ -233,7 +233,7 @@ pub struct ScalarInnerProduct<F: Field> {
     _field: PhantomData<F>,
 }
 
-impl<F: Field> InnerProduct for ScalarInnerProduct<F> {
+impl<F: PrimeField> InnerProduct for ScalarInnerProduct<F> {
     type Scalar = F;
     type LeftMessage = F;
     type RightMessage = F;

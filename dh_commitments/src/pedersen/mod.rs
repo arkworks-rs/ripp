@@ -22,7 +22,11 @@ impl<G: CurveGroup> DoublyHomomorphicCommitment for PedersenCommitment<G> {
     }
 
     fn commit(k: &[Self::Key], m: &[Self::Message]) -> Result<Self::Output, Error> {
-        Ok(MSMInnerProduct::<G>::inner_product(k, m)?)
+        if m.is_empty() {
+            Ok(G::zero())
+        } else {
+            Ok(MSMInnerProduct::<G>::inner_product(k, m)?)
+        }
     }
 }
 
