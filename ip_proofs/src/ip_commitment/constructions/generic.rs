@@ -16,7 +16,7 @@ use derivative::Derivative;
 
 use crate::Error;
 
-use super::{Commitment, IPCommKey, IPCommitment, LeftMessage, RightMessage};
+use crate::ip_commitment::{Commitment, IPCommKey, IPCommitment, LeftMessage, RightMessage};
 
 /// Represents a commitment scheme over (G1, G2) which does a pairing commitment on the LHS and a
 /// pairing commitment on the RHS, and an identity commitment on the inner product of the two.

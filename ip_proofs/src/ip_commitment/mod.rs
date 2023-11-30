@@ -14,15 +14,14 @@ use rayon::prelude::*;
 pub mod data_structures;
 pub use data_structures::*;
 
-pub mod generic;
-
-pub mod mipp;
-pub mod pairing;
-pub mod scalar;
+pub mod constructions;
+pub use constructions::*;
 
 pub trait IPCommitment: Sized {
+    /// The inner product this commitment scheme is for.
     type IP: InnerProduct;
 
+    /// The commitment key for the left vector.
     type LeftKey: CanonicalSerialize
         + CanonicalDeserialize
         + Copy
@@ -35,6 +34,7 @@ pub trait IPCommitment: Sized {
         + Mul<Scalar<Self>, Output = Self::LeftKey>
         + MulAssign<Scalar<Self>>;
 
+    /// The commitment key for the right vector.
     type RightKey: CanonicalSerialize
         + CanonicalDeserialize
         + Copy
@@ -47,6 +47,7 @@ pub trait IPCommitment: Sized {
         + Mul<Scalar<Self>, Output = Self::RightKey>
         + MulAssign<Scalar<Self>>;
 
+    /// The commitment key for the inner product `IP::Output`.
     type IPKey: CanonicalSerialize
         + CanonicalDeserialize
         + Copy
@@ -59,6 +60,7 @@ pub trait IPCommitment: Sized {
         + Mul<Scalar<Self>, Output = Self::IPKey>
         + MulAssign<Scalar<Self>>;
 
+    /// The type of the commitment to the left and right vectors.
     type LeftRightCommitment: CanonicalSerialize
         + CanonicalDeserialize
         + Copy
@@ -69,6 +71,7 @@ pub trait IPCommitment: Sized {
         + AddAssign<Self::LeftRightCommitment>
         + Mul<Scalar<Self>, Output = Self::LeftRightCommitment>;
 
+    /// The type of the commitment to the inner product (i.e., to `IP::Output`).
     type OutputCommitment: CanonicalSerialize
         + CanonicalDeserialize
         + Copy
@@ -81,6 +84,18 @@ pub trait IPCommitment: Sized {
 
     fn setup<'a>(size: usize, r: impl Rng) -> Result<IPCommKey<'a, Self>, Error>;
 
+    /// Commit to the left and right messages, and the inner product.
+    /// `ip` should be `None` if the inner product *should* not be committed to. This
+    /// is useful when computing a GIPA for a *twisted* inner product.
+    fn commit_with_ip<'a>(
+        ck: &IPCommKey<'a, Self>,
+        l: &[LeftMessage<Self>],
+        r: &[RightMessage<Self>],
+        ip: impl Into<Option<OutputMessage<Self>>>,
+    ) -> Result<Commitment<Self>, Error>;
+
+    /// Commit to the left and right messages, and the inner product.
+    /// The inner product is computed as `IP::inner_product(l, r)`.
     fn commit<'a>(
         ck: &IPCommKey<'a, Self>,
         l: &[LeftMessage<Self>],
@@ -90,13 +105,7 @@ pub trait IPCommitment: Sized {
         Self::commit_with_ip(ck, l, r, ip)
     }
 
-    fn commit_with_ip<'a>(
-        ck: &IPCommKey<'a, Self>,
-        l: &[LeftMessage<Self>],
-        r: &[RightMessage<Self>],
-        ip: impl Into<Option<OutputMessage<Self>>>,
-    ) -> Result<Commitment<Self>, Error>;
-
+    /// Commit *only* to the inner product.
     fn commit_only_ip<'a>(
         ck: &IPCommKey<'a, Self>,
         ip: OutputMessage<Self>,
@@ -104,13 +113,15 @@ pub trait IPCommitment: Sized {
         Self::commit_with_ip(ck, &[], &[], ip)
     }
 
+    /// Check that `cm` is indeed a commitment to the left and right messages and their
+    /// inner product `IP::inner_product(l, r)`.
     fn verify<'a>(
         ck: &IPCommKey<'a, Self>,
         l: &[LeftMessage<Self>],
         r: &[RightMessage<Self>],
-        com: &Commitment<Self>,
+        cm: &Commitment<Self>,
     ) -> Result<bool, Error> {
-        Ok(dbg!(Self::commit(ck, l, r)?) == *dbg!(com))
+        Ok(Self::commit(ck, l, r)? == *cm)
     }
 
     fn left_key_msm<'a>(

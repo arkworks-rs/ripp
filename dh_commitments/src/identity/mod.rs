@@ -45,7 +45,7 @@ impl<T> Mul<T> for PlaceholderKey {
 }
 
 #[derive(CanonicalSerialize, CanonicalDeserialize, Copy, Clone, Default, Eq, PartialEq, Debug)]
-pub struct IdentityOutput<T: CanonicalSerialize + CanonicalDeserialize>(T);
+pub struct IdentityOutput<T: CanonicalSerialize + CanonicalDeserialize>(pub T);
 
 impl<T: Display> Display for IdentityOutput<T>
 where

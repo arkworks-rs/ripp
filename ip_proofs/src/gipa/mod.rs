@@ -80,6 +80,7 @@ mod tests {
     use super::*;
     use crate::ip_commitment::{
         mipp::MSMCommitment, pairing::PairingCommitment, scalar::ScalarCommitment,
+        snarkpack::TIPPCommitment,
     };
 
     use ark_bls12_381::{Bls12_381, Fr};
@@ -98,6 +99,34 @@ mod tests {
     fn pairing_inner_product_test() {
         type IP = PairingInnerProduct<Bls12_381>;
         type IPC = PairingCommitment<Bls12_381>;
+        type PairingGIPA = GIPA<IP, IPC, Blake2b512>;
+
+        let mut rng = ark_std::test_rng();
+        let (pk, vk) = PairingGIPA::setup(TEST_SIZE, &mut rng).unwrap();
+        let left = random_generators(&mut rng, TEST_SIZE);
+        let right = random_generators(&mut rng, TEST_SIZE);
+
+        let commitment = IPC::commit_with_ip(&pk.ck, &left, &right, None).unwrap();
+        let random_challenge = Fr::rand(&mut rng);
+        let output = IP::twisted_inner_product(&left, &right, random_challenge).unwrap();
+
+        let instance = Instance {
+            size: TEST_SIZE,
+            output,
+            commitment,
+            random_challenge,
+        };
+        let witness = Witness { left, right };
+
+        let proof = PairingGIPA::prove(&pk, &instance, &witness).unwrap();
+
+        assert!(PairingGIPA::verify(&vk, &instance, &proof).unwrap());
+    }
+
+    #[test]
+    fn snarkpack_inner_product_test() {
+        type IP = PairingInnerProduct<Bls12_381>;
+        type IPC = TIPPCommitment<Bls12_381>;
         type PairingGIPA = GIPA<IP, IPC, Blake2b512>;
 
         let mut rng = ark_std::test_rng();
