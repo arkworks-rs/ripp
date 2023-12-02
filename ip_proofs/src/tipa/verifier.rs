@@ -1,3 +1,16 @@
+use ark_ec::{pairing::Pairing, scalar_mul::fixed_base::FixedBase, AffineRepr, CurveGroup};
+use ark_ff::{Field, One, Zero};
+use ark_serialize::CanonicalSerialize;
+use digest::Digest;
+
+use crate::{
+    gipa::GIPA,
+    ip_commitment::{IPCommKey, Scalar},
+    Error,
+};
+
+use super::*;
+
 impl<P, D> TIPA<P, D>
 where
     D: Digest,

@@ -1,39 +1,22 @@
-use ark_ec::{pairing::Pairing, scalar_mul::fixed_base::FixedBase, AffineRepr, CurveGroup, Group};
-use ark_ff::{Field, One, PrimeField, UniformRand, Zero};
-use ark_poly::polynomial::{univariate::DensePolynomial, DenseUVPolynomial};
-use ark_serialize::CanonicalSerialize;
-use ark_std::rand::Rng;
-use ark_std::{end_timer, start_timer};
-use digest::Digest;
-use itertools::Itertools;
-use std::marker::PhantomData;
-
-use crate::{
-    gipa::GIPA,
-    ip_commitment::{IPCommKey, IPCommitment, Scalar},
-    Error,
-};
 use ark_inner_products::{InnerProduct, PairingInnerProduct};
+use ark_std::marker::PhantomData;
 
 // pub mod structured_scalar_message;
 pub mod data_structures;
 pub mod kzg;
-pub mod tipp;
 
-pub mod setup;
 pub mod prover;
+pub mod setup;
 pub mod verifier;
 
+use crate::ip_commitment::snarkpack::TIPPCommitment;
 use data_structures::{Proof, ProverKey, VerifierKey};
-use tipp::TIPPCommitment;
-
-use self::data_structures::GenericSRS;
 
 type IP<P> = PairingInnerProduct<P>;
 type IPC<P> = TIPPCommitment<P>;
 type LeftMessage<P> = <IP<P> as InnerProduct>::LeftMessage;
 type RightMessage<P> = <IP<P> as InnerProduct>::RightMessage;
-type Commitment<P> = <IPC<P> as IPCommitment>::Commitment;
+type Commitment<P> = crate::ip_commitment::Commitment<TIPPCommitment<P>>;
 
 //TODO: Could generalize: Don't need TIPA over G1 and G2, would work with G1 and G1 or over different pairing engines
 pub trait TIPACompatibleSetup {}
@@ -50,7 +33,8 @@ mod tests {
 
     use super::*;
     use ark_bls12_381::Bls12_381;
-    use ark_ec::pairing::PairingOutput;
+    use ark_ec::pairing::{Pairing, PairingOutput};
+    use ark_ff::Field;
     use ark_std::rand::{rngs::StdRng, SeedableRng};
     use blake2::Blake2b;
 

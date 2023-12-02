@@ -1,3 +1,14 @@
+use ark_ec::{pairing::Pairing, CurveGroup};
+use ark_ff::{Field, One, Zero};
+use ark_poly::polynomial::{univariate::DensePolynomial, DenseUVPolynomial};
+use ark_serialize::CanonicalSerialize;
+use ark_std::{end_timer, start_timer};
+use digest::Digest;
+
+use crate::{gipa::GIPA, ip_commitment::Scalar, Error};
+
+use super::*;
+
 impl<P, D> TIPA<P, D>
 where
     D: Digest,
@@ -64,7 +75,6 @@ where
             gipa_proof: proof,
             final_ck: ck_base.into(),
             final_ck_proof: (ck_a_kzg_opening, ck_b_kzg_opening),
-            _pair: PhantomData,
         })
     }
 }

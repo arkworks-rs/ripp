@@ -1,3 +1,14 @@
+use ark_ec::pairing::Pairing;
+use ark_std::rand::Rng;
+use digest::Digest;
+
+use crate::Error;
+
+use super::{
+    data_structures::{specialize, GenericSRS},
+    *,
+};
+
 impl<P, D> TIPA<P, D>
 where
     D: Digest,
@@ -5,9 +16,9 @@ where
 {
     pub fn setup<'a>(
         size: usize,
-        rng: &mut impl Rng,
-    ) -> Result<(ProverKey<P>, VerifierKey<P>), Error> {
+        rng: impl Rng,
+    ) -> Result<(ProverKey<'a, P>, VerifierKey<P>), Error> {
         let srs = GenericSRS::sample(size, rng);
-        Ok(srs.specialize(size))
+        Ok(specialize(srs, size))
     }
 }

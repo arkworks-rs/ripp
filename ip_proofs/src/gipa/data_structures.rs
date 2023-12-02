@@ -33,7 +33,12 @@ pub struct Witness<IP: InnerProduct> {
 }
 
 #[derive(CanonicalSerialize, CanonicalDeserialize, Derivative)]
-#[derivative(Clone, Debug, PartialEq, Eq)]
+#[derivative(
+    Clone(bound = "IPC: IPCommitment<IP = IP>, D: Digest, IP: InnerProduct"),
+    Debug(bound = "IPC: IPCommitment<IP = IP>, D: Digest, IP: InnerProduct"),
+    PartialEq(bound = "IPC: IPCommitment<IP = IP>, D: Digest, IP: InnerProduct"),
+    Eq(bound = "IPC: IPCommitment<IP = IP>, D: Digest, IP: InnerProduct")
+)]
 pub struct Proof<IP, IPC, D>
 where
     D: Digest,
