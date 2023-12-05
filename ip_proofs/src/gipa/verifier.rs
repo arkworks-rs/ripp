@@ -19,14 +19,13 @@ where
     pub fn verify<'a>(
         vk: &VerifierKey<'a, IPC>,
         instance: &Instance<IPC>,
-        proof: &Proof<IP, IPC, D>,
+        proof: &Proof<IP, IPC>,
     ) -> Result<bool, Error> {
-        // TODO: output should appear in checks somewhere...
         let Instance {
-            size,
             output,
             commitment: mut com,
-            random_challenge,
+            twist,
+            ..
         } = instance;
         if !vk.ck.ck_a.len().is_power_of_two() || vk.ck.ck_a.len() != vk.ck.ck_b.len() {
             // Power of 2 length
@@ -40,55 +39,61 @@ where
         com += IPC::commit_only_ip(&vk.ck, *output)?;
 
         // Calculate base commitment and transcript
-        let (base_com, transcript) = Self::_compute_recursive_challenges(&com, proof)?;
+        let (final_commitment, challenges) =
+            Self::verify_recursive_challenge_transcript(&com, proof)?;
         // Calculate base commitment keys
-        let ck_base = Self::_compute_final_commitment_keys(&vk.ck, &transcript, random_challenge)?;
+        let final_ck = Self::_compute_final_commitment_keys(&vk.ck, &challenges, twist)?;
         // Verify base commitment
-        Self::_verify_base_commitment(&ck_base, &base_com, proof)
+        Self::verify_final_commitment(&final_ck, &final_commitment, proof)
     }
 
     // Helper function used to calculate recursive challenges from proof execution (transcript in reverse)
     pub fn verify_recursive_challenge_transcript(
         com: &Commitment<IPC>,
-        proof: &Proof<IP, IPC, D>,
+        proof: &Proof<IP, IPC>,
     ) -> Result<(Commitment<IPC>, Vec<Scalar<IPC>>), Error> {
         Self::_compute_recursive_challenges(com, proof)
     }
 
     fn _compute_recursive_challenges(
         com: &Commitment<IPC>,
-        proof: &Proof<IP, IPC, D>,
+        proof: &Proof<IP, IPC>,
     ) -> Result<(Commitment<IPC>, Vec<Scalar<IPC>>), Error> {
         let mut com = com.clone();
-        let mut r_transcript: Vec<Scalar<IPC>> = Vec::new();
+        let mut challenges: Vec<Scalar<IPC>> = Vec::new();
         let default_transcript_entry = Scalar::<IPC>::one();
-        for (com_1, com_2) in proof.r_commitment_steps.iter().rev() {
+        for (com_1, com_2) in proof.commitments.iter().rev() {
             // Fiat-Shamir challenge
-            let transcript = r_transcript.last().unwrap_or(&default_transcript_entry);
+            let transcript = challenges.last().unwrap_or(&default_transcript_entry);
             let (c, c_inv) = Self::compute_challenge(transcript, com_1, com_2)?;
             com += com_1.clone() * c + com_2.clone() * c_inv;
-            r_transcript.push(c);
+            challenges.push(c);
         }
-        r_transcript.reverse();
-        Ok((com, r_transcript))
+        challenges.reverse();
+        Ok((com, challenges))
     }
 
     pub(crate) fn _compute_final_commitment_keys<'a>(
         ck: &IPCommKey<'a, IPC>,
-        transcript: &[Scalar<IPC>],
-        &random_challenge: &Scalar<IPC>,
+        challenges: &[Scalar<IPC>],
+        &twist: &Scalar<IPC>,
     ) -> Result<IPCommKey<'a, IPC>, Error> {
         // Calculate base commitment keys
         assert!(ck.ck_a.len().is_power_of_two());
 
         let mut ck_a_poly_coeffs = vec![Scalar::<IPC>::one()];
         let mut ck_b_poly_coeffs = vec![Scalar::<IPC>::one()];
-        for (i, c) in transcript.iter().enumerate() {
-            let r = random_challenge.pow([(2_u64).pow(i as u32)]);
-            let c_inv = (*c * r).inverse().unwrap();
+        let mut challenges_inv = challenges.to_vec();
+        challenges_inv.push(twist);
+        ark_ff::batch_inversion(&mut challenges_inv);
+        let twist_inv = challenges_inv.pop().unwrap();
+
+        for (i, (&c, c_inv)) in challenges.iter().zip(challenges_inv).enumerate() {
+            let r = twist_inv.pow([(2_u64).pow(i as u32)]);
+            let c = c * r;
             for j in 0..((2_usize).pow(i as u32)) {
                 ck_a_poly_coeffs.push(ck_a_poly_coeffs[j] * &c_inv);
-                ck_b_poly_coeffs.push(ck_b_poly_coeffs[j] * *c);
+                ck_b_poly_coeffs.push(ck_b_poly_coeffs[j] * c);
             }
         }
         assert_eq!(ck_a_poly_coeffs.len(), ck.ck_a.len());
@@ -103,13 +108,13 @@ where
         ))
     }
 
-    pub(crate) fn _verify_base_commitment<'a>(
-        base_ck: &IPCommKey<'a, IPC>,
-        base_com: &Commitment<IPC>,
-        proof: &Proof<IP, IPC, D>,
+    pub(crate) fn verify_final_commitment<'a>(
+        final_ck: &IPCommKey<'a, IPC>,
+        final_commitment: &Commitment<IPC>,
+        proof: &Proof<IP, IPC>,
     ) -> Result<bool, Error> {
-        let l = [proof.r_base.0.clone()];
-        let r = [proof.r_base.1.clone()];
-        Ok(IPC::verify(&base_ck, &l, &r, &base_com)?)
+        let l = [proof.final_msg.0.clone()];
+        let r = [proof.final_msg.1.clone()];
+        Ok(IPC::verify(&final_ck, &l, &r, &final_commitment)?)
     }
 }

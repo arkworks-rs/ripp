@@ -2,7 +2,7 @@ use ark_ec::{AffineRepr, CurveGroup};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 /// OpeningProof represents the KZG evaluation proof for the SRS used in our scheme.
-#[derive(Clone, Debug, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct EvaluationProof<G: AffineRepr>(pub G, pub G);
 
 impl<G: AffineRepr> EvaluationProof<G> {
@@ -12,10 +12,4 @@ impl<G: AffineRepr> EvaluationProof<G> {
 
         EvaluationProof(s[0], s[1])
     }
-}
-
-/// KZG verifier key for an SRS with secret `tau`.
-pub struct VerifierKey<G: AffineRepr> {
-    pub base: G,
-    pub tau_times_base: G,
 }

@@ -43,13 +43,13 @@ where
     }
 
     fn compute_challenge(
-        transcript: &Scalar<IPC>,
+        prev_challenge: &Scalar<IPC>,
         com_1: &Commitment<IPC>,
         com_2: &Commitment<IPC>,
     ) -> Result<(Scalar<IPC>, Scalar<IPC>), Error> {
         let mut counter_nonce = 0u32;
         let mut bytes = Vec::new();
-        transcript.serialize_uncompressed(&mut bytes)?;
+        prev_challenge.serialize_uncompressed(&mut bytes)?;
         com_1.serialize_uncompressed(&mut bytes)?;
         com_2.serialize_uncompressed(&mut bytes)?;
         let (c, c_inv) = 'challenge: loop {
@@ -107,14 +107,14 @@ mod tests {
         let right = random_generators(&mut rng, TEST_SIZE);
 
         let commitment = IPC::commit_with_ip(&pk.ck, &left, &right, None).unwrap();
-        let random_challenge = Fr::rand(&mut rng);
-        let output = IP::twisted_inner_product(&left, &right, random_challenge).unwrap();
+        let twist = Fr::rand(&mut rng);
+        let output = IP::twisted_inner_product(&left, &right, twist).unwrap();
 
         let instance = Instance {
             size: TEST_SIZE,
             output,
             commitment,
-            random_challenge,
+            twist,
         };
         let witness = Witness { left, right };
 
@@ -135,14 +135,14 @@ mod tests {
         let right = random_generators(&mut rng, TEST_SIZE);
 
         let commitment = IPC::commit_with_ip(&pk.ck, &left, &right, None).unwrap();
-        let random_challenge = Fr::rand(&mut rng);
-        let output = IP::twisted_inner_product(&left, &right, random_challenge).unwrap();
+        let twist = Fr::rand(&mut rng);
+        let output = IP::twisted_inner_product(&left, &right, twist).unwrap();
 
         let instance = Instance {
             size: TEST_SIZE,
             output,
             commitment,
-            random_challenge,
+            twist,
         };
         let witness = Witness { left, right };
 
@@ -167,14 +167,14 @@ mod tests {
 
         let commitment = IPC::commit_with_ip(&pk.ck, &left, &right, None).unwrap();
 
-        let random_challenge = Fr::rand(&mut rng);
-        let output = IP::twisted_inner_product(&left, &right, random_challenge).unwrap();
+        let twist = Fr::rand(&mut rng);
+        let output = IP::twisted_inner_product(&left, &right, twist).unwrap();
 
         let instance = Instance {
             size: TEST_SIZE,
             output,
             commitment,
-            random_challenge,
+            twist,
         };
         let witness = Witness { left, right };
 
@@ -202,15 +202,15 @@ mod tests {
         // inner product
         let commitment = IPC::commit_with_ip(&pk.ck, &left, &right, None).unwrap();
         // Generate random challenge *after* committing to messages
-        let random_challenge = Fr::rand(&mut rng);
+        let twist = Fr::rand(&mut rng);
         // Compute twisted inner product with respect to new challenge.
-        let output = IP::twisted_inner_product(&left, &right, random_challenge).unwrap();
+        let output = IP::twisted_inner_product(&left, &right, twist).unwrap();
 
         let instance = Instance {
             size: TEST_SIZE,
             output,
             commitment,
-            random_challenge,
+            twist,
         };
 
         let witness = Witness { left, right: right };

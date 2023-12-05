@@ -10,12 +10,20 @@ use ark_ff::Field;
 use ark_inner_products::{multi_pairing, PairingInnerProduct};
 use ark_std::{marker::PhantomData, rand::Rng};
 
-use crate::ip_commitment::{
-    Commitment, IPCommKey, IPCommitment, LeftMessage, OutputMessage, RightMessage,
+use crate::{
+    ip_commitment::{
+        Commitment, FinalIPCommKey, IPCommKey, IPCommitment, LeftMessage, OutputMessage,
+        RightMessage,
+    },
+    tipa::{ProverKey, VerifierKey},
 };
 
 mod data_structures;
 pub use data_structures::*;
+
+use self::kzg::verify::{verify_kzg_v, verify_kzg_w};
+
+pub mod kzg;
 
 pub struct TIPPCommitment<E: Pairing>(PhantomData<E>);
 
@@ -100,6 +108,66 @@ impl<E: Pairing> IPCommitment for TIPPCommitment<E> {
         let w_1 = E::G1::msm(&w_1, scalars).unwrap();
         let w_2 = E::G1::msm(&w_2, scalars).unwrap();
         Ok(RightKey { w_1, w_2 })
+    }
+}
+
+impl<E: Pairing> TIPPCommitment<E> {
+    pub fn prove_final_ck<'a>(
+        pk: &ProverKey<'a, E>,
+        challenges: &[E::ScalarField],
+        twist: E::ScalarField,
+        kzg_point: E::ScalarField,
+    ) -> FinalCommKeyProof<E> {
+        let mut challenges_inv = challenges.to_vec();
+        ark_ff::batch_inversion(&mut challenges_inv);
+
+        let twist_inv = twist.inverse().unwrap();
+        let left_proof = kzg::prove::prove_commitment_v(
+            &pk.h_alpha_powers,
+            &pk.h_beta_powers,
+            &challenges_inv,
+            kzg_point,
+        )
+        .unwrap();
+        let right_proof = kzg::prove::prove_commitment_w(
+            &pk.g_alpha_powers,
+            &pk.g_beta_powers,
+            &challenges,
+            twist_inv,
+            kzg_point,
+        )
+        .unwrap();
+        FinalCommKeyProof {
+            left_proof,
+            right_proof,
+        }
+    }
+
+    pub fn verify_final_ck(
+        vk: &VerifierKey<E>,
+        final_ck: &FinalIPCommKey<Self>,
+        challenges: &[E::ScalarField],
+        twist: E::ScalarField,
+        kzg_point: E::ScalarField,
+        proof: &FinalCommKeyProof<E>,
+    ) -> bool {
+        let mut challenges_inv = challenges.to_vec();
+        challenges_inv.push(twist);
+        ark_ff::batch_inversion(&mut challenges_inv);
+        let twist_inv = challenges_inv.pop().unwrap();
+
+        let FinalIPCommKey { ck_a, ck_b, .. } = final_ck;
+
+        let left_is_correct = verify_kzg_v(vk, ck_a, &proof.left_proof, &challenges_inv, kzg_point);
+        let right_is_correct = verify_kzg_w(
+            vk,
+            ck_b,
+            &proof.right_proof,
+            &challenges,
+            twist_inv,
+            kzg_point,
+        );
+        left_is_correct && right_is_correct
     }
 }
 

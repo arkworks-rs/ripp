@@ -89,18 +89,18 @@ pub trait InnerProduct {
         right: &[Self::RightMessage],
     ) -> Result<Self::Output, Error>;
 
-    /// A twisted inner product ⟨left', right⟩, where
-    /// left'[i] = left[i] * twist^i
+    /// A twisted inner product ⟨left, right'⟩, where
+    /// right'[i] = right[i] * twist^i
     fn twisted_inner_product(
         left: &[Self::LeftMessage],
         right: &[Self::RightMessage],
         twist: Self::Scalar,
     ) -> Result<Self::Output, Error> {
-        let left = cfg_iter!(left)
-            .zip(compute_powers(left.len(), twist))
-            .map(|(l, twist)| *l * twist)
+        let right = cfg_iter!(right)
+            .zip(compute_powers(right.len(), twist))
+            .map(|(r, twist)| *r * twist)
             .collect::<Vec<_>>();
-        Self::inner_product(&left, right)
+        Self::inner_product(left, &right)
     }
 
     fn left_msg_msm(

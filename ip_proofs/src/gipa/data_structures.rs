@@ -1,11 +1,7 @@
-use ark_std::marker::PhantomData;
-
 use ark_inner_products::InnerProduct;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use derivative::Derivative;
-use digest::Digest;
 
-use super::GIPA;
 use crate::ip_commitment::{Commitment, FinalIPCommKey, IPCommKey, IPCommitment, Scalar};
 
 #[derive(Derivative, CanonicalSerialize, CanonicalDeserialize)]
@@ -19,7 +15,8 @@ pub struct Instance<IPC: IPCommitment> {
     /// The commitment to the foregoing.
     pub commitment: Commitment<IPC>,
     /// The challenge used for performing the twist.
-    pub random_challenge: Scalar<IPC>,
+    /// Or equivalently, for taking the random linear combination
+    pub twist: Scalar<IPC>,
 }
 
 #[derive(Derivative, CanonicalSerialize, CanonicalDeserialize)]
@@ -34,74 +31,59 @@ pub struct Witness<IP: InnerProduct> {
 
 #[derive(CanonicalSerialize, CanonicalDeserialize, Derivative)]
 #[derivative(
-    Clone(bound = "IPC: IPCommitment<IP = IP>, D: Digest, IP: InnerProduct"),
-    Debug(bound = "IPC: IPCommitment<IP = IP>, D: Digest, IP: InnerProduct"),
-    PartialEq(bound = "IPC: IPCommitment<IP = IP>, D: Digest, IP: InnerProduct"),
-    Eq(bound = "IPC: IPCommitment<IP = IP>, D: Digest, IP: InnerProduct")
+    Clone(bound = "IPC: IPCommitment<IP = IP>, IP: InnerProduct"),
+    Debug(bound = "IPC: IPCommitment<IP = IP>, IP: InnerProduct"),
+    PartialEq(bound = "IPC: IPCommitment<IP = IP>, IP: InnerProduct"),
+    Eq(bound = "IPC: IPCommitment<IP = IP>, IP: InnerProduct")
 )]
-pub struct Proof<IP, IPC, D>
+pub struct Proof<IP, IPC>
 where
-    D: Digest,
     IP: InnerProduct,
     IPC: IPCommitment<IP = IP>,
 {
-    pub(crate) r_commitment_steps: Vec<(Commitment<IPC>, Commitment<IPC>)>,
-    pub(crate) r_base: (IP::LeftMessage, IP::RightMessage),
-    // The fn() is here because PhantomData<T>
-    // is Sync iff T is Sync, and these types are not all Sync
-    #[derivative(Debug = "ignore")]
-    _gipa: PhantomData<fn() -> (IP, IPC, D)>,
+    pub(crate) commitments: Vec<(Commitment<IPC>, Commitment<IPC>)>,
+    pub(crate) final_msg: (IP::LeftMessage, IP::RightMessage),
 }
 
-impl<IP, IPC, D> Proof<IP, IPC, D>
+impl<IP, IPC> Proof<IP, IPC>
 where
-    D: Digest,
     IP: InnerProduct,
     IPC: IPCommitment<IP = IP>,
 {
     pub fn new(
-        r_commitment_steps: Vec<(Commitment<IPC>, Commitment<IPC>)>,
-        r_base: (IP::LeftMessage, IP::RightMessage),
+        commitments: Vec<(Commitment<IPC>, Commitment<IPC>)>,
+        final_msg: (IP::LeftMessage, IP::RightMessage),
     ) -> Self {
         Self {
-            r_commitment_steps,
-            r_base,
-            _gipa: PhantomData,
+            commitments,
+            final_msg,
         }
     }
 }
 
 #[derive(Clone)]
-pub struct GIPAAux<IP, IPC, D>
-where
-    D: Digest,
-    IP: InnerProduct,
-    IPC: IPCommitment<IP = IP>,
-{
-    pub(crate) r_transcript: Vec<Scalar<IPC>>,
-    pub(crate) ck_base: FinalIPCommKey<IPC>,
-    _gipa: PhantomData<GIPA<IP, IPC, D>>,
+pub struct Aux<IPC: IPCommitment> {
+    pub(crate) challenges: Vec<Scalar<IPC>>,
+    pub(crate) final_ck: FinalIPCommKey<IPC>,
 }
 
-impl<IP, IPC, D> GIPAAux<IP, IPC, D>
-where
-    D: Digest,
-    IP: InnerProduct,
-    IPC: IPCommitment<IP = IP>,
-{
-    pub fn new(r_transcript: Vec<Scalar<IPC>>, ck_base: FinalIPCommKey<IPC>) -> Self {
+impl<IPC: IPCommitment> Aux<IPC> {
+    pub fn new(challenges: Vec<Scalar<IPC>>, final_ck: FinalIPCommKey<IPC>) -> Self {
         Self {
-            r_transcript,
-            ck_base,
-            _gipa: PhantomData,
+            challenges,
+            final_ck,
         }
     }
 }
 
+#[derive(Derivative)]
+#[derivative(Clone(bound = "IPC: IPCommitment"), Debug(bound = "IPC: IPCommitment"))]
 pub struct ProverKey<'a, IPC: IPCommitment> {
     pub ck: IPCommKey<'a, IPC>,
 }
 
+#[derive(Derivative)]
+#[derivative(Clone(bound = "IPC: IPCommitment"), Debug(bound = "IPC: IPCommitment"))]
 pub struct VerifierKey<'a, IPC: IPCommitment> {
     pub ck: IPCommKey<'a, IPC>,
 }

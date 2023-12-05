@@ -24,13 +24,24 @@ where
         pk: &ProverKey<'a, IPC>,
         instance: &Instance<IPC>,
         witness: &Witness<IP>,
-    ) -> Result<Proof<IP, IPC, D>, Error> {
+    ) -> Result<Proof<IP, IPC>, Error> {
+        let (proof, _) = Self::prove_helper(pk, instance, witness)?;
+        Ok(proof)
+    }
+
+    /// Used as a subroutine in more complex GIPA protocols that
+    /// support succinct verification of the final commitment key.
+    pub fn prove_helper<'a>(
+        pk: &ProverKey<'a, IPC>,
+        instance: &Instance<IPC>,
+        witness: &Witness<IP>,
+    ) -> Result<(Proof<IP, IPC>, Aux<IPC>), Error> {
         let Witness { left, right } = witness;
         let Instance {
             size,
             output,
             commitment: mut com,
-            random_challenge: c,
+            twist,
         } = instance;
 
         if !left.len().is_power_of_two() {
@@ -47,55 +58,36 @@ where
             "left and right vectors are of unequal length"
         );
         debug_assert_eq!(
-            &IP::twisted_inner_product(left, right, *c)?,
+            &IP::twisted_inner_product(left, right, *twist)?,
             output,
             "invalid witness"
         );
         debug_assert!(com.cm_ip.is_none());
 
         let mut left = left.to_vec();
+        let mut right = right.to_vec();
         let mut ck = pk.ck.clone();
-        if !c.is_one() {
-            let powers_of_c = compute_powers(*size, *c);
-            cfg_iter_mut!(left)
-                .zip(&powers_of_c)
-                .for_each(|(l, c)| *l *= *c);
-            ck.twist_in_place(c.inverse().unwrap());
+        if !twist.is_one() {
+            cfg_iter_mut!(right)
+                .zip(compute_powers(*size, *twist))
+                .for_each(|(r, c)| *r *= c);
+            ck.twist_in_place(twist.inverse().unwrap());
         }
 
         com += IPC::commit_only_ip(&ck, *output)?;
 
-        if !IPC::verify(&ck, &left, right, &com)? {
+        if !IPC::verify(&ck, &left, &right, &com)? {
             return Err(Box::new(InnerProductArgumentError::InnerProductInvalid));
         }
-
-        let (proof, _) = Self::prove_with_aux(&ck, &left, right)?;
-        Ok(proof)
-    }
-
-    pub fn prove_with_aux(
-        ck: &IPCommKey<IPC>,
-        left: &[IP::LeftMessage],
-        right: &[IP::RightMessage],
-    ) -> Result<(Proof<IP, IPC, D>, GIPAAux<IP, IPC, D>), Error> {
-        Self::_prove(ck, left.to_vec(), right.to_vec())
-    }
-
-    // Returns vector of recursive commitments and transcripts in reverse order
-    fn _prove<'a>(
-        ck: &IPCommKey<'a, IPC>,
-        mut left: Vec<IP::LeftMessage>,
-        mut right: Vec<IP::RightMessage>,
-    ) -> Result<(Proof<IP, IPC, D>, GIPAAux<IP, IPC, D>), Error> {
         let mut ck = ck.clone();
-        let mut r_commitment_steps = Vec::new();
-        let mut r_transcript: Vec<Scalar<IPC>> = Vec::new();
+        let mut commitments = Vec::new();
+        let mut challenges: Vec<Scalar<IPC>> = Vec::new();
         assert!(left.len().is_power_of_two());
-        let (m_base, ck_base) = 'recurse: loop {
+        let (final_msg, final_ck) = 'recurse: loop {
             let recurse = start_timer!(|| format!("Recurse round size {}", left.len()));
             if left.len() == 1 {
                 // base case
-                break 'recurse ((left[0].clone(), right[0].clone()), ck.to_owned());
+                break 'recurse ((left[0], right[0]), ck.to_owned());
             } else {
                 // recursive step
                 // Recurse with problem of half size
@@ -117,8 +109,8 @@ where
 
                 // Fiat-Shamir challenge
                 let default_transcript = Scalar::<IPC>::one();
-                let transcript = r_transcript.last().unwrap_or(&default_transcript);
-                let (c, c_inv) = Self::compute_challenge(transcript, &com_1, &com_2)?;
+                let prev_challenge = challenges.last().unwrap_or(&default_transcript);
+                let (c, c_inv) = Self::compute_challenge(prev_challenge, &com_1, &com_2)?;
 
                 // Set up values for next step of recursion
                 let rescale_m1 = start_timer!(|| "Rescale M1");
@@ -137,16 +129,16 @@ where
 
                 ck = IPCommKey::fold(&ck_l, &ck_r, &c_inv, &c)?;
 
-                r_commitment_steps.push((com_1, com_2));
-                r_transcript.push(c);
+                commitments.push((com_1, com_2));
+                challenges.push(c);
                 end_timer!(recurse);
             }
         };
-        r_transcript.reverse();
-        r_commitment_steps.reverse();
+        challenges.reverse();
+        commitments.reverse();
         Ok((
-            Proof::new(r_commitment_steps, m_base),
-            GIPAAux::new(r_transcript, ck_base.try_into().unwrap()),
+            Proof::new(commitments, final_msg),
+            Aux::new(challenges, final_ck.try_into().unwrap()),
         ))
     }
 }

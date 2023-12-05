@@ -15,6 +15,8 @@ use ark_std::{
 };
 use derivative::Derivative;
 
+use super::kzg::EvaluationProof;
+
 use crate::ip_commitment::IPCommKey;
 
 #[derive(Clone, Debug, Copy, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
@@ -214,6 +216,20 @@ pub struct RightKey<E: Pairing> {
 #[derive(Derivative, CanonicalSerialize, CanonicalDeserialize)]
 #[derivative(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct InnerProductKey<E: Pairing>(PhantomData<E>);
+
+/// Proof of correctness of the final commitment key.
+#[derive(Derivative, CanonicalSerialize, CanonicalDeserialize)]
+#[derivative(
+    Clone(bound = "E: Pairing"),
+    Copy(bound = "E: Pairing"),
+    PartialEq(bound = "E: Pairing"),
+    Eq(bound = "E: Pairing"),
+    Debug(bound = "E: Pairing")
+)]
+pub struct FinalCommKeyProof<E: Pairing> {
+    pub left_proof: EvaluationProof<E::G2Affine>,
+    pub right_proof: EvaluationProof<E::G1Affine>,
+}
 
 /************************************************/
 /************************************************/

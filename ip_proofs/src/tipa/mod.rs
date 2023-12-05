@@ -1,19 +1,26 @@
+use ark_ec::pairing::Pairing;
+use ark_ff::Field;
 use ark_inner_products::{InnerProduct, PairingInnerProduct};
+use ark_serialize::CanonicalSerialize;
 use ark_std::marker::PhantomData;
+use digest::Digest;
 
 // pub mod structured_scalar_message;
 pub mod data_structures;
-pub mod kzg;
 
 pub mod prover;
 pub mod setup;
 pub mod verifier;
 
-use crate::ip_commitment::snarkpack::TIPPCommitment;
-use data_structures::{Proof, ProverKey, VerifierKey};
+use crate::{
+    ip_commitment::{snarkpack::TIPPCommitment, FinalIPCommKey},
+    Error,
+};
+pub use data_structures::{Proof, ProverKey, VerifierKey};
 
 type IP<P> = PairingInnerProduct<P>;
 type IPC<P> = TIPPCommitment<P>;
+
 type LeftMessage<P> = <IP<P> as InnerProduct>::LeftMessage;
 type RightMessage<P> = <IP<P> as InnerProduct>::RightMessage;
 type Commitment<P> = crate::ip_commitment::Commitment<TIPPCommitment<P>>;
@@ -27,26 +34,50 @@ pub struct TIPA<P, D> {
     _digest: PhantomData<D>,
 }
 
+impl<P: Pairing, D: Digest> TIPA<P, D> {
+    pub fn compute_kzg_challenge<'a>(
+        final_ck: &FinalIPCommKey<TIPPCommitment<P>>,
+        challenges: &[P::ScalarField],
+    ) -> Result<P::ScalarField, Error> {
+        // KZG challenge point
+        let mut bytes = Vec::new();
+        challenges[0].serialize_uncompressed(&mut bytes)?;
+        final_ck.ck_a.serialize_uncompressed(&mut bytes)?;
+        final_ck.ck_b.serialize_uncompressed(&mut bytes)?;
+
+        let mut counter_nonce: usize = 0;
+        let c = loop {
+            let mut hash_input = bytes.clone();
+            hash_input.extend_from_slice(&counter_nonce.to_be_bytes()[..]);
+            if let Some(c) = P::ScalarField::from_random_bytes(&D::digest(&hash_input)) {
+                break c;
+            };
+            counter_nonce += 1;
+        };
+        Ok(c)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::ip_commitment::pairing::PairingCommitment;
+    use crate::{
+        gipa::{Instance, Witness},
+        ip_commitment::IPCommitment,
+    };
 
     use super::*;
-    use ark_bls12_381::Bls12_381;
-    use ark_ec::pairing::{Pairing, PairingOutput};
+    use ark_bls12_381::{Bls12_381, Fr};
+    use ark_ec::pairing::Pairing;
     use ark_ff::Field;
-    use ark_std::rand::{rngs::StdRng, SeedableRng};
-    use blake2::Blake2b;
+    use ark_std::UniformRand;
+    use blake2::Blake2b512;
 
     use ark_dh_commitments::{
         afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
-        identity::IdentityCommitment,
         pedersen::PedersenCommitment,
         random_generators,
     };
-    use ark_inner_products::{
-        InnerProduct, MSMInnerProduct, PairingInnerProduct, ScalarInnerProduct,
-    };
+    use ark_inner_products::{InnerProduct, PairingInnerProduct};
 
     pub fn structured_scalar_power<F: Field>(num: usize, s: &F) -> Vec<F> {
         let mut powers = vec![F::one()];
@@ -66,130 +97,28 @@ mod tests {
     #[test]
     fn pairing_inner_product_test() {
         type IP = PairingInnerProduct<Bls12_381>;
-        type IPC = PairingCommitment<Bls12_381>;
-        type PairingTIPA = TIPA<Bls12_381, Blake2b>;
+        type IPC = TIPPCommitment<Bls12_381>;
+        type PairingTIPA = TIPA<Bls12_381, Blake2b512>;
 
         let mut rng = ark_std::test_rng();
-        let (srs, ck_t) = PairingTIPA::setup(TEST_SIZE, &mut rng).unwrap();
-        let ck = srs.ck();
-        let (ck_a, ck_b) = srs.get_commitment_keys();
-        let v_srs = srs.get_verifier_key();
-        let m_a = random_generators(&mut rng, TEST_SIZE);
-        let m_b = random_generators(&mut rng, TEST_SIZE);
-        let com = IPC::commit();
-        let t = vec![IP::inner_product(&m_a, &m_b).unwrap()];
-        let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
+        let (pk, vk) = PairingTIPA::setup(TEST_SIZE, &mut rng).unwrap();
+        let left = random_generators(&mut rng, TEST_SIZE);
+        let right = random_generators(&mut rng, TEST_SIZE);
 
-        let proof = PairingTIPA::prove(&srs, (&m_a, &m_b), (&ck_a, &ck_b, &ck_t)).unwrap();
+        let commitment = IPC::commit_with_ip(&pk.pk.ck, &left, &right, None).unwrap();
+        let twist = Fr::rand(&mut rng);
+        let output = IP::twisted_inner_product(&left, &right, twist).unwrap();
 
-        assert!(PairingTIPA::verify(&v_srs, &ck_t, (&com_a, &com_b, &com_t), &proof).unwrap());
-    }
+        let instance = Instance {
+            size: TEST_SIZE,
+            output,
+            commitment,
+            twist,
+        };
+        let witness = Witness { left, right };
 
-    #[test]
-    fn multiexponentiation_inner_product_test() {
-        type IP = MSMInnerProduct<<Bls12_381 as Pairing>::G1>;
-        type IPC =
-            IdentityCommitment<<Bls12_381 as Pairing>::G1, <Bls12_381 as Pairing>::ScalarField>;
-        type MultiExpTIPA = TIPA<Bls12_381, Blake2b>;
+        let proof = PairingTIPA::prove(&pk, &instance, &witness).unwrap();
 
-        let mut rng = ark_std::test_rng();
-        let (srs, ck_t) = MultiExpTIPA::setup(TEST_SIZE, &mut rng).unwrap();
-        let (ck_a, ck_b) = srs.get_commitment_keys();
-        let v_srs = srs.get_verifier_key();
-        let m_a = random_generators(&mut rng, TEST_SIZE);
-        let mut m_b = Vec::new();
-        for _ in 0..TEST_SIZE {
-            m_b.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
-        }
-        let com_a = GC1::commit(&ck_a, &m_a).unwrap();
-        let com_b = SC1::commit(&ck_b, &m_b).unwrap();
-        let t = vec![IP::inner_product(&m_a, &m_b).unwrap()];
-        let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
-
-        let proof = MultiExpTIPA::prove(&srs, (&m_a, &m_b), (&ck_a, &ck_b, &ck_t)).unwrap();
-
-        assert!(MultiExpTIPA::verify(&v_srs, &ck_t, (&com_a, &com_b, &com_t), &proof).unwrap());
-    }
-
-    #[test]
-    fn scalar_inner_product_test() {
-        type IP = ScalarInnerProduct<<Bls12_381 as Pairing>::ScalarField>;
-        type IPC = IdentityCommitment<
-            <Bls12_381 as Pairing>::ScalarField,
-            <Bls12_381 as Pairing>::ScalarField,
-        >;
-        type ScalarTIPA = TIPA<Bls12_381, Blake2b>;
-
-        let mut rng = StdRng::seed_from_u64(0u64);
-        let (srs, ck_t) = ScalarTIPA::setup(TEST_SIZE, &mut rng).unwrap();
-        let (ck_a, ck_b) = srs.get_commitment_keys();
-        let v_srs = srs.get_verifier_key();
-        let mut m_a = Vec::new();
-        let mut m_b = Vec::new();
-        for _ in 0..TEST_SIZE {
-            m_a.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
-            m_b.push(<Bls12_381 as Pairing>::ScalarField::rand(&mut rng));
-        }
-        let com_a = SC2::commit(&ck_a, &m_a).unwrap();
-        let com_b = SC1::commit(&ck_b, &m_b).unwrap();
-        let t = vec![IP::inner_product(&m_a, &m_b).unwrap()];
-        let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
-
-        let proof = ScalarTIPA::prove(&srs, (&m_a, &m_b), (&ck_a, &ck_b, &ck_t)).unwrap();
-
-        assert!(ScalarTIPA::verify(&v_srs, &ck_t, (&com_a, &com_b, &com_t), &proof).unwrap());
-    }
-
-    #[test]
-    fn pairing_inner_product_with_srs_shift_test() {
-        type IP = PairingInnerProduct<Bls12_381>;
-        type IPC =
-            IdentityCommitment<PairingOutput<Bls12_381>, <Bls12_381 as Pairing>::ScalarField>;
-        type PairingTIPA = TIPA<Bls12_381, Blake2b>;
-
-        let mut rng = ark_std::test_rng();
-        let (srs, ck_t) = PairingTIPA::setup(TEST_SIZE, &mut rng).unwrap();
-        let (ck_a, ck_b) = srs.get_commitment_keys();
-        let v_srs = srs.get_verifier_key();
-
-        let m_a = random_generators(&mut rng, TEST_SIZE);
-        let m_b = random_generators(&mut rng, TEST_SIZE);
-        let com_a = GC1::commit(&ck_a, &m_a).unwrap();
-        let com_b = GC2::commit(&ck_b, &m_b).unwrap();
-
-        let r_scalar = <<Bls12_381 as Pairing>::ScalarField>::rand(&mut rng);
-        let r_vec = structured_scalar_power(TEST_SIZE, &r_scalar);
-        let m_a_r = m_a
-            .iter()
-            .zip(&r_vec)
-            .map(|(&a, r)| a * r)
-            .collect::<Vec<<Bls12_381 as Pairing>::G1>>();
-        let ck_a_r = ck_a
-            .iter()
-            .zip(&r_vec)
-            .map(|(&ck, r)| ck * r.inverse().unwrap())
-            .collect::<Vec<<Bls12_381 as Pairing>::G2>>();
-
-        let t = vec![IP::inner_product(&m_a_r, &m_b).unwrap()];
-        let com_t = IPC::commit(&vec![ck_t.clone()], &t).unwrap();
-
-        assert_eq!(com_a, IP::inner_product(&m_a_r, &ck_a_r).unwrap());
-
-        let proof = PairingTIPA::prove_with_srs_shift(
-            &srs,
-            (&m_a_r, &m_b),
-            (&ck_a_r, &ck_b, &ck_t),
-            &r_scalar,
-        )
-        .unwrap();
-
-        assert!(PairingTIPA::verify_with_srs_shift(
-            &v_srs,
-            &ck_t,
-            (&com_a, &com_b, &com_t),
-            &proof,
-            &r_scalar
-        )
-        .unwrap());
+        assert!(PairingTIPA::verify(&vk, &instance, &proof).unwrap());
     }
 }

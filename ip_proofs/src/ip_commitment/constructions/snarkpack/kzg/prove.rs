@@ -21,11 +21,11 @@ pub(crate) fn prove_commitment_w<G: AffineRepr>(
     g_alpha_powers: &[G],
     g_beta_powers: &[G],
     challenges: &[G::ScalarField],
-    r: G::ScalarField,
+    twist: G::ScalarField,
     point: G::ScalarField,
 ) -> Result<EvaluationProof<G>, Error> {
     // this computes f(X) = \prod (1 + x (rX)^{2^j})
-    let f = ipa_polynomial(challenges, r);
+    let f = ipa_polynomial(challenges, twist);
     // this computes f_w(X) = X^n * f(X) - it simply shifts all coefficients to by n
     let fw_coeffs = [vec![G::ScalarField::ZERO; f.len()], f.coeffs].concat();
     let fw = DensePolynomial::from_coefficients_vec(fw_coeffs);

@@ -3,11 +3,10 @@ use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::borrow::Cow;
 use derivative::Derivative;
-use digest::Digest;
 
 use crate::{
     gipa::Proof as GIPAProof,
-    ip_commitment::snarkpack::{LeftKey, RightKey},
+    ip_commitment::snarkpack::{FinalCommKeyProof, LeftKey, RightKey, TIPPCommitment},
     ip_commitment::{FinalIPCommKey, IPCommKey},
 };
 
@@ -18,7 +17,7 @@ use super::{IP, IPC};
 #[derive(Clone)]
 pub struct ProverKey<'a, P: Pairing> {
     pub supported_size: usize,
-    pub ck: IPCommKey<'a, IPC<P>>,
+    pub pk: crate::gipa::ProverKey<'a, TIPPCommitment<P>>,
     pub g_alpha_powers: Vec<P::G1Affine>,
     pub g_beta_powers: Vec<P::G1Affine>,
     pub h_alpha_powers: Vec<P::G2Affine>,
@@ -127,11 +126,13 @@ pub fn specialize<'b, E: Pairing>(
 
     let pk = ProverKey {
         supported_size,
-        ck: IPCommKey::new(
-            Cow::Owned(ck_a),
-            Cow::Owned(ck_b),
-            Cow::Owned(PlaceholderKey),
-        ),
+        pk: crate::gipa::ProverKey {
+            ck: IPCommKey::new(
+                Cow::Owned(ck_a),
+                Cow::Owned(ck_b),
+                Cow::Owned(PlaceholderKey),
+            ),
+        },
         g_alpha_powers,
         g_beta_powers,
         h_alpha_powers,
@@ -146,13 +147,12 @@ pub fn specialize<'b, E: Pairing>(
 }
 
 #[derive(CanonicalSerialize, CanonicalDeserialize, Derivative)]
-#[derivative(Clone(bound = "P: Pairing, D: Digest"))]
-pub struct Proof<P, D>
+#[derivative(Clone(bound = "P: Pairing"))]
+pub struct Proof<P>
 where
-    D: Digest,
     P: Pairing,
 {
-    pub gipa_proof: GIPAProof<IP<P>, IPC<P>, D>,
+    pub gipa_proof: GIPAProof<IP<P>, IPC<P>>,
     pub final_ck: FinalIPCommKey<IPC<P>>,
-    pub final_ck_proof: (P::G2, P::G1),
+    pub final_ck_proof: FinalCommKeyProof<P>,
 }

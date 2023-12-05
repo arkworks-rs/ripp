@@ -1,7 +1,10 @@
 use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup};
 use ark_ff::{Field, Zero};
 
-use crate::tipa::VerifierKey;
+use crate::{
+    ip_commitment::snarkpack::{LeftKey, RightKey},
+    tipa::VerifierKey,
+};
 
 use super::{evaluate_ipa_polynomial, EvaluationProof};
 
@@ -12,21 +15,20 @@ use super::{evaluate_ipa_polynomial, EvaluationProof};
 pub fn verify_kzg_v<E: Pairing>(
     vk: &VerifierKey<E>,
     // These are the KZG commitments that arise from the final commitment key
-    final_vkey: &(E::G2Affine, E::G2Affine),
-    proof: &EvaluationProof<E::G2Affine>,
+    &LeftKey { v_1, v_2 }: &LeftKey<E>,
+    &EvaluationProof(proof_1, proof_2): &EvaluationProof<E::G2Affine>,
     challenges: &[E::ScalarField],
     point: E::ScalarField,
 ) -> bool {
     // f_v(z)
     let v_poly_at_point = evaluate_ipa_polynomial(challenges, point, E::ScalarField::ONE);
+    let [v_1, v_2]: [E::G2Affine; 2] = E::G2::normalize_batch(&[v_1, v_2]).try_into().unwrap();
 
-    let (v1, v2) = *final_vkey;
-    let EvaluationProof(proof_1, proof_2) = *proof;
     // e(g, C_f * h^{-y}) == e(v1 * g^{-x}, \pi) = 1
-    let check1 = kzg_check_v::<E>(vk, vk.g_alpha, point, v_poly_at_point, v1, proof_1);
+    let check1 = kzg_check_v::<E>(vk, vk.g_alpha, point, v_poly_at_point, v_1, proof_1);
 
     // e(g, C_f * h^{-y}) == e(v2 * g^{-x}, \pi) = 1
-    let check2 = kzg_check_v::<E>(vk, vk.g_beta, point, v_poly_at_point, v2, proof_2);
+    let check2 = kzg_check_v::<E>(vk, vk.g_beta, point, v_poly_at_point, v_2, proof_2);
     check1 & check2
 }
 
@@ -54,28 +56,23 @@ fn kzg_check_v<E: Pairing>(
 pub fn verify_kzg_w<E: Pairing>(
     vk: &VerifierKey<E>,
     // These are the KZG commitments that arise from the final commitment key
-    final_wkey: &(E::G1Affine, E::G1Affine),
-    proof: &EvaluationProof<E::G1Affine>,
+    &RightKey { w_1, w_2 }: &RightKey<E>,
+    &EvaluationProof(proof_1, proof_2): &EvaluationProof<E::G1Affine>,
     challenges: &[E::ScalarField],
+    twist_inv: E::ScalarField,
     point: E::ScalarField,
-    r_shift: E::ScalarField,
 ) -> bool {
     // compute f(z) and z^n and then combine into f_w(z) = z^n * f(z)
-    let fz = evaluate_ipa_polynomial(challenges, point, r_shift);
+    let fz = evaluate_ipa_polynomial(challenges, point, twist_inv);
     let zn = point.pow(&[vk.supported_size as u64]);
     let w_poly_at_point = fz * zn;
-
-    // f_v(z)
-    let v_poly_at_point = evaluate_ipa_polynomial(challenges, point, E::ScalarField::ONE);
-
-    let (w1, w2) = *final_wkey;
-    let EvaluationProof(proof_1, proof_2) = *proof;
+    let [w_1, w_2]: [E::G1Affine; 2] = E::G1::normalize_batch(&[w_1, w_2]).try_into().unwrap();
 
     // e(C_f * g^{-y}, h) = e(\pi, w1 * h^{-x})
-    let check1 = kzg_check_w::<E>(vk, vk.h_alpha, point, w_poly_at_point, w1, proof_1);
+    let check1 = kzg_check_w::<E>(vk, vk.h_alpha, point, w_poly_at_point, w_1, proof_1);
 
     // e(C_f * g^{-y}, h) = e(\pi, w2 * h^{-x})
-    let check2 = kzg_check_w::<E>(vk, vk.h_beta, point, w_poly_at_point, w2, proof_2);
+    let check2 = kzg_check_w::<E>(vk, vk.h_beta, point, w_poly_at_point, w_2, proof_2);
     check1 & check2
 }
 
