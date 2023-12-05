@@ -28,19 +28,6 @@ pub struct ProverKey<'a, P: Pairing> {
     pub h_beta: P::G2Affine,
 }
 
-#[derive(Clone)]
-pub struct VerifierKey<P: Pairing> {
-    pub supported_size: usize,
-    pub g: P::G1Affine,
-    pub h: P::G2Affine,
-    pub neg_g: P::G1Affine,
-    pub neg_h: P::G2Affine,
-    pub g_alpha: P::G1Affine,
-    pub g_beta: P::G1Affine,
-    pub h_alpha: P::G2Affine,
-    pub h_beta: P::G2Affine,
-}
-
 //TODO: Change SRS to return reference iterator - requires changes to TIPA and GIPA signatures
 impl<P: Pairing> ProverKey<'_, P> {
     pub fn vk(&self) -> VerifierKey<P> {
@@ -61,6 +48,19 @@ impl<P: Pairing> ProverKey<'_, P> {
             h_beta: self.h_beta,
         }
     }
+}
+
+#[derive(Clone)]
+pub struct VerifierKey<P: Pairing> {
+    pub supported_size: usize,
+    pub g: P::G1Affine,
+    pub h: P::G2Affine,
+    pub neg_g: P::G1Affine,
+    pub neg_h: P::G2Affine,
+    pub g_alpha: P::G1Affine,
+    pub g_beta: P::G1Affine,
+    pub h_alpha: P::G2Affine,
+    pub h_beta: P::G2Affine,
 }
 
 /// Returns [`ProverKey`] and [`VerifierKey`] specialized to a specific number of
