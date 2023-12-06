@@ -76,6 +76,7 @@ where
 
         com += IPC::commit_only_ip(&ck, *output)?;
 
+        #[cfg(debug_assertions)]
         if !IPC::verify(&ck, &left, &right, &com)? {
             return Err(Box::new(InnerProductArgumentError::InnerProductInvalid));
         }
