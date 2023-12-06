@@ -105,6 +105,20 @@ pub trait IPCommitment: Sized {
         Self::commit_with_ip(ck, l, r, ip)
     }
 
+    fn commit_only_left<'a>(
+        ck: &IPCommKey<'a, Self>,
+        l: &[LeftMessage<Self>],
+    ) -> Result<Commitment<Self>, Error> {
+        Self::commit_with_ip(ck, l, &[], None)
+    }
+
+    fn commit_only_right<'a>(
+        ck: &IPCommKey<'a, Self>,
+        r: &[RightMessage<Self>],
+    ) -> Result<Commitment<Self>, Error> {
+        Self::commit_with_ip(ck, &[], r, None)
+    }
+
     /// Commit *only* to the inner product.
     fn commit_only_ip<'a>(
         ck: &IPCommKey<'a, Self>,
