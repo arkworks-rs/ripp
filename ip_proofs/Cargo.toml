@@ -40,5 +40,5 @@ blake2 = "0.10"
 
 [features]
 default = [ "parallel" ]
-parallel = [ "rayon", "ark-ec/parallel", "ark-ff/parallel", "ark-poly/parallel", "ark-std/parallel", "ark-groth16/parallel" ]
+parallel = [ "rayon", "ark-ec/parallel", "ark-ff/parallel", "ark-poly/parallel", "ark-std/parallel", "ark-groth16/parallel", "ark-inner-products/parallel", "ark-dh-commitments/parallel" ]
 print-trace = [ "ark-std/print-trace" ]
