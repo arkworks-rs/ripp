@@ -88,6 +88,7 @@ where
             let recurse = start_timer!(|| format!("Recurse round size {}", left.len()));
             if left.len() == 1 {
                 // base case
+                end_timer!(recurse);
                 break 'recurse ((left[0], right[0]), ck.to_owned());
             } else {
                 // recursive step
