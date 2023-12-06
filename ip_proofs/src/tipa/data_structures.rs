@@ -32,12 +32,14 @@ pub struct ProverKey<'a, P: Pairing> {
 impl<P: Pairing> ProverKey<'_, P> {
     pub fn vk(&self) -> VerifierKey<P> {
         use core::ops::Neg;
-        let g = self.g_alpha_powers[0].clone();
-        let h = self.h_alpha_powers[0].clone();
+        let g = P::G1Affine::generator();
+        let h = P::G2Affine::generator();
         let neg_g = g.into_group().neg().into_affine();
         let neg_h = h.into_group().neg().into_affine();
+        let ck_for_ip = self.pk.ck.trim_for_only_ip();
         VerifierKey {
             supported_size: self.supported_size,
+            ck_for_ip,
             g,
             h,
             neg_g,
@@ -53,6 +55,7 @@ impl<P: Pairing> ProverKey<'_, P> {
 #[derive(Clone)]
 pub struct VerifierKey<P: Pairing> {
     pub supported_size: usize,
+    pub ck_for_ip: IPCommKey<'static, TIPPCommitment<P>>,
     pub g: P::G1Affine,
     pub h: P::G2Affine,
     pub neg_g: P::G1Affine,
@@ -69,10 +72,10 @@ pub struct VerifierKey<P: Pairing> {
 /// # Panics
 /// * If the number of proofs is not a power of two, it
 /// * If the number of proofs is more than half the SRS size.
-pub fn specialize<'b, E: Pairing>(
+pub fn specialize<'a, E: Pairing>(
     srs: GenericSRS<E>,
     num_proofs: usize,
-) -> (ProverKey<'b, E>, VerifierKey<E>) {
+) -> (ProverKey<'a, E>, VerifierKey<E>) {
     assert!(num_proofs.is_power_of_two());
     let supported_size = num_proofs;
     let tn = 2 * num_proofs; // size of the CRS we need
@@ -93,36 +96,27 @@ pub fn specialize<'b, E: Pairing>(
     let h_alpha_powers = srs.h_alpha_powers[h_low..h_up].to_vec();
     let h_beta_powers = srs.h_beta_powers[h_low..h_up].to_vec();
 
-    println!(
-        "\nPROVER SRS -- nun_proofs {}, tn {}, alpha_power_table {}\n",
-        num_proofs,
-        tn,
-        g_alpha_powers.len()
-    );
-
-    let v1 = srs.h_alpha_powers[h_low..h_up].to_vec();
-    let v2 = srs.h_beta_powers[h_low..h_up].to_vec();
-    let ck_a: Vec<_> = v1
-        .into_iter()
-        .zip(v2.into_iter())
-        .map(|(v_1, v_2)| LeftKey {
+    let ck_a: Vec<_> = h_alpha_powers
+        .iter()
+        .zip(&h_beta_powers)
+        .map(|(&v_1, &v_2)| LeftKey {
             v_1: v_1.into(),
             v_2: v_2.into(),
         })
         .collect();
+    assert_eq!(ck_a.len(), supported_size);
 
     // however, here we only need the "right" shifted bases for the
     // commitment scheme.
-    let w1 = srs.g_alpha_powers[n..g_up].to_vec();
-    let w2 = srs.g_beta_powers[n..g_up].to_vec();
-    let ck_b: Vec<_> = w1
-        .into_iter()
-        .zip(w2.into_iter())
-        .map(|(w_1, w_2)| RightKey {
+    let ck_b: Vec<_> = g_alpha_powers[n..g_up]
+        .iter()
+        .zip(&g_beta_powers[n..g_up])
+        .map(|(&w_1, &w_2)| RightKey {
             w_1: w_1.into(),
             w_2: w_2.into(),
         })
         .collect();
+    assert_eq!(ck_b.len(), supported_size);
 
     let pk = ProverKey {
         supported_size,
@@ -137,10 +131,10 @@ pub fn specialize<'b, E: Pairing>(
         g_beta_powers,
         h_alpha_powers,
         h_beta_powers,
-        g_alpha: srs.g_alpha_powers[0].clone(),
-        g_beta: srs.g_beta_powers[0].clone(),
-        h_alpha: srs.h_alpha_powers[0].clone(),
-        h_beta: srs.h_beta_powers[0].clone(),
+        g_alpha: srs.g_alpha_powers[1].clone(),
+        g_beta: srs.g_beta_powers[1].clone(),
+        h_alpha: srs.h_alpha_powers[1].clone(),
+        h_beta: srs.h_beta_powers[1].clone(),
     };
     let vk = pk.vk();
     (pk, vk)
@@ -148,10 +142,7 @@ pub fn specialize<'b, E: Pairing>(
 
 #[derive(CanonicalSerialize, CanonicalDeserialize, Derivative)]
 #[derivative(Clone(bound = "P: Pairing"))]
-pub struct Proof<P>
-where
-    P: Pairing,
-{
+pub struct Proof<P: Pairing> {
     pub gipa_proof: GIPAProof<IP<P>, IPC<P>>,
     pub final_ck: FinalIPCommKey<IPC<P>>,
     pub final_ck_proof: FinalCommKeyProof<P>,

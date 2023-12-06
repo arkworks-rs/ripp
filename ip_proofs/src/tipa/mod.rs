@@ -1,6 +1,6 @@
 use ark_ec::pairing::Pairing;
 use ark_ff::Field;
-use ark_inner_products::{InnerProduct, PairingInnerProduct};
+use ark_inner_products::PairingInnerProduct;
 use ark_serialize::CanonicalSerialize;
 use ark_std::marker::PhantomData;
 use digest::Digest;
@@ -20,10 +20,6 @@ pub use data_structures::{Proof, ProverKey, VerifierKey};
 
 type IP<P> = PairingInnerProduct<P>;
 type IPC<P> = TIPPCommitment<P>;
-
-type LeftMessage<P> = <IP<P> as InnerProduct>::LeftMessage;
-type RightMessage<P> = <IP<P> as InnerProduct>::RightMessage;
-type Commitment<P> = crate::ip_commitment::Commitment<TIPPCommitment<P>>;
 
 //TODO: Could generalize: Don't need TIPA over G1 and G2, would work with G1 and G1 or over different pairing engines
 pub trait TIPACompatibleSetup {}
@@ -67,30 +63,11 @@ mod tests {
 
     use super::*;
     use ark_bls12_381::{Bls12_381, Fr};
-    use ark_ec::pairing::Pairing;
-    use ark_ff::Field;
     use ark_std::UniformRand;
     use blake2::Blake2b512;
 
-    use ark_dh_commitments::{
-        afgho16::{AFGHOCommitmentG1, AFGHOCommitmentG2},
-        pedersen::PedersenCommitment,
-        random_generators,
-    };
+    use ark_dh_commitments::random_generators;
     use ark_inner_products::{InnerProduct, PairingInnerProduct};
-
-    pub fn structured_scalar_power<F: Field>(num: usize, s: &F) -> Vec<F> {
-        let mut powers = vec![F::one()];
-        for i in 1..num {
-            powers.push(powers[i - 1] * s);
-        }
-        powers
-    }
-
-    type GC1 = AFGHOCommitmentG1<Bls12_381>;
-    type GC2 = AFGHOCommitmentG2<Bls12_381>;
-    type SC1 = PedersenCommitment<<Bls12_381 as Pairing>::G1>;
-    type SC2 = PedersenCommitment<<Bls12_381 as Pairing>::G2>;
 
     const TEST_SIZE: usize = 8;
 

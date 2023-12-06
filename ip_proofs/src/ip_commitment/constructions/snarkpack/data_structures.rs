@@ -5,6 +5,7 @@ use ark_ec::{
     AffineRepr, CurveGroup, Group,
 };
 use ark_ff::PrimeField;
+use ark_inner_products::compute_powers;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{
     borrow::Cow,
@@ -181,17 +182,11 @@ pub(crate) fn structured_generators_scalar_power<G: CurveGroup>(
     s: G::ScalarField,
 ) -> Vec<G::Affine> {
     assert!(num > 0);
-    let mut powers_of_scalar = Vec::with_capacity(num);
-    let mut pow_s = G::ScalarField::one();
-    for _ in 0..num {
-        powers_of_scalar.push(pow_s);
-        pow_s *= s;
-    }
-    let scalar_bits = G::ScalarField::MODULUS_BIT_SIZE as usize;
+    let powers_of_s = compute_powers(num, s);
+    let scalar_size = G::ScalarField::MODULUS_BIT_SIZE as usize;
     let window_size = FixedBase::get_mul_window_size(num);
-    let g_table = FixedBase::get_window_table::<G>(scalar_bits, window_size, g);
-    let powers_of_g =
-        FixedBase::msm::<G>(scalar_bits, window_size, &g_table, &powers_of_scalar[..]);
+    let g_table = FixedBase::get_window_table::<G>(scalar_size, window_size, g);
+    let powers_of_g = FixedBase::msm::<G>(scalar_size, window_size, &g_table, &powers_of_s[..]);
     G::normalize_batch(&powers_of_g)
 }
 

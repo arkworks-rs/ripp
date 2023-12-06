@@ -104,6 +104,14 @@ impl<'a, IPC: IPCommitment> IPCommKey<'a, IPC> {
             ck_t: Cow::Owned(ck_1.ck_t.clone().into_owned()),
         })
     }
+
+    pub fn trim_for_only_ip(&self) -> IPCommKey<'static, IPC> {
+        IPCommKey {
+            ck_a: Cow::Owned(vec![]),
+            ck_b: Cow::Owned(vec![]),
+            ck_t: Cow::Owned(self.ck_t.clone().into_owned()),
+        }
+    }
 }
 
 /// A final IP comm key is an IP comm key of length 1

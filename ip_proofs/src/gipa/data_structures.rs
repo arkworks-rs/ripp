@@ -82,6 +82,14 @@ pub struct ProverKey<'a, IPC: IPCommitment> {
     pub ck: IPCommKey<'a, IPC>,
 }
 
+impl<'a, IPC: IPCommitment> ProverKey<'_, IPC> {
+    pub fn vk(&self) -> VerifierKey<'_, IPC> {
+        VerifierKey {
+            ck: self.ck.clone(),
+        }
+    }
+}
+
 #[derive(Derivative)]
 #[derivative(Clone(bound = "IPC: IPCommitment"), Debug(bound = "IPC: IPCommitment"))]
 pub struct VerifierKey<'a, IPC: IPCommitment> {

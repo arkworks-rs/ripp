@@ -20,16 +20,34 @@ where
     ) -> Result<Proof<P>, Error> {
         let (gipa_proof, aux) = <GIPA<IP<P>, IPC<P>, D>>::prove_helper(&pk.pk, instance, witness)?;
         let final_ck = aux.final_ck;
-        // Prove final commitment keys are wellformed
+
         let kzg_point = Self::compute_kzg_challenge(&final_ck, &aux.challenges)?;
 
         let final_ck_proof =
             TIPPCommitment::prove_final_ck(&pk, &aux.challenges, instance.twist, kzg_point);
+        debug_assert!(GIPA::<IP<P>, IPC<P>, D>::verify(
+            &pk.pk.vk(),
+            instance,
+            &gipa_proof
+        )?);
+        debug_assert_eq!(
+            final_ck,
+            GIPA::<IP<P>, IPC<P>, D>::compute_final_ck(
+                &pk.pk.ck,
+                &aux.challenges,
+                &instance.twist
+            )?
+            .try_into()
+            .unwrap()
+        );
 
-        Ok(Proof {
+        let proof = Proof {
             gipa_proof,
             final_ck: final_ck.into(),
             final_ck_proof,
-        })
+        };
+        debug_assert!(Self::verify(&pk.vk(), instance, &proof).unwrap());
+
+        Ok(proof)
     }
 }

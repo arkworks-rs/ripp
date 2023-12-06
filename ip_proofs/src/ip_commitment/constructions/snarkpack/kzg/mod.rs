@@ -28,6 +28,11 @@ pub(super) fn evaluate_ipa_polynomial<F: Field>(challenges: &[F], z: F, r: F) ->
     res
 }
 
+pub(super) fn evaluate_ipa_polynomial_shifted<F: Field>(challenges: &[F], z: F, r: F) -> F {
+    let e = evaluate_ipa_polynomial(challenges, z, r);
+    e * z.pow([2u64.pow(challenges.len() as u32)])
+}
+
 // Compute the coefficients of the polynomial $\prod_{j=0}^{l-1} (1 + x_{l-j}(rX)^{2j})$
 // It does this in logarithmic time directly; here is an example with 2
 // challenges:
@@ -59,20 +64,186 @@ fn ipa_polynomial<F: Field>(challenges: &[F], r: F) -> DensePolynomial<F> {
     DensePolynomial::from_coefficients_vec(coefficients)
 }
 
-#[test]
-fn ipa_polynomial_consistency() {
-    use ark_bls12_381::Fr;
-    use ark_ff::UniformRand;
-    use ark_poly::Polynomial;
-    use ark_std::test_rng;
+fn ipa_polynomial_shifted<F: Field>(challenges: &[F], r: F) -> DensePolynomial<F> {
+    let f = ipa_polynomial(challenges, r);
+    let shifted_coeffs = [vec![F::ZERO; f.len()], f.coeffs].concat();
+    DensePolynomial::from_coefficients_vec(shifted_coeffs)
+}
 
-    let mut rng = test_rng();
-    let r = Fr::rand(&mut rng);
-    let evaluation_point = Fr::rand(&mut rng);
+#[cfg(test)]
+mod tests {
+    use super::evaluate_ipa_polynomial;
+    use super::ipa_polynomial;
+    use crate::{
+        ip_commitment::snarkpack::{
+            kzg::{evaluate_ipa_polynomial_shifted, ipa_polynomial_shifted, verify::check_left},
+            LeftKey, RightKey,
+        },
+        tipa::data_structures::{specialize, GenericSRS},
+    };
+    use ark_bls12_381::{Bls12_381, Fr, G1Projective as G1, G2Projective as G2};
+    use ark_ec::{pairing::Pairing, CurveGroup, VariableBaseMSM};
+    use ark_ff::Field;
+    use ark_poly::{univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
+    use ark_std::{test_rng, UniformRand};
 
-    let challenges = vec![Fr::rand(&mut rng), Fr::rand(&mut rng)];
-    let poly = ipa_polynomial(&challenges, r);
-    let direct_eval = poly.evaluate(&evaluation_point);
-    let fast_eval = evaluate_ipa_polynomial(&challenges, evaluation_point, r);
-    assert_eq!(fast_eval, direct_eval);
+    #[test]
+    fn ipa_polynomial_consistency() {
+        let mut rng = test_rng();
+        let r = Fr::rand(&mut rng);
+        let evaluation_point = Fr::rand(&mut rng);
+
+        let challenges = vec![Fr::rand(&mut rng), Fr::rand(&mut rng)];
+        let poly = ipa_polynomial(&challenges, r);
+        let direct_eval = poly.evaluate(&evaluation_point);
+        let fast_eval = evaluate_ipa_polynomial(&challenges, evaluation_point, r);
+        assert_eq!(fast_eval, direct_eval);
+    }
+
+    #[test]
+    fn prove_verify_left() {
+        use crate::ip_commitment::snarkpack::kzg::prove::prove_left_key;
+        use crate::ip_commitment::snarkpack::kzg::verify::verify_left_key;
+
+        let mut rng = test_rng();
+        let point = Fr::rand(&mut rng);
+
+        let challenges = vec![Fr::ONE, Fr::rand(&mut rng), Fr::rand(&mut rng)];
+        let poly = ipa_polynomial(&challenges, Fr::ONE);
+        let eval = poly.evaluate(&point);
+        let fast_eval = evaluate_ipa_polynomial(&challenges, point, Fr::ONE);
+        assert_eq!(fast_eval, eval);
+
+        let srs = GenericSRS::<Bls12_381>::sample(16, &mut rng);
+        let (pk, vk) = specialize(srs, 8);
+        let (v_1, v_2) = {
+            (
+                G2::msm_unchecked(&pk.h_alpha_powers, &poly.coeffs),
+                G2::msm_unchecked(&pk.h_beta_powers, &poly.coeffs),
+            )
+        };
+
+        let proof =
+            prove_left_key(&pk.h_alpha_powers, &pk.h_beta_powers, &challenges, point).unwrap();
+        assert!(verify_left_key(
+            &vk,
+            &LeftKey { v_1, v_2 },
+            &proof,
+            &challenges,
+            point
+        ));
+    }
+
+    #[test]
+    fn prove_verify_right() {
+        use crate::ip_commitment::snarkpack::kzg::prove::prove_right_key;
+        use crate::ip_commitment::snarkpack::kzg::verify::verify_right_key;
+
+        let mut rng = test_rng();
+        let twist = Fr::rand(&mut rng);
+        let twist_inv = twist.inverse().unwrap();
+        let point = Fr::rand(&mut rng);
+
+        let challenges = vec![Fr::ONE, Fr::rand(&mut rng), Fr::rand(&mut rng)];
+        let poly = ipa_polynomial_shifted(&challenges, twist_inv);
+        let eval = poly.evaluate(&point);
+        let fast_eval = evaluate_ipa_polynomial_shifted(&challenges, point, twist_inv);
+        assert_eq!(fast_eval, eval);
+
+        let srs = GenericSRS::<Bls12_381>::sample(16, &mut rng);
+        let (pk, vk) = specialize(srs, 8);
+        let (w_1, w_2) = {
+            (
+                G1::msm_unchecked(&pk.g_alpha_powers, &poly.coeffs),
+                G1::msm_unchecked(&pk.g_beta_powers, &poly.coeffs),
+            )
+        };
+
+        let proof = prove_right_key(
+            &pk.g_alpha_powers,
+            &pk.g_beta_powers,
+            &challenges,
+            twist_inv,
+            point,
+        )
+        .unwrap();
+        assert!(verify_right_key(
+            &vk,
+            &RightKey { w_1, w_2 },
+            &proof,
+            &challenges,
+            twist_inv,
+            point
+        ));
+    }
+
+    #[test]
+    fn prove_verify_normal() {
+        let mut rng = test_rng();
+        let point = Fr::rand(&mut rng);
+
+        let poly = DensePolynomial::rand(5, &mut rng);
+        let eval = poly.evaluate(&point);
+
+        let srs = GenericSRS::<Bls12_381>::sample(16, &mut rng);
+        let (pk, vk) = specialize(srs, 8);
+        let (v_1, v_2) = {
+            (
+                G2::msm_unchecked(&pk.h_alpha_powers, &poly.coeffs).into_affine(),
+                G2::msm_unchecked(&pk.h_beta_powers, &poly.coeffs).into_affine(),
+            )
+        };
+        let witness_poly = &poly / &DensePolynomial::from_coefficients_vec(vec![-point, Fr::ONE]);
+
+        let test_point = Fr::rand(&mut rng);
+        // Check that the witness polynomial is correct
+        assert_eq!(
+            poly.evaluate(&test_point) - eval,
+            witness_poly.evaluate(&test_point) * (test_point - point)
+        );
+
+        let (proof_1, proof_2) = rayon::join(
+            || G2::msm_unchecked(&pk.h_alpha_powers, &witness_poly.coeffs).into_affine(),
+            || G2::msm_unchecked(&pk.h_beta_powers, &witness_poly.coeffs).into_affine(),
+        );
+        let check_1 = check_left(&vk, vk.g_alpha, point, eval, v_1, proof_1);
+        let check_2 = check_left(&vk, vk.g_beta, point, eval, v_2, proof_2);
+        assert!(check_1);
+        assert!(check_2);
+    }
+
+    #[test]
+    fn test_srs() {
+        let mut rng = test_rng();
+        let srs = GenericSRS::<Bls12_381>::sample(16, &mut rng);
+        let (pk, vk) = specialize(srs, 16);
+        let g = pk.g_alpha_powers[0];
+        let h = pk.h_alpha_powers[0];
+        let alpha_g = pk.g_alpha_powers[1];
+        let alpha_h = pk.h_alpha_powers[1];
+        let beta_g = pk.g_beta_powers[1];
+        let beta_h = pk.h_beta_powers[1];
+        for (g, alpha_g) in pk.g_alpha_powers[..=15].iter().zip(&pk.g_alpha_powers[1..]) {
+            assert_eq!(
+                Bls12_381::pairing(g, alpha_h),
+                Bls12_381::pairing(alpha_g, h)
+            );
+        }
+        for (g, beta_g) in pk.g_beta_powers[..=15].iter().zip(&pk.g_beta_powers[1..]) {
+            assert_eq!(Bls12_381::pairing(g, beta_h), Bls12_381::pairing(beta_g, h));
+        }
+        for (h, alpha_h) in pk.h_alpha_powers[..=15].iter().zip(&pk.h_alpha_powers[1..]) {
+            assert_eq!(
+                Bls12_381::pairing(g, alpha_h),
+                Bls12_381::pairing(alpha_g, h)
+            );
+        }
+        for (h, beta_h) in pk.h_beta_powers[..=15].iter().zip(&pk.h_beta_powers[1..]) {
+            assert_eq!(Bls12_381::pairing(g, beta_h), Bls12_381::pairing(beta_g, h));
+        }
+        assert_eq!(
+            Bls12_381::pairing(g, vk.h_alpha),
+            Bls12_381::pairing(alpha_g, vk.h)
+        );
+    }
 }

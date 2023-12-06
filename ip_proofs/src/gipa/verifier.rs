@@ -16,8 +16,8 @@ where
     IP: InnerProduct,
     IPC: IPCommitment<IP = IP>,
 {
-    pub fn verify<'a>(
-        vk: &VerifierKey<'a, IPC>,
+    pub fn verify(
+        vk: &VerifierKey<IPC>,
         instance: &Instance<IPC>,
         proof: &Proof<IP, IPC>,
     ) -> Result<bool, Error> {
@@ -42,7 +42,7 @@ where
         let (final_commitment, challenges) =
             Self::verify_recursive_challenge_transcript(&com, proof)?;
         // Calculate base commitment keys
-        let final_ck = Self::_compute_final_commitment_keys(&vk.ck, &challenges, twist)?;
+        let final_ck = Self::compute_final_ck(&vk.ck, &challenges, twist)?;
         // Verify base commitment
         Self::verify_final_commitment(&final_ck, &final_commitment, proof)
     }
@@ -73,7 +73,7 @@ where
         Ok((com, challenges))
     }
 
-    pub(crate) fn _compute_final_commitment_keys<'a>(
+    pub(crate) fn compute_final_ck<'a>(
         ck: &IPCommKey<'a, IPC>,
         challenges: &[Scalar<IPC>],
         &twist: &Scalar<IPC>,
@@ -113,8 +113,8 @@ where
         final_commitment: &Commitment<IPC>,
         proof: &Proof<IP, IPC>,
     ) -> Result<bool, Error> {
-        let l = [proof.final_msg.0.clone()];
-        let r = [proof.final_msg.1.clone()];
+        let l = [proof.final_msg.0];
+        let r = [proof.final_msg.1];
         Ok(IPC::verify(&final_ck, &l, &r, &final_commitment)?)
     }
 }

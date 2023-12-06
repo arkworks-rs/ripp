@@ -2,7 +2,7 @@ use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup};
 use ark_ff::{Field, Zero};
 
 use crate::{
-    ip_commitment::snarkpack::{LeftKey, RightKey},
+    ip_commitment::snarkpack::{kzg::evaluate_ipa_polynomial_shifted, LeftKey, RightKey},
     tipa::VerifierKey,
 };
 
@@ -12,29 +12,27 @@ use super::{evaluate_ipa_polynomial, EvaluationProof};
 /// any shift (in TIPP we shift the v commitment by r^-1) and returns a pairing
 /// tuple to check if the opening is correct or not.
 #[must_use]
-pub fn verify_kzg_v<E: Pairing>(
+pub fn verify_left_key<E: Pairing>(
     vk: &VerifierKey<E>,
     // These are the KZG commitments that arise from the final commitment key
     &LeftKey { v_1, v_2 }: &LeftKey<E>,
     &EvaluationProof(proof_1, proof_2): &EvaluationProof<E::G2Affine>,
-    challenges: &[E::ScalarField],
+    challenges_inv: &[E::ScalarField],
     point: E::ScalarField,
 ) -> bool {
     // f_v(z)
-    let v_poly_at_point = evaluate_ipa_polynomial(challenges, point, E::ScalarField::ONE);
+    let v_poly_at_point = evaluate_ipa_polynomial(challenges_inv, point, E::ScalarField::ONE);
     let [v_1, v_2]: [E::G2Affine; 2] = E::G2::normalize_batch(&[v_1, v_2]).try_into().unwrap();
 
-    // e(g, C_f * h^{-y}) == e(v1 * g^{-x}, \pi) = 1
-    let check1 = kzg_check_v::<E>(vk, vk.g_alpha, point, v_poly_at_point, v_1, proof_1);
+    let check1 = check_left::<E>(vk, vk.g_alpha, point, v_poly_at_point, v_1, proof_1);
 
-    // e(g, C_f * h^{-y}) == e(v2 * g^{-x}, \pi) = 1
-    let check2 = kzg_check_v::<E>(vk, vk.g_beta, point, v_poly_at_point, v_2, proof_2);
+    let check2 = check_left::<E>(vk, vk.g_beta, point, v_poly_at_point, v_2, proof_2);
     check1 & check2
 }
 
 /// Here `tau` is the SRS secret.
 #[must_use]
-fn kzg_check_v<E: Pairing>(
+pub(super) fn check_left<E: Pairing>(
     vk: &VerifierKey<E>,
     tau_g: E::G1Affine,
     point: E::ScalarField,
@@ -45,7 +43,7 @@ fn kzg_check_v<E: Pairing>(
     // Let tau be the SRS secret. Then the KZG Verifier check in G2 looks like:
     // e(G, C - eval * H) == e(tau * G - point * G, W)
     // We rewrite this as a multi-pairing:
-    // e(-G, C - eval * H) == e(tau * G - point * G, W)
+    // e(-G, C - eval * H) * e(tau * G - point * G, W) == 1
     let lhs_g2 = (commitment.into_group() - vk.h * eval).into_affine();
     let rhs_g1 = (tau_g.into_group() - vk.g * point).into_affine();
     E::multi_pairing([vk.neg_g, rhs_g1], [lhs_g2, evaluation_proof]).is_zero()
@@ -53,7 +51,7 @@ fn kzg_check_v<E: Pairing>(
 
 /// Similar to verify_kzg_opening_g2 but for g1.
 #[must_use]
-pub fn verify_kzg_w<E: Pairing>(
+pub fn verify_right_key<E: Pairing>(
     vk: &VerifierKey<E>,
     // These are the KZG commitments that arise from the final commitment key
     &RightKey { w_1, w_2 }: &RightKey<E>,
@@ -63,22 +61,20 @@ pub fn verify_kzg_w<E: Pairing>(
     point: E::ScalarField,
 ) -> bool {
     // compute f(z) and z^n and then combine into f_w(z) = z^n * f(z)
-    let fz = evaluate_ipa_polynomial(challenges, point, twist_inv);
-    let zn = point.pow(&[vk.supported_size as u64]);
-    let w_poly_at_point = fz * zn;
+    let w_poly_at_point = evaluate_ipa_polynomial_shifted(challenges, point, twist_inv);
     let [w_1, w_2]: [E::G1Affine; 2] = E::G1::normalize_batch(&[w_1, w_2]).try_into().unwrap();
 
     // e(C_f * g^{-y}, h) = e(\pi, w1 * h^{-x})
-    let check1 = kzg_check_w::<E>(vk, vk.h_alpha, point, w_poly_at_point, w_1, proof_1);
+    let check1 = check_right::<E>(vk, vk.h_alpha, point, w_poly_at_point, w_1, proof_1);
 
     // e(C_f * g^{-y}, h) = e(\pi, w2 * h^{-x})
-    let check2 = kzg_check_w::<E>(vk, vk.h_beta, point, w_poly_at_point, w_2, proof_2);
+    let check2 = check_right::<E>(vk, vk.h_beta, point, w_poly_at_point, w_2, proof_2);
     check1 & check2
 }
 
 /// Here `tau` is the SRS secret.
 #[must_use]
-fn kzg_check_w<E: Pairing>(
+pub(super) fn check_right<E: Pairing>(
     vk: &VerifierKey<E>,
     tau_h: E::G2Affine,
     point: E::ScalarField,

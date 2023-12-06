@@ -6,7 +6,6 @@ use ark_ec::{
     pairing::{Pairing, PairingOutput},
     CurveGroup, VariableBaseMSM,
 };
-use ark_ff::Field;
 use ark_inner_products::{multi_pairing, PairingInnerProduct};
 use ark_std::{marker::PhantomData, rand::Rng};
 
@@ -21,7 +20,7 @@ use crate::{
 mod data_structures;
 pub use data_structures::*;
 
-use self::kzg::verify::{verify_kzg_v, verify_kzg_w};
+use self::kzg::verify::{verify_left_key, verify_right_key};
 
 pub mod kzg;
 
@@ -119,17 +118,18 @@ impl<E: Pairing> TIPPCommitment<E> {
         kzg_point: E::ScalarField,
     ) -> FinalCommKeyProof<E> {
         let mut challenges_inv = challenges.to_vec();
+        challenges_inv.push(twist);
         ark_ff::batch_inversion(&mut challenges_inv);
+        let twist_inv = challenges_inv.pop().unwrap();
 
-        let twist_inv = twist.inverse().unwrap();
-        let left_proof = kzg::prove::prove_commitment_v(
+        let left_proof = kzg::prove::prove_left_key(
             &pk.h_alpha_powers,
             &pk.h_beta_powers,
             &challenges_inv,
             kzg_point,
         )
         .unwrap();
-        let right_proof = kzg::prove::prove_commitment_w(
+        let right_proof = kzg::prove::prove_right_key(
             &pk.g_alpha_powers,
             &pk.g_beta_powers,
             &challenges,
@@ -158,8 +158,9 @@ impl<E: Pairing> TIPPCommitment<E> {
 
         let FinalIPCommKey { ck_a, ck_b, .. } = final_ck;
 
-        let left_is_correct = verify_kzg_v(vk, ck_a, &proof.left_proof, &challenges_inv, kzg_point);
-        let right_is_correct = verify_kzg_w(
+        let left_is_correct =
+            verify_left_key(vk, ck_a, &proof.left_proof, &challenges_inv, kzg_point);
+        let right_is_correct = verify_right_key(
             vk,
             ck_b,
             &proof.right_proof,
@@ -167,14 +168,6 @@ impl<E: Pairing> TIPPCommitment<E> {
             twist_inv,
             kzg_point,
         );
-        left_is_correct && right_is_correct
+        left_is_correct & right_is_correct
     }
-}
-
-pub fn structured_scalar_power<F: Field>(num: usize, s: &F) -> Vec<F> {
-    let mut powers = vec![F::one()];
-    for i in 1..num {
-        powers.push(powers[i - 1] * s);
-    }
-    powers
 }
