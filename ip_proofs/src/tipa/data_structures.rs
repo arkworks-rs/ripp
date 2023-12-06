@@ -78,7 +78,7 @@ pub fn specialize<'a, E: Pairing>(
 ) -> (ProverKey<'a, E>, VerifierKey<E>) {
     assert!(num_proofs.is_power_of_two());
     let supported_size = num_proofs;
-    let tn = 2 * num_proofs; // size of the CRS we need
+    let tn = num_proofs.checked_mul(2).unwrap(); // size of the CRS we need
     assert!(srs.g_alpha_powers.len() >= tn);
     assert!(srs.h_alpha_powers.len() >= tn);
     assert!(srs.g_beta_powers.len() >= tn);

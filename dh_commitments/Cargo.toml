@@ -8,7 +8,7 @@ authors = [
     "Nirvan Tyagi",
     "Psi Vesely",
 ]
-edition = "2018"
+edition = "2021"
 homepage = "https://github.com/arkworks-rs/ripp"
 repository = "https://github.com/arkworks-rs/ripp"
 documentation = "https://docs.rs/ark-dh-commitments/"
@@ -18,9 +18,12 @@ ark-ff = "0.4"
 ark-ec = "0.4"
 ark-serialize = { version = "0.4", features = [ "derive" ] }
 ark-std = "0.4"
+rayon = { version = "1", optional = true }
 
 ark-inner-products = { path = "../inner_products" }
 derivative = "2"
+rand_chacha = "0.3"
+blake2 = "0.10"
 
 [dev-dependencies]
 ark-bls12-381 = { version = "0.4", features = [ "curve" ] }
@@ -28,4 +31,4 @@ ark-ed-on-bls12-381 = "0.4"
 
 [features]
 default = [ "parallel" ]
-parallel = [ "ark-ff/parallel", "ark-ec/parallel" ]
+parallel = [ "ark-ff/parallel", "ark-ec/parallel", "rayon" ]

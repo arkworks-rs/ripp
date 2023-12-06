@@ -176,18 +176,7 @@ pub fn multi_pairing<P: Pairing>(left: &[P::G1], right: &[P::G2]) -> Option<Pair
         .map(P::G2Prepared::from)
         .collect::<Vec<_>>();
 
-    // We want to process N chunks in parallel where N is the number of threads available
-    #[cfg(feature = "parallel")]
-    let num_chunks = rayon::current_num_threads();
-    #[cfg(not(feature = "parallel"))]
-    let num_chunks = 1;
-
-    let chunk_size = if num_chunks <= left.len() {
-        left.len() / num_chunks
-    } else {
-        // More threads than elements. Just do it all in parallel
-        1
-    };
+    let chunk_size = 20;
 
     let (left_chunks, right_chunks) = (
         cfg_chunks!(left, chunk_size),

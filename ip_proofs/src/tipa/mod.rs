@@ -69,7 +69,7 @@ mod tests {
     use ark_dh_commitments::random_generators;
     use ark_inner_products::{InnerProduct, PairingInnerProduct};
 
-    const TEST_SIZE: usize = 8;
+    const TEST_SIZE: usize = 65_536;
 
     #[test]
     fn pairing_inner_product_test() {
@@ -77,14 +77,26 @@ mod tests {
         type IPC = TIPPCommitment<Bls12_381>;
         type PairingTIPA = TIPA<Bls12_381, Blake2b512>;
 
+        let start = std::time::Instant::now();
+
         let mut rng = ark_std::test_rng();
         let (pk, vk) = PairingTIPA::setup(TEST_SIZE, &mut rng).unwrap();
         let left = random_generators(&mut rng, TEST_SIZE);
         let right = random_generators(&mut rng, TEST_SIZE);
 
+        println!("Done with setup, took {:?}", start.elapsed().as_secs_f32());
+        let start = std::time::Instant::now();
+
         let commitment = IPC::commit_with_ip(&pk.pk.ck, &left, &right, None).unwrap();
+
+        println!("Done with commitment, took {:?}", start.elapsed().as_secs_f32());
+        let start = std::time::Instant::now();
+
         let twist = Fr::rand(&mut rng);
         let output = IP::twisted_inner_product(&left, &right, twist).unwrap();
+
+        println!("Done with inner product, took {:?}", start.elapsed().as_secs_f32());
+        let start = std::time::Instant::now();
 
         let instance = Instance {
             size: TEST_SIZE,
@@ -95,6 +107,7 @@ mod tests {
         let witness = Witness { left, right };
 
         let proof = PairingTIPA::prove(&pk, &instance, &witness).unwrap();
+        println!("Done with proof, took {:?}", start.elapsed().as_secs_f32());
 
         assert!(PairingTIPA::verify(&vk, &instance, &proof).unwrap());
     }

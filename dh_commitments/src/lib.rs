@@ -6,7 +6,7 @@ use ark_std::{
     error::Error as ErrorTrait,
     fmt::{Debug, Display},
     ops::{Add, AddAssign, Mul, MulAssign},
-    rand::Rng,
+    rand::Rng, cfg_into_iter,
 };
 
 pub mod afgho16;
@@ -14,6 +14,9 @@ pub mod identity;
 pub mod pedersen;
 
 pub type Error = Box<dyn ErrorTrait>;
+
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 //TODO: support CanonicalSerialize
 //TODO: Using MulAssign instead of Mul because Group does not support Mul
@@ -70,5 +73,20 @@ pub trait DoublyHomomorphicCommitment: Clone {
 // Helpers for generator commitment keys used by Pedersen and AFGHO16
 
 pub fn random_generators<R: Rng, G: Group>(rng: &mut R, num: usize) -> Vec<G> {
-    (0..num).map(|_| G::rand(rng)).collect()
+    use ark_std::rand::SeedableRng;
+    use rand_chacha::ChaChaRng;
+    use blake2::Blake2s256;
+    use ark_std::UniformRand;
+    use blake2::Digest;
+
+    let seed = <[u8; 32]>::rand(rng);
+
+    cfg_into_iter!(0..num).map(|i| {
+        let mut hasher = Blake2s256::new();
+        hasher.update(seed);
+        hasher.update(&(i as u32).to_le_bytes());
+        let seed: [u8; 32] = hasher.finalize().as_slice().try_into().unwrap();
+        let mut rng = ChaChaRng::from_seed(seed);
+        G::rand(&mut rng)
+    }).collect()
 }
