@@ -1,5 +1,5 @@
 use ark_inner_products::InnerProduct;
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Valid};
 use derivative::Derivative;
 
 use crate::ip_commitment::{Commitment, FinalIPCommKey, IPCommKey, IPCommitment, Scalar};
@@ -76,10 +76,27 @@ impl<IPC: IPCommitment> Aux<IPC> {
     }
 }
 
-#[derive(Derivative)]
+#[derive(Derivative, CanonicalSerialize)]
 #[derivative(Clone(bound = "IPC: IPCommitment"), Debug(bound = "IPC: IPCommitment"))]
-pub struct ProverKey<'a, IPC: IPCommitment> {
-    pub ck: IPCommKey<'a, IPC>,
+pub struct ProverKey<'b, IPC: IPCommitment> {
+    pub ck: IPCommKey<'b, IPC>,
+}
+
+impl<'b, IPC: IPCommitment> Valid for ProverKey<'b, IPC> {
+    fn check(&self) -> Result<(), ark_serialize::SerializationError> {
+        self.ck.check()
+    }
+}
+
+impl<'b, IPC: IPCommitment> CanonicalDeserialize for ProverKey<'b, IPC> {
+    fn deserialize_with_mode<R: std::io::prelude::Read>(
+        reader: R,
+        compress: ark_serialize::Compress,
+        validate: ark_serialize::Validate,
+    ) -> Result<Self, ark_serialize::SerializationError> {
+        let ck = IPCommKey::deserialize_with_mode(reader, compress, validate)?;
+        Ok(Self { ck })
+    }
 }
 
 impl<'a, IPC: IPCommitment> ProverKey<'_, IPC> {
@@ -90,8 +107,25 @@ impl<'a, IPC: IPCommitment> ProverKey<'_, IPC> {
     }
 }
 
-#[derive(Derivative)]
+#[derive(Derivative, CanonicalSerialize)]
 #[derivative(Clone(bound = "IPC: IPCommitment"), Debug(bound = "IPC: IPCommitment"))]
-pub struct VerifierKey<'a, IPC: IPCommitment> {
-    pub ck: IPCommKey<'a, IPC>,
+pub struct VerifierKey<'b, IPC: IPCommitment> {
+    pub ck: IPCommKey<'b, IPC>,
+}
+
+impl<'b, IPC: IPCommitment> Valid for VerifierKey<'b, IPC> {
+    fn check(&self) -> Result<(), ark_serialize::SerializationError> {
+        self.ck.check()
+    }
+}
+
+impl<'b, IPC: IPCommitment> CanonicalDeserialize for VerifierKey<'b, IPC> {
+    fn deserialize_with_mode<R: std::io::prelude::Read>(
+        reader: R,
+        compress: ark_serialize::Compress,
+        validate: ark_serialize::Validate,
+    ) -> Result<Self, ark_serialize::SerializationError> {
+        let ck = IPCommKey::deserialize_with_mode(reader, compress, validate)?;
+        Ok(Self { ck })
+    }
 }

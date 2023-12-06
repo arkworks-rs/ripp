@@ -14,10 +14,10 @@ pub use crate::ip_commitment::snarkpack::GenericSRS;
 
 use super::{IP, IPC};
 
-#[derive(Clone)]
-pub struct ProverKey<'a, P: Pairing> {
+#[derive(Clone, CanonicalDeserialize, CanonicalSerialize)]
+pub struct ProverKey<'b, P: Pairing> {
     pub supported_size: usize,
-    pub pk: crate::gipa::ProverKey<'a, TIPPCommitment<P>>,
+    pub pk: crate::gipa::ProverKey<'b, TIPPCommitment<P>>,
     pub g_alpha_powers: Vec<P::G1Affine>,
     pub g_beta_powers: Vec<P::G1Affine>,
     pub h_alpha_powers: Vec<P::G2Affine>,
@@ -52,7 +52,7 @@ impl<P: Pairing> ProverKey<'_, P> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, CanonicalDeserialize, CanonicalSerialize)]
 pub struct VerifierKey<P: Pairing> {
     pub supported_size: usize,
     pub ck_for_ip: IPCommKey<'static, TIPPCommitment<P>>,

@@ -1,6 +1,6 @@
 use ark_dh_commitments::Error;
 use ark_inner_products::{compute_powers, InnerProduct};
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Valid};
 use ark_std::{
     borrow::Cow,
     cfg_iter, cfg_iter_mut, end_timer,
@@ -21,10 +21,55 @@ pub type Scalar<IPC> = <<IPC as IPCommitment>::IP as InnerProduct>::Scalar;
 
 #[derive(Derivative)]
 #[derivative(Clone(bound = ""), Debug(bound = "IPC: IPCommitment"))]
-pub struct IPCommKey<'a, IPC: IPCommitment> {
-    pub ck_a: Cow<'a, [IPC::LeftKey]>,
-    pub ck_b: Cow<'a, [IPC::RightKey]>,
-    pub ck_t: Cow<'a, IPC::IPKey>,
+pub struct IPCommKey<'b, IPC: IPCommitment> {
+    pub ck_a: Cow<'b, [IPC::LeftKey]>,
+    pub ck_b: Cow<'b, [IPC::RightKey]>,
+    pub ck_t: Cow<'b, IPC::IPKey>,
+}
+
+impl<'b, IPC: IPCommitment> CanonicalSerialize for IPCommKey<'b, IPC> {
+    fn serialize_with_mode<W: std::io::prelude::Write>(
+        &self,
+        mut writer: W,
+        compress: ark_serialize::Compress,
+    ) -> Result<(), ark_serialize::SerializationError> {
+        self.ck_a.serialize_with_mode(&mut writer, compress)?;
+        self.ck_b.serialize_with_mode(&mut writer, compress)?;
+        self.ck_t.serialize_with_mode(&mut writer, compress)?;
+        Ok(())
+    }
+
+    fn serialized_size(&self, compress: ark_serialize::Compress) -> usize {
+        self.ck_a.serialized_size(compress)
+            + self.ck_b.serialized_size(compress)
+            + self.ck_t.serialized_size(compress)
+    }
+}
+
+impl<'b, IPC: IPCommitment> Valid for IPCommKey<'b, IPC> {
+    fn check(&self) -> Result<(), ark_serialize::SerializationError> {
+        Valid::batch_check(self.ck_a.iter())?;
+        Valid::batch_check(self.ck_b.iter())?;
+        self.ck_t.as_ref().check()?;
+        Ok(())
+    }
+}
+
+impl<'b, IPC: IPCommitment> CanonicalDeserialize for IPCommKey<'b, IPC> {
+    fn deserialize_with_mode<R: std::io::prelude::Read>(
+        mut reader: R,
+        compress: ark_serialize::Compress,
+        validate: ark_serialize::Validate,
+    ) -> Result<Self, ark_serialize::SerializationError> {
+        let ck_a = Vec::<IPC::LeftKey>::deserialize_with_mode(&mut reader, compress, validate)?;
+        let ck_b = Vec::<IPC::RightKey>::deserialize_with_mode(&mut reader, compress, validate)?;
+        let ck_t = IPC::IPKey::deserialize_with_mode(reader, compress, validate)?;
+        Ok(Self {
+            ck_a: Cow::Owned(ck_a),
+            ck_b: Cow::Owned(ck_b),
+            ck_t: Cow::Owned(ck_t),
+        })
+    }
 }
 
 impl<'a, IPC: IPCommitment> IPCommKey<'a, IPC> {
