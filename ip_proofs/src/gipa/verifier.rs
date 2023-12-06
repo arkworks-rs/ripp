@@ -89,10 +89,9 @@ where
         let twist_inv = challenges_inv.pop().unwrap();
 
         for (i, (&c, c_inv)) in challenges.iter().zip(challenges_inv).enumerate() {
-            let r = twist_inv.pow([(2_u64).pow(i as u32)]);
-            let c = c * r;
+            let c_inv = c_inv * twist_inv.pow([(2_u64).pow(i as u32)]);
             for j in 0..((2_usize).pow(i as u32)) {
-                ck_a_poly_coeffs.push(ck_a_poly_coeffs[j] * &c_inv);
+                ck_a_poly_coeffs.push(ck_a_poly_coeffs[j] * c_inv);
                 ck_b_poly_coeffs.push(ck_b_poly_coeffs[j] * c);
             }
         }

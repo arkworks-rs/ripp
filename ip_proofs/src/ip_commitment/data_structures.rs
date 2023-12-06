@@ -92,9 +92,9 @@ impl<'a, IPC: IPCommitment> IPCommKey<'a, IPC> {
     /// Modifies `self` by multiplying `self.ck_a` by powers of `c`.
     pub fn twist_in_place(&mut self, c: Scalar<IPC>) {
         let len = self.ck_b.len();
-        cfg_iter_mut!(self.ck_b.to_mut())
+        cfg_iter_mut!(self.ck_a.to_mut())
             .zip(compute_powers(len, c))
-            .for_each(|(b, c)| *b *= c);
+            .for_each(|(a, c)| *a *= c);
     }
 
     pub fn split(&'a self, split: usize) -> (Self, Self) {

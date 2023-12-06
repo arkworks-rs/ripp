@@ -19,9 +19,10 @@ pub fn verify_left_key<E: Pairing>(
     &EvaluationProof(proof_1, proof_2): &EvaluationProof<E::G2Affine>,
     challenges_inv: &[E::ScalarField],
     point: E::ScalarField,
+    twist_inv: E::ScalarField,
 ) -> bool {
     // f_v(z)
-    let v_poly_at_point = evaluate_ipa_polynomial(challenges_inv, point, E::ScalarField::ONE);
+    let v_poly_at_point = evaluate_ipa_polynomial(challenges_inv, point, twist_inv);
     let [v_1, v_2]: [E::G2Affine; 2] = E::G2::normalize_batch(&[v_1, v_2]).try_into().unwrap();
 
     let check1 = check_left::<E>(vk, vk.g_alpha, point, v_poly_at_point, v_1, proof_1);
@@ -57,11 +58,10 @@ pub fn verify_right_key<E: Pairing>(
     &RightKey { w_1, w_2 }: &RightKey<E>,
     &EvaluationProof(proof_1, proof_2): &EvaluationProof<E::G1Affine>,
     challenges: &[E::ScalarField],
-    twist_inv: E::ScalarField,
     point: E::ScalarField,
 ) -> bool {
     // compute f(z) and z^n and then combine into f_w(z) = z^n * f(z)
-    let w_poly_at_point = evaluate_ipa_polynomial_shifted(challenges, point, twist_inv);
+    let w_poly_at_point = evaluate_ipa_polynomial_shifted(challenges, point, E::ScalarField::ONE);
     let [w_1, w_2]: [E::G1Affine; 2] = E::G1::normalize_batch(&[w_1, w_2]).try_into().unwrap();
 
     // e(C_f * g^{-y}, h) = e(\pi, w1 * h^{-x})

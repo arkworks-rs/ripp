@@ -9,10 +9,11 @@ pub(crate) fn prove_left_key<G: AffineRepr>(
     h_alpha_powers: &[G],
     h_beta_powers: &[G],
     challenges: &[G::ScalarField],
+    twist_inv: G::ScalarField,
     point: G::ScalarField,
 ) -> Result<EvaluationProof<G>, Error> {
     // f_v
-    let left_poly = ipa_polynomial(challenges, G::ScalarField::ONE);
+    let left_poly = ipa_polynomial(challenges, twist_inv);
 
     prove_evaluation(h_alpha_powers, h_beta_powers, left_poly, point)
 }
@@ -21,11 +22,10 @@ pub(crate) fn prove_right_key<G: AffineRepr>(
     g_alpha_powers: &[G],
     g_beta_powers: &[G],
     challenges: &[G::ScalarField],
-    twist_inv: G::ScalarField,
     point: G::ScalarField,
 ) -> Result<EvaluationProof<G>, Error> {
     // this computes f(X) = \prod (1 + x (rX)^{2^j})
-    let right_poly = ipa_polynomial_shifted(challenges, twist_inv);
+    let right_poly = ipa_polynomial_shifted(challenges, G::ScalarField::ONE);
     prove_evaluation(g_alpha_powers, g_beta_powers, right_poly, point)
 }
 

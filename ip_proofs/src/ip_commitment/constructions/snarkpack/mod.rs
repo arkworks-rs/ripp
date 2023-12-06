@@ -126,6 +126,7 @@ impl<E: Pairing> TIPPCommitment<E> {
             &pk.h_alpha_powers,
             &pk.h_beta_powers,
             &challenges_inv,
+            twist_inv,
             kzg_point,
         )
         .unwrap();
@@ -133,7 +134,6 @@ impl<E: Pairing> TIPPCommitment<E> {
             &pk.g_alpha_powers,
             &pk.g_beta_powers,
             &challenges,
-            twist_inv,
             kzg_point,
         )
         .unwrap();
@@ -158,16 +158,16 @@ impl<E: Pairing> TIPPCommitment<E> {
 
         let FinalIPCommKey { ck_a, ck_b, .. } = final_ck;
 
-        let left_is_correct =
-            verify_left_key(vk, ck_a, &proof.left_proof, &challenges_inv, kzg_point);
-        let right_is_correct = verify_right_key(
+        let left_is_correct = verify_left_key(
             vk,
-            ck_b,
-            &proof.right_proof,
-            &challenges,
-            twist_inv,
+            ck_a,
+            &proof.left_proof,
+            &challenges_inv,
             kzg_point,
+            twist_inv,
         );
+        let right_is_correct =
+            verify_right_key(vk, ck_b, &proof.right_proof, &challenges, kzg_point);
         left_is_correct & right_is_correct
     }
 }

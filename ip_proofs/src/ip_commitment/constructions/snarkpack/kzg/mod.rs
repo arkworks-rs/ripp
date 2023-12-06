@@ -107,11 +107,13 @@ mod tests {
 
         let mut rng = test_rng();
         let point = Fr::rand(&mut rng);
+        let twist = Fr::rand(&mut rng);
+        let twist_inv = twist.inverse().unwrap();
 
         let challenges = vec![Fr::ONE, Fr::rand(&mut rng), Fr::rand(&mut rng)];
-        let poly = ipa_polynomial(&challenges, Fr::ONE);
+        let poly = ipa_polynomial(&challenges, twist_inv);
         let eval = poly.evaluate(&point);
-        let fast_eval = evaluate_ipa_polynomial(&challenges, point, Fr::ONE);
+        let fast_eval = evaluate_ipa_polynomial(&challenges, point, twist_inv);
         assert_eq!(fast_eval, eval);
 
         let srs = GenericSRS::<Bls12_381>::sample(16, &mut rng);
@@ -123,14 +125,21 @@ mod tests {
             )
         };
 
-        let proof =
-            prove_left_key(&pk.h_alpha_powers, &pk.h_beta_powers, &challenges, point).unwrap();
+        let proof = prove_left_key(
+            &pk.h_alpha_powers,
+            &pk.h_beta_powers,
+            &challenges,
+            twist_inv,
+            point,
+        )
+        .unwrap();
         assert!(verify_left_key(
             &vk,
             &LeftKey { v_1, v_2 },
             &proof,
             &challenges,
-            point
+            point,
+            twist_inv
         ));
     }
 
@@ -140,14 +149,12 @@ mod tests {
         use crate::ip_commitment::snarkpack::kzg::verify::verify_right_key;
 
         let mut rng = test_rng();
-        let twist = Fr::rand(&mut rng);
-        let twist_inv = twist.inverse().unwrap();
         let point = Fr::rand(&mut rng);
 
         let challenges = vec![Fr::ONE, Fr::rand(&mut rng), Fr::rand(&mut rng)];
-        let poly = ipa_polynomial_shifted(&challenges, twist_inv);
+        let poly = ipa_polynomial_shifted(&challenges, Fr::ONE);
         let eval = poly.evaluate(&point);
-        let fast_eval = evaluate_ipa_polynomial_shifted(&challenges, point, twist_inv);
+        let fast_eval = evaluate_ipa_polynomial_shifted(&challenges, point, Fr::ONE);
         assert_eq!(fast_eval, eval);
 
         let srs = GenericSRS::<Bls12_381>::sample(16, &mut rng);
@@ -159,20 +166,13 @@ mod tests {
             )
         };
 
-        let proof = prove_right_key(
-            &pk.g_alpha_powers,
-            &pk.g_beta_powers,
-            &challenges,
-            twist_inv,
-            point,
-        )
-        .unwrap();
+        let proof =
+            prove_right_key(&pk.g_alpha_powers, &pk.g_beta_powers, &challenges, point).unwrap();
         assert!(verify_right_key(
             &vk,
             &RightKey { w_1, w_2 },
             &proof,
             &challenges,
-            twist_inv,
             point
         ));
     }

@@ -68,9 +68,9 @@ where
         let mut right = right.to_vec();
         let mut ck = pk.ck.clone();
         if !twist.is_one() {
-            cfg_iter_mut!(right)
+            cfg_iter_mut!(left)
                 .zip(compute_powers(*size, *twist))
-                .for_each(|(r, c)| *r *= c);
+                .for_each(|(l, c)| *l *= c);
             ck.twist_in_place(twist.inverse().unwrap());
         }
 

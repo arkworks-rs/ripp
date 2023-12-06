@@ -96,11 +96,11 @@ pub trait InnerProduct {
         right: &[Self::RightMessage],
         twist: Self::Scalar,
     ) -> Result<Self::Output, Error> {
-        let right = cfg_iter!(right)
-            .zip(compute_powers(right.len(), twist))
-            .map(|(r, twist)| *r * twist)
+        let left = cfg_iter!(left)
+            .zip(compute_powers(left.len(), twist))
+            .map(|(l, twist)| *l * twist)
             .collect::<Vec<_>>();
-        Self::inner_product(left, &right)
+        Self::inner_product(&left, right)
     }
 
     fn left_msg_msm(
