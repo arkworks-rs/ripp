@@ -274,25 +274,7 @@ pub fn compute_powers<F: Field>(size: usize, g: F) -> Vec<F> {
     if size < MIN_PARALLEL_CHUNK_SIZE {
         return compute_powers_serial(size, g);
     }
-    // compute the number of threads we will be using.
-    use ark_std::cmp::{max, min};
-    let num_cpus_available = rayon::current_num_threads();
-    let num_elem_per_thread = max(size / num_cpus_available, MIN_PARALLEL_CHUNK_SIZE);
-    let num_cpus_used = size / num_elem_per_thread;
-
-    // Split up the powers to compute across each thread evenly.
-    let res: Vec<F> = (0..num_cpus_used)
-        .into_par_iter()
-        .flat_map(|i| {
-            let offset = g.pow(&[(i * num_elem_per_thread) as u64]);
-            // Compute the size that this chunks' output should be
-            // (num_elem_per_thread, unless there are less than num_elem_per_thread elements remaining)
-            let num_elements_to_compute = min(size - i * num_elem_per_thread, num_elem_per_thread);
-            let res = compute_powers_and_mul_by_const_serial(num_elements_to_compute, g, offset);
-            res
-        })
-        .collect();
-    res
+    (0..(size as u64)).into_par_iter().map(|i| g.pow(&[i])).collect::<Vec<_>>()
 }
 
 #[test]
@@ -302,8 +284,12 @@ fn test_compute_powers() {
 
     let mut rng = test_rng();
     let g = <ark_bls12_381::Fr as UniformRand>::rand(&mut rng);
-    let size = 1 << 10;
-    let powers = compute_powers(size, g);
-    let expected = (0..size).map(|i| g.pow(&[i as u64])).collect::<Vec<_>>();
-    assert_eq!(powers, expected);
+    for i in 10..=20 {
+        let size = 1 << i;
+
+        let powers = compute_powers(size, g);
+        let expected = (0..size).map(|i| g.pow(&[i as u64])).collect::<Vec<_>>();
+        assert_eq!(powers, expected);
+
+    }
 }
