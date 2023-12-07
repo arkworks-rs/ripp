@@ -47,7 +47,9 @@ pub(super) fn evaluate_ipa_polynomial_shifted<F: Field>(challenges: &[F], z: F, 
 // x_{l-j}.
 // f(Y) = Y^n * \prod (1 + x_{l-j-1} (r_shiftY^{2^j}))
 fn ipa_polynomial<F: Field>(challenges: &[F], r: F) -> DensePolynomial<F> {
-    let mut coefficients = vec![F::one()];
+    let size = 2_usize.pow(challenges.len() as u32);
+    let mut coefficients = Vec::with_capacity(size + 1);
+    coefficients.push(F::one());
     let mut power_2_r = r;
 
     for (i, x) in challenges.iter().enumerate() {
@@ -55,8 +57,9 @@ fn ipa_polynomial<F: Field>(challenges: &[F], r: F) -> DensePolynomial<F> {
         if i > 0 {
             power_2_r = power_2_r.square();
         }
+        let x = *x * power_2_r;
         for j in 0..n {
-            let coeff = coefficients[j] * &(*x * &power_2_r);
+            let coeff = coefficients[j] * x;
             coefficients.push(coeff);
         }
     }

@@ -10,8 +10,8 @@ pub mod gipa;
 pub mod ip_commitment;
 pub mod tipa;
 
-pub use ip_commitment::data_structures::IPCommKey;
 pub use gipa::data_structures::{Instance, Witness};
+pub use ip_commitment::data_structures::IPCommKey;
 
 pub type Error = Box<dyn ErrorTrait>;
 

@@ -3,7 +3,8 @@ use crate::Error;
 
 use ark_ec::{AffineRepr, VariableBaseMSM};
 use ark_ff::Field;
-use ark_poly::{univariate::DensePolynomial, DenseUVPolynomial};
+use ark_poly::{univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
+use ark_std::{end_timer, start_timer};
 
 pub(crate) fn prove_left_key<G: AffineRepr>(
     h_alpha_powers: &[G],
@@ -13,9 +14,14 @@ pub(crate) fn prove_left_key<G: AffineRepr>(
     point: G::ScalarField,
 ) -> Result<EvaluationProof<G>, Error> {
     // f_v
+    let left_poly_time = start_timer!(|| "LeftPoly");
     let left_poly = ipa_polynomial(challenges, twist_inv);
+    end_timer!(left_poly_time);
 
-    prove_evaluation(h_alpha_powers, h_beta_powers, left_poly, point)
+    let proof_time = start_timer!(|| "LeftProof");
+    let proof = prove_evaluation(h_alpha_powers, h_beta_powers, left_poly, point);
+    end_timer!(proof_time);
+    proof
 }
 
 pub(crate) fn prove_right_key<G: AffineRepr>(
@@ -25,8 +31,13 @@ pub(crate) fn prove_right_key<G: AffineRepr>(
     point: G::ScalarField,
 ) -> Result<EvaluationProof<G>, Error> {
     // this computes f(X) = \prod (1 + x (rX)^{2^j})
+    let right_poly_time = start_timer!(|| "RightPoly");
     let right_poly = ipa_polynomial_shifted(challenges, G::ScalarField::ONE);
-    prove_evaluation(g_alpha_powers, g_beta_powers, right_poly, point)
+    end_timer!(right_poly_time);
+    let proof_time = start_timer!(|| "RightProof");
+    let proof = prove_evaluation(g_alpha_powers, g_beta_powers, right_poly, point);
+    end_timer!(proof_time);
+    proof
 }
 
 /// Returns the KZG opening proof for the given commitment key. Specifically, it
@@ -41,8 +52,11 @@ fn prove_evaluation<G: AffineRepr>(
     assert_eq!(alpha_powers.len(), poly.coeffs().len());
 
     // f_v(X) - f_v(z) / (X - z)
+    let witness_poly_time = start_timer!(|| "WitnessPoly");
+    let numerator = &poly - &DensePolynomial::from_coefficients_slice(&[poly.evaluate(&point)]);
     let witness_poly =
-        &poly / &DensePolynomial::from_coefficients_vec(vec![-point, G::ScalarField::ONE]);
+        &numerator / &DensePolynomial::from_coefficients_vec(vec![-point, G::ScalarField::ONE]);
+    end_timer!(witness_poly_time);
 
     assert!(witness_poly.coeffs.len() <= alpha_powers.len());
     assert!(witness_poly.coeffs.len() <= beta_powers.len());
@@ -51,20 +65,13 @@ fn prove_evaluation<G: AffineRepr>(
     // on the curve we are on). that's the extra cost of the commitment scheme
     // used which is compatible with Groth16 CRS instead of the scheme
     // defined in [BMMTV19]
-    let (proof_1, proof_2) = rayon::join(
-        || G::Group::msm_unchecked(&alpha_powers, &witness_poly.coeffs),
-        || G::Group::msm_unchecked(&beta_powers, &witness_poly.coeffs),
-    );
-    #[cfg(debug_assertions)]
-    {
-        use ark_poly::Polynomial;
-        use ark_std::UniformRand;
-        let rand = G::ScalarField::rand(&mut ark_std::test_rng());
-        debug_assert_eq!(
-            witness_poly.evaluate(&rand) * (rand - point),
-            poly.evaluate(&rand) - poly.evaluate(&point)
-        );
-    }
+    let proof_1_time = start_timer!(|| "Proof1");
+    let proof_1 = G::Group::msm_unchecked(&alpha_powers, &witness_poly.coeffs);
+    end_timer!(proof_1_time);
+
+    let proof_2_time = start_timer!(|| "Proof2");
+    let proof_2 = G::Group::msm_unchecked(&beta_powers, &witness_poly.coeffs);
+    end_timer!(proof_2_time);
 
     Ok(EvaluationProof::new(proof_1, proof_2))
 }

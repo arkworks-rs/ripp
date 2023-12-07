@@ -36,6 +36,7 @@ where
         instance: &Instance<IPC>,
         witness: &Witness<IP>,
     ) -> Result<(Proof<IP, IPC>, Aux<IPC>), Error> {
+        let prover_time = start_timer!(|| "GIPA::Prove");
         let Witness { left, right } = witness;
         let Instance {
             size,
@@ -67,12 +68,14 @@ where
         let mut left = left.to_vec();
         let mut right = right.to_vec();
         let mut ck = pk.ck.clone();
+        let twist_time = start_timer!(|| "Twist");
         if !twist.is_one() {
             cfg_iter_mut!(left)
                 .zip(compute_powers(*size, *twist))
                 .for_each(|(l, c)| *l *= c);
             ck.twist_in_place(twist.inverse().unwrap());
         }
+        end_timer!(twist_time);
 
         com += IPC::commit_only_ip(&ck, *output)?;
 
@@ -84,6 +87,8 @@ where
         let mut commitments = Vec::new();
         let mut challenges: Vec<Scalar<IPC>> = Vec::new();
         assert!(left.len().is_power_of_two());
+
+        let loop_time = start_timer!(|| "Loop");
         let (final_msg, final_ck) = 'recurse: loop {
             let recurse = start_timer!(|| format!("Recurse round size {}", left.len()));
             if left.len() == 1 {
@@ -129,15 +134,19 @@ where
                     .collect::<Vec<IP::RightMessage>>();
                 end_timer!(rescale_m2);
 
+                let fold_time = start_timer!(|| "Fold");
                 ck = IPCommKey::fold(&ck_l, &ck_r, &c_inv, &c)?;
+                end_timer!(fold_time);
 
                 commitments.push((com_1, com_2));
                 challenges.push(c);
                 end_timer!(recurse);
             }
         };
+        end_timer!(loop_time);
         challenges.reverse();
         commitments.reverse();
+        end_timer!(prover_time);
         Ok((
             Proof::new(commitments, final_msg),
             Aux::new(challenges, final_ck.try_into().unwrap()),

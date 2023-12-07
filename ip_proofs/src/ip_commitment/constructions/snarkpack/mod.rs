@@ -7,7 +7,7 @@ use ark_ec::{
     CurveGroup, VariableBaseMSM,
 };
 use ark_inner_products::{multi_pairing, PairingInnerProduct};
-use ark_std::{marker::PhantomData, rand::Rng};
+use ark_std::{end_timer, marker::PhantomData, rand::Rng, start_timer};
 
 use crate::{
     ip_commitment::{
@@ -122,6 +122,7 @@ impl<E: Pairing> TIPPCommitment<E> {
         ark_ff::batch_inversion(&mut challenges_inv);
         let twist_inv = challenges_inv.pop().unwrap();
 
+        let left_proof_time = start_timer!(|| "TIPP::LeftProof");
         let left_proof = kzg::prove::prove_left_key(
             &pk.h_alpha_powers,
             &pk.h_beta_powers,
@@ -130,6 +131,8 @@ impl<E: Pairing> TIPPCommitment<E> {
             kzg_point,
         )
         .unwrap();
+        end_timer!(left_proof_time);
+        let right_proof_time = start_timer!(|| "TIPP::RightProof");
         let right_proof = kzg::prove::prove_right_key(
             &pk.g_alpha_powers,
             &pk.g_beta_powers,
@@ -137,6 +140,7 @@ impl<E: Pairing> TIPPCommitment<E> {
             kzg_point,
         )
         .unwrap();
+        end_timer!(right_proof_time);
         FinalCommKeyProof {
             left_proof,
             right_proof,

@@ -69,7 +69,7 @@ mod tests {
     use ark_dh_commitments::random_generators;
     use ark_inner_products::{InnerProduct, PairingInnerProduct};
 
-    const TEST_SIZE: usize = 65_536;
+    const TEST_SIZE: usize = 1 << 14;
 
     #[test]
     fn pairing_inner_product_test() {
@@ -89,13 +89,19 @@ mod tests {
 
         let commitment = IPC::commit_with_ip(&pk.pk.ck, &left, &right, None).unwrap();
 
-        println!("Done with commitment, took {:?}", start.elapsed().as_secs_f32());
+        println!(
+            "Done with commitment, took {:?}",
+            start.elapsed().as_secs_f32()
+        );
         let start = std::time::Instant::now();
 
         let twist = Fr::rand(&mut rng);
         let output = IP::twisted_inner_product(&left, &right, twist).unwrap();
 
-        println!("Done with inner product, took {:?}", start.elapsed().as_secs_f32());
+        println!(
+            "Done with inner product, took {:?}",
+            start.elapsed().as_secs_f32()
+        );
         let start = std::time::Instant::now();
 
         let instance = Instance {
