@@ -20,7 +20,12 @@ pub type OutputMessage<IPC> = <<IPC as IPCommitment>::IP as InnerProduct>::Outpu
 pub type Scalar<IPC> = <<IPC as IPCommitment>::IP as InnerProduct>::Scalar;
 
 #[derive(Derivative)]
-#[derivative(Clone(bound = ""), Debug(bound = "IPC: IPCommitment"))]
+#[derivative(
+    Clone(bound = ""), 
+    Eq(bound = ""),
+    PartialEq(bound = ""),
+    Debug(bound = "IPC: IPCommitment")
+)]
 pub struct IPCommKey<'b, IPC: IPCommitment> {
     pub ck_a: Cow<'b, [IPC::LeftKey]>,
     pub ck_b: Cow<'b, [IPC::RightKey]>,

@@ -77,7 +77,12 @@ impl<IPC: IPCommitment> Aux<IPC> {
 }
 
 #[derive(Derivative, CanonicalSerialize)]
-#[derivative(Clone(bound = "IPC: IPCommitment"), Debug(bound = "IPC: IPCommitment"))]
+#[derivative(
+    PartialEq(bound = "IPC: IPCommitment"), 
+    Eq(bound = "IPC: IPCommitment"), 
+    Clone(bound = "IPC: IPCommitment"), 
+    Debug(bound = "IPC: IPCommitment")
+)]
 pub struct ProverKey<'b, IPC: IPCommitment> {
     pub ck: IPCommKey<'b, IPC>,
 }

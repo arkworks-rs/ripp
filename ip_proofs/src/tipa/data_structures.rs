@@ -14,7 +14,7 @@ pub use crate::ip_commitment::snarkpack::GenericSRS;
 
 use super::{IP, IPC};
 
-#[derive(Clone, CanonicalDeserialize, CanonicalSerialize)]
+#[derive(PartialEq, Eq, Clone, CanonicalDeserialize, CanonicalSerialize)]
 pub struct ProverKey<'b, P: Pairing> {
     pub supported_size: usize,
     pub pk: crate::gipa::ProverKey<'b, TIPPCommitment<P>>,
@@ -52,7 +52,7 @@ impl<P: Pairing> ProverKey<'_, P> {
     }
 }
 
-#[derive(Clone, CanonicalDeserialize, CanonicalSerialize)]
+#[derive(PartialEq, Eq, Clone, CanonicalDeserialize, CanonicalSerialize)]
 pub struct VerifierKey<P: Pairing> {
     pub supported_size: usize,
     pub ck_for_ip: IPCommKey<'static, TIPPCommitment<P>>,
@@ -78,11 +78,11 @@ pub fn specialize<'a, E: Pairing>(
 ) -> (ProverKey<'a, E>, VerifierKey<E>) {
     assert!(num_proofs.is_power_of_two());
     let supported_size = num_proofs;
-    let tn = num_proofs.checked_mul(2).unwrap(); // size of the CRS we need
-    assert!(srs.g_alpha_powers.len() >= tn);
-    assert!(srs.h_alpha_powers.len() >= tn);
-    assert!(srs.g_beta_powers.len() >= tn);
-    assert!(srs.h_beta_powers.len() >= tn);
+    let tn = dbg!(num_proofs.checked_mul(2).unwrap()); // size of the CRS we need
+    assert!(dbg!(srs.g_alpha_powers.len()) >= tn);
+    assert!(dbg!(srs.h_alpha_powers.len()) >= tn);
+    assert!(dbg!(srs.g_beta_powers.len()) >= tn);
+    assert!(dbg!(srs.h_beta_powers.len()) >= tn);
     let n = num_proofs;
     // when doing the KZG opening we need _all_ coefficients from 0
     // to 2n-1 because the polynomial is of degree 2n-1.

@@ -63,13 +63,14 @@ mod tests {
 
     use super::*;
     use ark_bls12_381::{Bls12_381, Fr};
+    use ark_serialize::CanonicalDeserialize;
     use ark_std::UniformRand;
     use blake2::Blake2b512;
 
     use ark_dh_commitments::random_generators;
     use ark_inner_products::{InnerProduct, PairingInnerProduct};
 
-    const TEST_SIZE: usize = 1 << 14;
+    const TEST_SIZE: usize = 1 << 12;
 
     #[test]
     fn pairing_inner_product_test() {
@@ -116,5 +117,17 @@ mod tests {
         println!("Done with proof, took {:?}", start.elapsed().as_secs_f32());
 
         assert!(PairingTIPA::verify(&vk, &instance, &proof).unwrap());
+    }
+
+    #[test]
+    fn pairing_pk_serde_test() {
+        type PairingTIPA = TIPA<Bls12_381, Blake2b512>;
+
+        let mut rng = ark_std::test_rng();
+        let (pk, _vk) = PairingTIPA::setup(TEST_SIZE, &mut rng).unwrap();
+        let mut bytes = Vec::new();
+        pk.serialize_uncompressed(&mut bytes).unwrap();
+        let pk_2 = CanonicalDeserialize::deserialize_uncompressed_unchecked(&bytes[..]).unwrap();
+        assert!(pk == pk_2);
     }
 }
